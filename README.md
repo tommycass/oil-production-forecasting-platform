@@ -1,163 +1,140 @@
 # Oil Production Forecasting Platform
 
-Plataforma Predictiva de Producción de Hidrocarburos.
+Plataforma Predictiva de Producción de Hidrocarburos — Trabajo Integrador de Ingeniería de Software.
 
-Este proyecto consiste en el desarrollo de una API REST capaz de exponer
-funcionalidades relacionadas con la predicción de producción de hidrocarburos.
-
-El objetivo del sistema es simular una plataforma backend que permita
-consultar y procesar datos de producción para generar estimaciones
-predictivas mediante modelos analíticos.
-
-Este repositorio forma parte del trabajo práctico de la materia
-Ingeniería de Software.
+El sistema expone una API REST que simula el comportamiento de una plataforma de pronóstico de producción de hidrocarburos, incluyendo infraestructura reproducible con Docker, pipeline de CI/CD y monitoreo con Prometheus y Grafana.
 
 ---
 
-# Integrantes
+## Integrantes
 
-- Michanie Micol
-- Pettazi Valentino
-- Castro Tomás
+ - Michanie Micol
+ - Pettazi Valentino 
+ - Castro Tomás 
 
 ---
 
-# Estructura del Proyecto
+## Estructura del Proyecto
 
-El repositorio está organizado de la siguiente forma:
-
-oil-production-forecasting-platform
+```
+oil-production-forecasting-platform/
 │
-├── api
-│ ├── app
-│ │ ├── middleware
-│ │ ├── models
-│ │ ├── routes
-│ │ ├── services
-│ │ ├── schemas
-│ │ └── main.py
-│ │
-│ ├── requirements.txt
-│ ├── README.md
-│ └── .gitignore
+├── .github/
+│   └── workflows/
+│       └── ci.yml                  # Pipeline de CI/CD (GitHub Actions)
 │
-├── docs
-│ Documentación del proyecto, diagramas y decisiones de arquitectura.
+├── api/
+│   ├── app/
+│   │   ├── middleware/             # Interceptores HTTP (ej. autenticación por API key)
+│   │   ├── models/                 # Entidades del dominio
+│   │   ├── routes/                 # Endpoints de la API
+│   │   ├── schemas/                # Estructuras de request/response
+│   │   ├── services/               # Lógica de negocio y generación de datos mock
+│   │   ├── __init__.py
+│   │   └── main.py                 # Punto de entrada de la aplicación FastAPI
+│   ├── tests/                      # Tests unitarios y de integración
+│   ├── requirements.txt
+│   └── README.md
 │
-├── tests
-│ Tests automatizados del sistema.
+├── docs/
+│   └── adr/                        # Architecture Decision Records
+│       ├── ADR-001-framework-backend.md
+│       ├── ADR-002-docker.md
+│       └── ADR-003-monitoring.md
 │
-├── scripts
-│ Scripts auxiliares para automatización o utilidades del proyecto.
+├── infra/
+│   ├── Dockerfile                  # Imagen del servicio API
+│   └── docker-compose.yml          # Orquestación: API + Prometheus + Grafana
 │
+├── monitoring/
+│   ├── prometheus.yml              # Configuración de scraping de métricas
+│   └── grafana/
+│       └── dashboards/             # Dashboards exportados de Grafana
+│
+├── .gitignore
 └── README.md
- Documentación general del repositorio.
-
-
-## Descripción de Componentes
-
-### api
-
-Contiene la implementación del backend del sistema.
-
-Dentro de `api/app`:
-
-- **routes**  
-  Define los endpoints de la API.
-
-- **models**  
-  Representación de entidades del dominio.
-
-- **services**  
-  Lógica de negocio y procesamiento de datos.
-
-- **schemas**  
-  Definición de estructuras de request/response de la API.
-
-- **middleware**  
-  Componentes que interceptan requests/responses HTTP.
-
-- **main.py**  
-  Punto de entrada de la aplicación FastAPI.
+```
 
 ---
 
-# Workflow de Desarrollo
+## Levantar el sistema
 
-El proyecto utiliza un modelo de trabajo basado en **GitFlow**.
+### Con Docker (recomendado)
 
-## Branches principales
+Requiere tener [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado.
 
-- **main**  
-  Contiene la versión estable del proyecto.
+```bash
+docker compose -f infra/docker-compose.yml up
+```
 
-- **develop**  
-  Rama de integración donde se combinan las nuevas funcionalidades.
+| Servicio | URL |
+|---|---|
+| API REST | http://localhost:8000 |
+| Documentación Swagger | http://localhost:8000/docs |
+| Grafana | http://localhost:3000 |
+| Prometheus | http://localhost:9090 |
 
----
+### Sin Docker (desarrollo local)
 
-## Branches de desarrollo
+```bash
+cd api
 
-Cada funcionalidad debe desarrollarse en una rama independiente.
+# Crear y activar entorno virtual
+python -m venv venv
+venv\Scripts\activate          # Windows
+# source venv/bin/activate     # Linux/Mac
 
-Formato:
-feature/<nombre-feature>
-
-Ejemplos: 
-feature/api-endpoints
-feature/prediction-service
-feature/documentation
-
-
----
-
-## Flujo de trabajo
-
-1. Actualizar la rama develop
-git checkout develop
-git pull
-
-2. Crear una nueva feature branch
-git checkout -b feature/nombre-feature
-
-3. Realizar los cambios y commits
-
-4. Subir la rama al repositorio
-git push origin feature/nombre-feature
-
-
-5. Crear un **Pull Request hacia develop**
-
----
-
-# Ejecución del Proyecto
-
-1. Crear entorno virtual
-python -m venv venv+
-
-
-2. Activar entorno
-
-Windows:
-venv\Scripts\activate
-
-
-3. Instalar dependencias
+# Instalar dependencias
 pip install -r requirements.txt
 
-
-4. Ejecutar servidor
+# Ejecutar servidor
 uvicorn app.main:app --reload
+```
 
-
-5. Acceder a la documentación automática
-http://localhost:8000/docs
-
+API disponible en http://localhost:8000 — documentación en http://localhost:8000/docs.
 
 ---
 
-# Tecnologías Utilizadas
+## Endpoints principales
 
-- Python
-- FastAPI
-- Uvicorn
+La API requiere el header `X-API-Key: abcdef12345` en todos los requests.
+
+| Método | Endpoint | Descripción |
+|---|---|---|
+| GET | `/api/v1/wells` | Listado de pozos disponibles |
+| GET | `/api/v1/forecast` | Pronóstico de producción de un pozo |
+
+Ver la [documentación completa en Swagger](http://localhost:8000/docs) con el servicio corriendo.
+
+---
+
+## Workflow de desarrollo
+
+El proyecto usa **GitFlow**.
+
+```
+main        → versión estable (entregables)
+develop     → integración continua
+feature/*   → una rama por funcionalidad
+```
+
+### Crear una feature branch
+
+```bash
+git checkout develop
+git pull
+git checkout -b feature/nombre-feature
+```
+
+### Abrir un Pull Request
+
+Una vez terminada la feature, abrir un PR hacia `develop`. Otro integrante debe revisar y aprobar antes del merge.
+
+---
+
+## Tecnologías
+
+- **Python / FastAPI / Uvicorn** — backend y API REST
+- **Docker / Docker Compose** — contenerización y orquestación
+- **GitHub Actions** — pipeline de CI/CD
+- **Prometheus + Grafana** — monitoreo y visualización de métricas
