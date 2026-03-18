@@ -1,0 +1,30 @@
+{
+  "title": "API Metrics",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Disponibilidad del Servicio (Uptime)",
+      "targets": [{"expr": "up{job=\"api\"}"}],
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 5}
+    },
+    {
+      "type": "timeseries",
+      "title": "Volumen de Consultas (Req/min)",
+      "targets": [{"expr": "sum(rate(http_requests_total[1m])) * 60"}],
+      "gridPos": {"x": 6, "y": 0, "w": 10, "h": 5}
+    },
+    {
+      "type": "timeseries",
+      "title": "Tiempo de Respuesta (p95 / Latencia)",
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95 latency"}],
+      "gridPos": {"x": 0, "y": 5, "w": 8, "h": 6}
+    },
+    {
+      "type": "timeseries",
+      "title": "Tasa de Errores (5xx)",
+      "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100", "legendFormat": "% Errores"}],
+      "gridPos": {"x": 8, "y": 5, "w": 8, "h": 6}
+    }
+  ],
+  "schemaVersion": 38
+}
