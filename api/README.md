@@ -18,10 +18,14 @@ api/
 │   ├── routes/              # Definición de endpoints (routers)
 │   │   ├── __init__.py
 │   │   └── health.py        # GET /health — health check del servicio
-│   ├── models/              # Schemas Pydantic (modelos de request/response)
-│   │   └── __init__.py
-│   └── middleware/           # Middlewares (ej: autenticación por API key)
-│       └── __init__.py
+│   ├── schemas/             # Schemas Pydantic (modelos de request/response)
+│   │   ├── wells.py         # Schema de respuesta para pozos
+│   │   └── forecast.py      # Schemas de respuesta para pronósticos
+│   ├── core/                # Lógica central (seguridad, configuración)
+│   │   └── security.py      # Validación de API key
+│   └── middleware/          # Middlewares (vacío por ahora)
+├── .env                     # Variables de entorno (no se sube a GitHub)
+├── .env.example             # Ejemplo de variables de entorno requeridas
 ├── requirements.txt         # Dependencias del proyecto
 ├── .gitignore
 └── README.md
@@ -33,8 +37,9 @@ api/
 |--------|-----------|
 | `app/main.py` | Punto de entrada. Crea la instancia de FastAPI y registra los routers. |
 | `app/routes/` | Contiene los routers organizados por dominio. Cada archivo define los endpoints de una funcionalidad. |
-| `app/models/` | Define los schemas Pydantic para validación de datos de entrada y estructura de respuestas. |
-| `app/middleware/` | Contiene middlewares que se ejecutan en cada request (ej: validación de API key). |
+| `app/schemas/` | Define los schemas Pydantic para validación de datos de entrada y estructura de respuestas. |
+| `app/core/security.py` | Dependency de FastAPI que valida el header `X-API-Key` en cada request. Devuelve 403 si la clave es inválida o faltante. |
+| `app/middleware/` | Middlewares globales (vacío por ahora). |
 
 ## Requisitos Previos
 
@@ -59,6 +64,12 @@ api/
    pip install -r requirements.txt
    ```
 
+4. Crear el archivo `.env` en base al ejemplo:
+   ```bash
+   cp .env.example .env
+   ```
+   Completar los valores correspondientes en `.env`.
+
 ## Ejecución
 
 Levantar el servidor de desarrollo con recarga automática:
@@ -69,11 +80,26 @@ uvicorn app.main:app --reload --port 8000
 
 El servidor estará disponible en `http://localhost:8000`.
 
+## Seguridad
+
+Todos los endpoints (excepto `/health`) requieren autenticación mediante API key.
+La clave debe enviarse en el header de cada request:
+
+```
+X-API-Key: <tu_api_key>
+```
+
+Si la clave es inválida o está ausente, la API devuelve HTTP 403 Forbidden.
+
 ## Endpoints Disponibles
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/health` | Health check — devuelve `{"status": "ok"}` |
+| Método | Ruta | Descripción | Autenticación |
+|--------|------|-------------|---------------|
+| GET | `/health` | Health check — devuelve `{"status": "ok"}` | No |
+| GET | `/api/v1/wells` | Listado de pozos disponibles | Sí |
+| GET | `/api/v1/forecast` | Pronóstico de producción de un pozo | Sí |
+
+> Los endpoints `/api/v1/wells` y `/api/v1/forecast` están pendientes de implementación.
 
 ## Documentación Interactiva
 
