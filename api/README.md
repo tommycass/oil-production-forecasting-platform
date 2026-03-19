@@ -17,12 +17,17 @@ api/
 │   ├── main.py              # Entry point de la aplicación FastAPI
 │   ├── routes/              # Definición de endpoints (routers)
 │   │   ├── __init__.py
-│   │   └── health.py        # GET /health — health check del servicio
+│   │   ├── health.py        # GET /health — health check del servicio
+│   │   ├── wells.py         # GET /api/v1/wells
+│   │   └── forecast.py      # GET /api/v1/forecast
 │   ├── schemas/             # Schemas Pydantic (modelos de request/response)
 │   │   ├── wells.py         # Schema de respuesta para pozos
 │   │   └── forecast.py      # Schemas de respuesta para pronósticos
 │   ├── core/                # Lógica central (seguridad, configuración)
 │   │   └── security.py      # Validación de API key
+│   ├── services/            # Lógica de negocio (mock por ahora)
+│   │   ├── wells.py         # Datos mock de pozos
+│   │   └── forecast.py      # Generación mock de pronósticos
 │   └── middleware/          # Middlewares (vacío por ahora)
 ├── .env                     # Variables de entorno (no se sube a GitHub)
 ├── .env.example             # Ejemplo de variables de entorno requeridas
@@ -39,6 +44,7 @@ api/
 | `app/routes/` | Contiene los routers organizados por dominio. Cada archivo define los endpoints de una funcionalidad. |
 | `app/schemas/` | Define los schemas Pydantic para validación de datos de entrada y estructura de respuestas. |
 | `app/core/security.py` | Dependency de FastAPI que valida el header `X-API-Key` en cada request. Devuelve 403 si la clave es inválida o faltante. |
+| `app/services/` | Lógica de negocio separada de los endpoints. Actualmente devuelve datos mock; en fases futuras se reemplazará por el modelo predictivo real. |
 | `app/middleware/` | Middlewares globales (vacío por ahora). |
 
 ## Requisitos Previos
@@ -99,7 +105,28 @@ Si la clave es inválida o está ausente, la API devuelve HTTP 403 Forbidden.
 | GET | `/api/v1/wells` | Listado de pozos disponibles | Sí |
 | GET | `/api/v1/forecast` | Pronóstico de producción de un pozo | Sí |
 
-> Los endpoints `/api/v1/wells` y `/api/v1/forecast` están pendientes de implementación.
+### Parámetros
+
+**GET /api/v1/wells**
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `date_query` | fecha (YYYY-MM-DD) | Sí | Fecha para la cual se consulta el listado |
+
+**GET /api/v1/forecast**
+| Parámetro | Tipo | Requerido | Descripción |
+|-----------|------|-----------|-------------|
+| `id_well` | string | Sí | Identificador del pozo |
+| `date_start` | fecha (YYYY-MM-DD) | Sí | Fecha de inicio del pronóstico |
+| `date_end` | fecha (YYYY-MM-DD) | Sí | Fecha de fin del pronóstico |
+
+### Códigos de respuesta
+
+| Código | Descripción |
+|--------|-------------|
+| 200 | Respuesta exitosa |
+| 403 | API key inválida o ausente |
+| 404 | Pozo no encontrado |
+| 422 | Parámetros inválidos (ej: `date_start` mayor a `date_end`) |
 
 ## Documentación Interactiva
 

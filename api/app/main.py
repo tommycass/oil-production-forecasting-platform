@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routes import health, wells
+from app.routes import health, wells, forecast
 
 app = FastAPI(
     title="Oil & Gas Forecast API",
@@ -9,3 +9,4 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(wells.router)
+app.include_router(forecast.router)
