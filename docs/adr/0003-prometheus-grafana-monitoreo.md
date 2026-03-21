@@ -16,3 +16,6 @@ Usaremos **Prometheus y Grafana** porque conforman el estándar open-source de l
 **Negativas:**
 - Requiere mantenimiento y configuración manual de la infraestructura subyacente (archivos YAML, persistencia de volúmenes).
 - No resuelve la centralización de logs sin añadir piezas adicionales (como Loki u otras herramientas).
+
+## Decisiones Técnicas Posteriores
+- **Exclusión de Métricas Propias:** Al instrumentar FastAPI, se optó por excluir explícitamente el registro de las llamadas al endpoint `/metrics` (`excluded_handlers=["/metrics"]`). Esto evita que los *scrapes* periódicos de Prometheus influyan y distorsionen artificialmente las métricas de negocio ("Volumen de Consultas") de la API.

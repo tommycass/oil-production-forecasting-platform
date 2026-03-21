@@ -12,4 +12,4 @@ app.include_router(health.router)
 app.include_router(wells.router)
 app.include_router(forecast.router)
 
-Instrumentator().instrument(app).expose(app)
+Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app)
