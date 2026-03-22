@@ -16,7 +16,11 @@ def mock_api_key():
 
 
 def test_wells_success():
-    response = client.get("/api/v1/wells", params={"date_query": "2024-01-01"}, headers=HEADERS)
+    response = client.get(
+        "/api/v1/wells",
+        params={"date_query": "2024-01-01"},
+        headers=HEADERS,
+    )
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -25,17 +29,28 @@ def test_wells_success():
 
 
 def test_wells_future_date():
-    response = client.get("/api/v1/wells", params={"date_query": "2099-01-01"}, headers=HEADERS)
+    response = client.get(
+        "/api/v1/wells",
+        params={"date_query": "2099-01-01"},
+        headers=HEADERS,
+    )
     assert response.status_code == 422
 
 
 def test_wells_no_api_key():
-    response = client.get("/api/v1/wells", params={"date_query": "2024-01-01"})
+    response = client.get(
+        "/api/v1/wells",
+        params={"date_query": "2024-01-01"},
+    )
     assert response.status_code == 403
 
 
 def test_wells_invalid_api_key():
-    response = client.get("/api/v1/wells", params={"date_query": "2024-01-01"}, headers={"X-API-Key": "wrong"})
+    response = client.get(
+        "/api/v1/wells",
+        params={"date_query": "2024-01-01"},
+        headers={"X-API-Key": "wrong"},
+    )
     assert response.status_code == 403
 
 

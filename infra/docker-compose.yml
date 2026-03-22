@@ -5,6 +5,8 @@ services:
       dockerfile: ../infra/Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - ../api/.env
     restart: unless-stopped
 
   prometheus:
@@ -13,6 +15,7 @@ services:
       - "9090:9090"
     volumes:
       - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
     restart: unless-stopped
 
   grafana:
@@ -23,4 +26,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - prometheus
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     restart: unless-stopped
