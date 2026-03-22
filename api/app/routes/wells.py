@@ -10,5 +10,5 @@ router = APIRouter()
 @router.get("/api/v1/wells", response_model=list[WellResponse])
 def wells(date_query: date, api_key: None = Depends(verify_api_key)):
     if date_query > date.today():
-        raise HTTPException(status_code=422, detail="date_query no puede ser una fecha futura")
+        raise HTTPException(status_code=422, detail="date_query cannot be a future date")
     return get_wells(date_query)

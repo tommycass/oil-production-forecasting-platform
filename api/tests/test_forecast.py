@@ -4,6 +4,7 @@ from unittest.mock import patch
 from app.main import app
 
 client = TestClient(app)
+
 API_KEY = "test-key"
 HEADERS = {"X-API-Key": API_KEY}
 
