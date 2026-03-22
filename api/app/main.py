@@ -2,10 +2,49 @@ from fastapi import FastAPI
 from app.routes import health, wells, forecast
 from prometheus_fastapi_instrumentator import Instrumentator
 
+tags_metadata = [
+    {
+        "name": "Pozos",
+        "description": "Consulta de pozos petroleros activos a una fecha determinada.",
+    },
+    {
+        "name": "Forecast",
+        "description": "Pronóstico de producción diaria por pozo para un rango de fechas.",
+    },
+    {
+        "name": "Health",
+        "description": "Verificación del estado del servicio.",
+    },
+]
+
 app = FastAPI(
     title="Oil & Gas Forecast API",
-    description="API para consultar el listado de pozos y sus pronósticos de producción.",
+    description="""
+## Descripción
+
+API REST para consultar pozos petroleros activos y sus pronósticos de producción.
+
+## Autenticación
+
+Todos los endpoints (excepto `/health`) requieren una API key en el header:
+
+```
+X-API-Key: <tu-api-key>
+```
+
+## Pozos disponibles (mock)
+
+| ID | Producción base |
+|----|----------------|
+| POZO-001 | 200 m³/día |
+| POZO-002 | 150 m³/día |
+| POZO-003 | 100 m³/día |
+""",
     version="1.0.0",
+    openapi_tags=tags_metadata,
+    contact={
+        "name": "Equipo Oil & Gas Forecast",
+    },
 )
 
 app.include_router(health.router)
