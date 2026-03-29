@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r api/requirements.txt
+          pip install -r api/requirements-dev.txt
+
+      - name: Static analysis
+        run: ruff check api/app/
+
+      - name: Run tests
+        run: pytest api/tests/ -v
+        env:
+          API_KEY: abcdef12345
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -f infra/Dockerfile api/ -t oil-forecast-api:latest
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: oil-forecast-api:latest
+          format: table
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Verify container health
+        run: |
+          docker run -d --name test-api -p 8000:8000 -e API_KEY=abcdef12345 oil-forecast-api:latest
+          sleep 3
+          curl --fail http://localhost:8000/health || (docker logs test-api && exit 1)
+          docker stop test-api && docker rm test-api
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker image to GHCR
+        if: github.event_name == 'push'
+        run: |
+          IMAGE=ghcr.io/${{ github.repository_owner }}/oil-forecast-api
+          docker tag oil-forecast-api:latest $IMAGE:latest
+          docker tag oil-forecast-api:latest $IMAGE:${{ github.sha }}
+          docker push $IMAGE:latest
+          docker push $IMAGE:${{ github.sha }}

@@ -11,6 +11,7 @@ venv/
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # OS
 .DS_Store
@@ -18,3 +19,4 @@ Thumbs.db
 
 # logs
 *.log
+Enunciado.pdf
