@@ -8,6 +8,7 @@ WELL_BASE_PRODUCTION = {
 
 
 def get_forecast(id_well: str, date_start: date, date_end: date) -> list[dict]:
+    """Genera pronóstico diario con modelo de declinación lineal (−0.5 bbl/día)."""
     base = WELL_BASE_PRODUCTION[id_well]
     result = []
     current = date_start
