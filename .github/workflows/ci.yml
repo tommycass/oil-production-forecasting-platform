@@ -91,5 +91,5 @@ jobs:
           script: |
             cd /home/ubuntu/oil-production-forecasting-platform
             git pull origin main
-            sudo docker compose pull
-            sudo docker compose up -d
+            sudo docker compose -f infra/docker-compose.yml pull
+            sudo docker compose -f infra/docker-compose.yml up -d
