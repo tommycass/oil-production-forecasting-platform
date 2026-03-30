@@ -75,3 +75,21 @@ jobs:
           docker tag oil-forecast-api:latest $IMAGE:${{ github.sha }}
           docker push $IMAGE:latest
           docker push $IMAGE:${{ github.sha }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' # Para que solo se despliegue al mergear a main
+    
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /home/ubuntu/oil-production-forecasting-platform
+            git pull origin main
+            sudo docker compose pull
+            sudo docker compose up -d
