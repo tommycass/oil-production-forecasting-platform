@@ -138,3 +138,15 @@ Una vez terminada la feature, abrir un PR hacia `develop`. Otro integrante debe 
 - **Docker / Docker Compose** — contenerización y orquestación
 - **GitHub Actions** — pipeline de CI/CD
 - **Prometheus + Grafana** — monitoreo y visualización de métricas
+
+---
+
+## Despliegue Continuo (CD) y AWS
+
+El proyecto cuenta con despliegue automatizado hacia una instancia **AWS EC2**. 
+
+El flujo funciona de la siguiente manera:
+1. Al mergear un Pull Request hacia la rama `main`, GitHub Actions dispara el pipeline definido en `.github/workflows/ci.yml`.
+2. Se ejecutan los tests, el análisis estático y se construye la imagen Docker.
+3. La imagen se publica en GHCR.
+4. El job de deploy se conecta vía SSH a la instancia EC2, descarga el código más reciente y reinicia los contenedores utilizando el `docker-compose.yml`.
