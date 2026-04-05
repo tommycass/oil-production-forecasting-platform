@@ -16,7 +16,8 @@
         "colorMode": "background",
         "justifyMode": "auto",
         "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
-        "textMode": "value"
+        "textMode": "value",
+        "graphMode": "none"
       },
       "fieldConfig": {
         "defaults": {
@@ -180,6 +181,36 @@
           "unit": "Bps",
           "color": {"mode": "palette-classic"},
           "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "state-timeline",
+      "title": "Registro Histórico de Caídas (API Status)",
+      "description": "Historial de tiempo de actividad y cortes del servicio",
+      "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado de la API"}],
+      "gridPos": {"x": 0, "y": 30, "w": 24, "h": 6},
+      "options": {
+        "showValue": "never",
+        "alignValue": "left",
+        "rowHeight": 0.9,
+        "mergeValues": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 0,
+            "fillOpacity": 80
+          },
+          "mappings": [
+            {"options": {"0": {"text": "Caída (DOWN)"}}, "type": "value"},
+            {"options": {"1": {"text": "En Línea (UP)"}}, "type": "value"}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]
+          }
         }
       }
     }
