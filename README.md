@@ -97,8 +97,6 @@ API disponible en http://localhost:8000 — documentación en http://localhost:8
 
 ## Endpoints principales
 
-La API requiere el header `X-API-Key: abcdef12345` en todos los requests.
-
 | Método | Endpoint | Descripción |
 |---|---|---|
 | GET | `/api/v1/wells` | Listado de pozos disponibles |

@@ -107,7 +107,7 @@ jobs:
               "echo \"Authenticating with ECR...\"",
               "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 597437436418.dkr.ecr.us-east-2.amazonaws.com",
               "cd /home/ubuntu/oil-production-forecasting-platform",
-              "git config --global --add safe.directory /home/ubuntu/oil-production-forecasting-platform",
+              "git config --system --add safe.directory /home/ubuntu/oil-production-forecasting-platform",
               "echo \"Pulling latest code...\"",
               "git pull origin main",
               "echo \"${{ secrets.SLACK_WEBHOOK_URL }}\" > monitoring/.slack_webhook",
