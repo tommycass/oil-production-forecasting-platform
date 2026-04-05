@@ -1,5 +1,9 @@
 services:
   api:
+    # Le dice a EC2 de dónde descargar la imagen
+    image: 597437436418.dkr.ecr.us-east-2.amazonaws.com/oil-forecast-api:latest
+
+    # build para armar en local
     build:
       context: ../api
       dockerfile: ../infra/Dockerfile
