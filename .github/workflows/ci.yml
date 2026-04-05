@@ -115,3 +115,34 @@ jobs:
               "docker compose -f infra/docker-compose.yml pull",
               "docker compose -f infra/docker-compose.yml up -d"
             ]'
+
+  deploy_dev:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' # Solo despliega en develop
+    
+    steps:
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Deploy via AWS Systems Manager (SSM) to DEV
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=tag:Name,Values=api-dev" \
+            --comment "Deploying latest API image to DEV" \
+            --parameters 'commands=[
+              "echo \"Authenticating with ECR...\"",
+              "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 597437436418.dkr.ecr.us-east-2.amazonaws.com",
+              "cd /home/ubuntu/oil-production-forecasting-platform",
+              "git config --system --add safe.directory /home/ubuntu/oil-production-forecasting-platform",
+              "echo \"Pulling latest code...\"",
+              "git pull origin develop",
+              "echo \"${{ secrets.SLACK_WEBHOOK_URL }}\" > monitoring/.slack_webhook",
+              "echo \"Pulling and starting containers...\"",
+              "docker compose -f infra/docker-compose.yml pull",
+              "docker compose -f infra/docker-compose.yml up -d"
+            ]'
