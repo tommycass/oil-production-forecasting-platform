@@ -1,0 +1,12 @@
+route:
+  receiver: 'slack-notifications'
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 1h
+
+receivers:
+  - name: 'slack-notifications'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/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'
+        send_resolved: true
