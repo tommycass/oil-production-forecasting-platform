@@ -55,4 +55,5 @@ services:
       - "9093:9093"
     volumes:
       - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ../monitoring/.slack_webhook:/etc/alertmanager/.slack_webhook:ro
     restart: unless-stopped

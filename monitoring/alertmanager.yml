@@ -8,5 +8,5 @@ route:
 receivers:
   - name: 'slack-notifications'
     slack_configs:
-      - api_url: 'https://hooks.slack.com/services/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'
+      - api_url_file: '/etc/alertmanager/.slack_webhook'
         send_resolved: true
