@@ -109,6 +109,7 @@ jobs:
               "cd /home/ubuntu/oil-production-forecasting-platform",
               "echo \"Pulling latest code...\"",
               "git pull origin main",
+              "echo \"${{ secrets.SLACK_WEBHOOK_URL }}\" > monitoring/.slack_webhook",
               "echo \"Pulling and starting containers...\"",
               "docker compose -f infra/docker-compose.yml pull",
               "docker compose -f infra/docker-compose.yml up -d"
