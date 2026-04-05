@@ -126,7 +126,7 @@
       "type": "timeseries",
       "title": "Uso de CPU por Contenedor",
       "description": "CPU usage en %",
-      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (id) * 100", "legendFormat": "{{id}}"}],
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}"}],
       "gridPos": {"x": 0, "y": 22, "w": 8, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -145,7 +145,7 @@
       "type": "timeseries",
       "title": "Uso de Memoria por Contenedor",
       "description": "Memoria utilizada en MB",
-      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (id)", "legendFormat": "{{id}}"}],
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}"}],
       "gridPos": {"x": 8, "y": 22, "w": 8, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -165,10 +165,10 @@
       "title": "I/O de Disco y Red por Contenedor",
       "description": "Tasas de transferencia I/O",
       "targets": [
-        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (id)", "legendFormat": "Disk Read - {{id}}"},
-        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (id)", "legendFormat": "Disk Write - {{id}}"},
-        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (id)", "legendFormat": "Net In - {{id}}"},
-        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (id)", "legendFormat": "Net Out - {{id}}"}
+        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}"},
+        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}"},
+        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net In - {{name}}"},
+        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}"}
       ],
       "gridPos": {"x": 16, "y": 22, "w": 8, "h": 8},
       "options": {
