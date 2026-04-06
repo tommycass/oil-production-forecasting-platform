@@ -213,6 +213,33 @@
           }
         }
       }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Latencia p95 por Endpoint",
+      "description": "Percentil 95 de latencia desglosado por endpoint",
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "{{handler}}"}],
+      "gridPos": {"x": 0, "y": 36, "w": 24, "h": 8},
+      "options": {
+        "tooltip": {"mode": "multi"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "lineWidth": 2,
+            "spanNulls": false
+          },
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 2}]}
+        }
+      }
     }
   ]
 }
