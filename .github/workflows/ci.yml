@@ -130,7 +130,7 @@ jobs:
           ATTEMPTS=0
           while [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Pending" ]; do
             sleep 10
-            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+            STATUS=$(aws ssm list-command-invocations --command-id "$COMMAND_ID" --query 'CommandInvocations[0].Status' --output text)
             ATTEMPTS=$((ATTEMPTS + 1))
             echo "Attempt $ATTEMPTS — Status: $STATUS"
             if [ "$ATTEMPTS" -ge 36 ]; then
@@ -191,7 +191,7 @@ jobs:
           ATTEMPTS=0
           while [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Pending" ]; do
             sleep 10
-            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+            STATUS=$(aws ssm list-command-invocations --command-id "$COMMAND_ID" --query 'CommandInvocations[0].Status' --output text)
             ATTEMPTS=$((ATTEMPTS + 1))
             echo "Attempt $ATTEMPTS — Status: $STATUS"
             if [ "$ATTEMPTS" -ge 36 ]; then
