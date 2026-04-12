@@ -89,7 +89,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' # Solo despliega en main
-    
+
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -99,28 +99,58 @@ jobs:
 
       - name: Deploy via AWS Systems Manager (SSM)
         run: |
-          aws ssm send-command \
+          COMMAND_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Name,Values=api" \
             --comment "Deploying latest API image" \
+            --timeout-seconds 300 \
             --parameters 'commands=[
-              "echo \"Authenticating with ECR...\"",
-              "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 597437436418.dkr.ecr.us-east-2.amazonaws.com",
+              "REPO=597437436418.dkr.ecr.us-east-2.amazonaws.com/oil-forecast-api",
+              "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $REPO",
               "cd /home/ubuntu/oil-production-forecasting-platform",
               "git config --system --add safe.directory /home/ubuntu/oil-production-forecasting-platform",
-              "echo \"Pulling latest code...\"",
               "git pull origin main",
               "echo \"${{ secrets.SLACK_WEBHOOK_URL }}\" > monitoring/.slack_webhook",
-              "echo \"Pulling and starting containers...\"",
+              "PREV_IMAGE=$(docker compose -f infra/docker-compose.yml ps -q api 2>/dev/null | head -1 | xargs -r docker inspect --format \"{{.Image}}\" 2>/dev/null || echo none)",
+              "echo \"Previous image digest: $PREV_IMAGE\"",
               "docker compose -f infra/docker-compose.yml pull",
-              "docker compose -f infra/docker-compose.yml up -d"
-            ]'
+              "docker compose -f infra/docker-compose.yml up -d",
+              "sleep 20",
+              "HEALTHY=false; for i in 1 2 3 4 5 6; do curl -sf http://localhost:8000/health && HEALTHY=true && break || sleep 10; done",
+              "if [ \"$HEALTHY\" != \"true\" ]; then echo \"Health check failed. Rolling back to previous image...\"; if [ \"$PREV_IMAGE\" != \"none\" ] && [ -n \"$PREV_IMAGE\" ]; then docker tag \"$PREV_IMAGE\" \"$REPO:latest\" && docker compose -f infra/docker-compose.yml up -d api && echo \"Rollback complete.\"; fi; exit 1; fi",
+              "echo \"Post-deploy health check passed. Service is healthy.\""
+            ]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "SSM Command ID: $COMMAND_ID"
+          echo "Polling for deploy result on EC2..."
+
+          STATUS="InProgress"
+          ATTEMPTS=0
+          while [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Pending" ]; do
+            sleep 10
+            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+            ATTEMPTS=$((ATTEMPTS + 1))
+            echo "Attempt $ATTEMPTS — Status: $STATUS"
+            if [ "$ATTEMPTS" -ge 36 ]; then
+              echo "Timed out waiting for deploy to complete."
+              exit 1
+            fi
+          done
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "Deploy failed on EC2 with status: $STATUS"
+            exit 1
+          fi
+
+          echo "Deploy completed successfully on production."
 
   deploy_dev:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop' # Solo despliega en develop
-    
+
     steps:
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -130,19 +160,49 @@ jobs:
 
       - name: Deploy via AWS Systems Manager (SSM) to DEV
         run: |
-          aws ssm send-command \
+          COMMAND_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:Name,Values=api-dev" \
             --comment "Deploying latest API image to DEV" \
+            --timeout-seconds 300 \
             --parameters 'commands=[
-              "echo \"Authenticating with ECR...\"",
-              "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin 597437436418.dkr.ecr.us-east-2.amazonaws.com",
+              "REPO=597437436418.dkr.ecr.us-east-2.amazonaws.com/oil-forecast-api",
+              "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $REPO",
               "cd /home/ubuntu/oil-production-forecasting-platform",
               "git config --system --add safe.directory /home/ubuntu/oil-production-forecasting-platform",
-              "echo \"Pulling latest code...\"",
               "git pull origin develop",
               "echo \"${{ secrets.SLACK_WEBHOOK_URL }}\" > monitoring/.slack_webhook",
-              "echo \"Pulling and starting containers...\"",
+              "PREV_IMAGE=$(docker compose -f infra/docker-compose.yml ps -q api 2>/dev/null | head -1 | xargs -r docker inspect --format \"{{.Image}}\" 2>/dev/null || echo none)",
+              "echo \"Previous image digest: $PREV_IMAGE\"",
               "docker compose -f infra/docker-compose.yml pull",
-              "docker compose -f infra/docker-compose.yml up -d"
-            ]'
+              "docker compose -f infra/docker-compose.yml up -d",
+              "sleep 20",
+              "HEALTHY=false; for i in 1 2 3 4 5 6; do curl -sf http://localhost:8000/health && HEALTHY=true && break || sleep 10; done",
+              "if [ \"$HEALTHY\" != \"true\" ]; then echo \"Health check failed. Rolling back to previous image...\"; if [ \"$PREV_IMAGE\" != \"none\" ] && [ -n \"$PREV_IMAGE\" ]; then docker tag \"$PREV_IMAGE\" \"$REPO:latest\" && docker compose -f infra/docker-compose.yml up -d api && echo \"Rollback complete.\"; fi; exit 1; fi",
+              "echo \"Post-deploy health check passed. Service is healthy.\""
+            ]' \
+            --query 'Command.CommandId' \
+            --output text)
+
+          echo "SSM Command ID: $COMMAND_ID"
+          echo "Polling for deploy result on EC2..."
+
+          STATUS="InProgress"
+          ATTEMPTS=0
+          while [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Pending" ]; do
+            sleep 10
+            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query 'Commands[0].Status' --output text)
+            ATTEMPTS=$((ATTEMPTS + 1))
+            echo "Attempt $ATTEMPTS — Status: $STATUS"
+            if [ "$ATTEMPTS" -ge 36 ]; then
+              echo "Timed out waiting for deploy to complete."
+              exit 1
+            fi
+          done
+
+          if [ "$STATUS" != "Success" ]; then
+            echo "Deploy failed on EC2 with status: $STATUS"
+            exit 1
+          fi
+
+          echo "Deploy completed successfully on DEV."
