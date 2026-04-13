@@ -35,6 +35,7 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/api-metrics.json
+      - GF_AWS_ALLOWED_AUTH_PROVIDERS=default,credentials,keys,ec2_iam_role
     depends_on:
       - prometheus
     volumes:
