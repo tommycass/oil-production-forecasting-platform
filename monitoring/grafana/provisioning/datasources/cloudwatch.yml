@@ -2,6 +2,7 @@ apiVersion: 1
 datasources:
   - name: CloudWatch
     type: cloudwatch
+    uid: cloudwatch
     jsonData:
       authType: ec2_iam_role
       defaultRegion: us-east-2
