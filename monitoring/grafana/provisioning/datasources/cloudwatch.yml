@@ -5,6 +5,6 @@ datasources:
     uid: aws-cloudwatch-infra
     access: proxy
     jsonData:
-      authType: ec2_iam_role
+      authType: default
       defaultRegion: us-east-2
     editable: true

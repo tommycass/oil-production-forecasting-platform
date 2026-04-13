@@ -267,7 +267,7 @@
           "metricName": "CPUUtilization",
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
-          "period": "300"
+          "period": ""
         }
       ],
       "gridPos": {"x": 0, "y": 44, "w": 12, "h": 8},
@@ -295,7 +295,7 @@
           "metricName": "NetworkIn",
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
-          "period": "300",
+          "period": "",
           "alias": "Network In"
         },
         {
@@ -303,7 +303,7 @@
           "metricName": "NetworkOut",
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
-          "period": "300",
+          "period": "",
           "alias": "Network Out"
         }
       ],
@@ -331,14 +331,14 @@
           "namespace": "AWS/EBS",
           "metricName": "VolumeReadOps",
           "statistics": ["Average"],
-          "period": "300",
+          "period": "",
           "alias": "Read Ops"
         },
         {
           "namespace": "AWS/EBS",
           "metricName": "VolumeWriteOps",
           "statistics": ["Average"],
-          "period": "300",
+          "period": "",
           "alias": "Write Ops"
         }
       ],
