@@ -4,6 +4,20 @@
   "timezone": "browser",
   "schemaVersion": 38,
   "refresh": "5s",
+  "templating": {
+    "list": [
+      {
+        "name": "instance",
+        "label": "Instancia EC2",
+        "type": "query",
+        "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+        "query": "ec2_instance_attribute(us-east-2, InstanceId, {})",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": false
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
@@ -251,7 +265,7 @@
         {
           "namespace": "AWS/EC2",
           "metricName": "CPUUtilization",
-          "dimensions": {"InstanceId": "*"},
+          "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
           "period": "300"
         }
@@ -279,7 +293,7 @@
         {
           "namespace": "AWS/EC2",
           "metricName": "NetworkIn",
-          "dimensions": {"InstanceId": "*"},
+          "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
           "period": "300",
           "alias": "Network In"
@@ -287,7 +301,7 @@
         {
           "namespace": "AWS/EC2",
           "metricName": "NetworkOut",
-          "dimensions": {"InstanceId": "*"},
+          "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
           "period": "300",
           "alias": "Network Out"
