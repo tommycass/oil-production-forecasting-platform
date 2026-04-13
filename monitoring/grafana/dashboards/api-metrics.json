@@ -240,6 +240,106 @@
           "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 2}]}
         }
       }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "EC2: Utilización de CPU (CloudWatch)",
+      "description": "CPU Utilization from AWS CloudWatch",
+      "datasource": {"type": "cloudwatch", "uid": "cloudwatch"},
+      "targets": [
+        {
+          "namespace": "AWS/EC2",
+          "metricName": "CPUUtilization",
+          "dimensions": {"InstanceId": "*"},
+          "statistics": ["Average"],
+          "period": "300"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 44, "w": 12, "h": 8},
+      "options": {
+        "tooltip": {"mode": "multi"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "EC2: Red - Tráfico (CloudWatch)",
+      "description": "Network In and Out from AWS CloudWatch",
+      "datasource": {"type": "cloudwatch", "uid": "cloudwatch"},
+      "targets": [
+        {
+          "namespace": "AWS/EC2",
+          "metricName": "NetworkIn",
+          "dimensions": {"InstanceId": "*"},
+          "statistics": ["Average"],
+          "period": "300",
+          "alias": "Network In"
+        },
+        {
+          "namespace": "AWS/EC2",
+          "metricName": "NetworkOut",
+          "dimensions": {"InstanceId": "*"},
+          "statistics": ["Average"],
+          "period": "300",
+          "alias": "Network Out"
+        }
+      ],
+      "gridPos": {"x": 12, "y": 44, "w": 12, "h": 8},
+      "options": {
+        "tooltip": {"mode": "multi"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "EBS: Operaciones de I/O (CloudWatch)",
+      "description": "EBS Volume Read and Write Ops from AWS CloudWatch",
+      "datasource": {"type": "cloudwatch", "uid": "cloudwatch"},
+      "targets": [
+        {
+          "namespace": "AWS/EBS",
+          "metricName": "VolumeReadOps",
+          "statistics": ["Average"],
+          "period": "300",
+          "alias": "Read Ops"
+        },
+        {
+          "namespace": "AWS/EBS",
+          "metricName": "VolumeWriteOps",
+          "statistics": ["Average"],
+          "period": "300",
+          "alias": "Write Ops"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 52, "w": 24, "h": 8},
+      "options": {
+        "tooltip": {"mode": "multi"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
+        }
+      }
     }
   ]
 }
