@@ -11,7 +11,7 @@
         "label": "Instancia EC2",
         "type": "query",
         "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
-        "query": "ec2_instance_attribute(us-east-2, InstanceId, {})",
+        "query": "dimension_values(us-east-2, AWS/EC2, CPUUtilization, InstanceId)",
         "refresh": 1,
         "includeAll": true,
         "multi": false
