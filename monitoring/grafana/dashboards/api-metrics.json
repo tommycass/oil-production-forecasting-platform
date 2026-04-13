@@ -246,7 +246,7 @@
       "type": "timeseries",
       "title": "EC2: Utilización de CPU (CloudWatch)",
       "description": "CPU Utilization from AWS CloudWatch",
-      "datasource": {"type": "cloudwatch", "uid": "cloudwatch"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
       "targets": [
         {
           "namespace": "AWS/EC2",
@@ -274,7 +274,7 @@
       "type": "timeseries",
       "title": "EC2: Red - Tráfico (CloudWatch)",
       "description": "Network In and Out from AWS CloudWatch",
-      "datasource": {"type": "cloudwatch", "uid": "cloudwatch"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
       "targets": [
         {
           "namespace": "AWS/EC2",
@@ -311,7 +311,7 @@
       "type": "timeseries",
       "title": "EBS: Operaciones de I/O (CloudWatch)",
       "description": "EBS Volume Read and Write Ops from AWS CloudWatch",
-      "datasource": {"type": "cloudwatch", "uid": "cloudwatch"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
       "targets": [
         {
           "namespace": "AWS/EBS",
