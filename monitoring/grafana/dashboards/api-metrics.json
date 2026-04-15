@@ -14,11 +14,28 @@
         "query": "ec2_instance_attribute(us-east-2, InstanceId, {})",
         "refresh": 1,
         "includeAll": true,
-        "multi": false
+        "multi": true
       }
     ]
   },
   "panels": [
+    {
+      "id": 99,
+      "type": "timeseries",
+      "title": "DEBUG: Global CPU Utilization (us-east-2)",
+      "description": "Total CPU Utilization for all instances in the region (no filter)",
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+      "targets": [
+        {
+          "region": "us-east-2",
+          "namespace": "AWS/EC2",
+          "metricName": "CPUUtilization",
+          "statistics": ["Average"],
+          "period": ""
+        }
+      ],
+      "gridPos": {"x": 0, "y": 60, "w": 24, "h": 6}
+    },
     {
       "id": 1,
       "type": "stat",
@@ -268,6 +285,7 @@
           "metricName": "CPUUtilization",
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
+          "matchExact": false,
           "period": ""
         }
       ],
@@ -297,6 +315,7 @@
           "metricName": "NetworkIn",
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
+          "matchExact": false,
           "period": "",
           "alias": "Network In"
         },
