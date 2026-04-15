@@ -1,7 +1,9 @@
 {
-  "title": "API Metrics - Enhanced",
-  "tags": ["api", "fastapi", "prometheus"],
+  "title": "INFRASTRUCTURE MONITORING - VERIFIED",
+  "uid": "verified-infra-dash",
+  "tags": ["api", "fastapi", "prometheus", "aws", "cloudwatch"],
   "timezone": "utc",
+  "version": 100,
   "schemaVersion": 38,
   "refresh": "5s",
   "templating": {
