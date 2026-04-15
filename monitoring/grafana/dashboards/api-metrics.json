@@ -1,7 +1,7 @@
 {
   "title": "API Metrics - Enhanced",
   "tags": ["api", "fastapi", "prometheus"],
-  "timezone": "browser",
+  "timezone": "utc",
   "schemaVersion": 38,
   "refresh": "5s",
   "templating": {
@@ -33,7 +33,7 @@
           "dimensions": {"InstanceId": "i-0a4daf1eef0965993"},
           "statistics": ["Average"],
           "matchExact": true,
-          "period": ""
+          "period": "300"
         }
       ],
       "gridPos": {"x": 0, "y": 66, "w": 24, "h": 6}
@@ -50,7 +50,7 @@
           "namespace": "AWS/EC2",
           "metricName": "CPUUtilization",
           "statistics": ["Average"],
-          "period": ""
+          "period": "300"
         }
       ],
       "gridPos": {"x": 0, "y": 60, "w": 24, "h": 6}
@@ -305,7 +305,7 @@
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
           "matchExact": true,
-          "period": ""
+          "period": "300"
         }
       ],
       "gridPos": {"x": 0, "y": 44, "w": 12, "h": 8},
@@ -335,7 +335,7 @@
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
           "matchExact": true,
-          "period": "",
+          "period": "300",
           "alias": "Network In"
         },
         {
