@@ -10,7 +10,7 @@
         "name": "instance",
         "label": "Instancia EC2",
         "type": "query",
-        "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+        "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
         "query": "ec2_instance_attribute(us-east-2, InstanceId, {})",
         "refresh": 1,
         "includeAll": true,
@@ -24,7 +24,7 @@
       "type": "timeseries",
       "title": "VERIFIED: CPU Utilization (Hardcoded ID)",
       "description": "Prueba con el ID que funcionó en la terminal",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
           "region": "us-east-2",
@@ -43,7 +43,7 @@
       "type": "timeseries",
       "title": "DEBUG: Global CPU Utilization (us-east-2)",
       "description": "Total CPU Utilization for all instances in the region (no filter)",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
           "region": "us-east-2",
@@ -296,7 +296,7 @@
       "type": "timeseries",
       "title": "EC2: Utilización de CPU (CloudWatch)",
       "description": "CPU Utilization from AWS CloudWatch",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
           "region": "us-east-2",
@@ -326,7 +326,7 @@
       "type": "timeseries",
       "title": "EC2: Red - Tráfico (CloudWatch)",
       "description": "Network In and Out from AWS CloudWatch",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
           "region": "us-east-2",
