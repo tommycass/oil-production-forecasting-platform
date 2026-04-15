@@ -11,7 +11,7 @@
         "label": "Instancia EC2",
         "type": "query",
         "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
-        "query": "dimension_values(us-east-2, AWS/EC2, CPUUtilization, InstanceId)",
+        "query": "ec2_instance_attribute(us-east-2, InstanceId, {})",
         "refresh": 1,
         "includeAll": true,
         "multi": false
@@ -263,6 +263,7 @@
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
       "targets": [
         {
+          "region": "us-east-2",
           "namespace": "AWS/EC2",
           "metricName": "CPUUtilization",
           "dimensions": {"InstanceId": "$instance"},
@@ -291,6 +292,7 @@
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
       "targets": [
         {
+          "region": "us-east-2",
           "namespace": "AWS/EC2",
           "metricName": "NetworkIn",
           "dimensions": {"InstanceId": "$instance"},
@@ -299,6 +301,7 @@
           "alias": "Network In"
         },
         {
+          "region": "us-east-2",
           "namespace": "AWS/EC2",
           "metricName": "NetworkOut",
           "dimensions": {"InstanceId": "$instance"},
