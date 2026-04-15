@@ -14,11 +14,30 @@
         "query": "ec2_instance_attribute(us-east-2, InstanceId, {})",
         "refresh": 1,
         "includeAll": true,
-        "multi": true
+        "multi": false
       }
     ]
   },
   "panels": [
+    {
+      "id": 100,
+      "type": "timeseries",
+      "title": "VERIFIED: CPU Utilization (Hardcoded ID)",
+      "description": "Prueba con el ID que funcionó en la terminal",
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+      "targets": [
+        {
+          "region": "us-east-2",
+          "namespace": "AWS/EC2",
+          "metricName": "CPUUtilization",
+          "dimensions": {"InstanceId": "i-0a4daf1eef0965993"},
+          "statistics": ["Average"],
+          "matchExact": true,
+          "period": ""
+        }
+      ],
+      "gridPos": {"x": 0, "y": 66, "w": 24, "h": 6}
+    },
     {
       "id": 99,
       "type": "timeseries",
@@ -285,7 +304,7 @@
           "metricName": "CPUUtilization",
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
-          "matchExact": false,
+          "matchExact": true,
           "period": ""
         }
       ],
@@ -315,7 +334,7 @@
           "metricName": "NetworkIn",
           "dimensions": {"InstanceId": "$instance"},
           "statistics": ["Average"],
-          "matchExact": false,
+          "matchExact": true,
           "period": "",
           "alias": "Network In"
         },
