@@ -127,7 +127,7 @@
       "id": 10,
       "type": "timeseries",
       "title": "Uso de CPU por Contenedor",
-      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}", "refId": "A"}],
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\"}[1m])) by (name) * 100", "legendFormat": "{{name}}", "refId": "A"}],
       "gridPos": {"x": 0, "y": 22, "w": 8, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
@@ -136,7 +136,7 @@
       "id": 11,
       "type": "timeseries",
       "title": "Uso de Memoria por Contenedor",
-      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}", "refId": "A"}],
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{name!=\"\"}) by (name)", "legendFormat": "{{name}}", "refId": "A"}],
       "gridPos": {"x": 8, "y": 22, "w": 8, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
@@ -146,10 +146,10 @@
       "type": "timeseries",
       "title": "I/O de Disco y Red por Contenedor",
       "targets": [
-        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}", "refId": "A"},
-        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}", "refId": "B"},
-        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net In - {{name}}", "refId": "C"},
-        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}", "refId": "D"}
+        {"expr": "sum(rate(container_fs_reads_bytes_total{name!=\"\"}[1m])) by (name)", "legendFormat": "Disk Read - {{name}}", "refId": "A"},
+        {"expr": "sum(rate(container_fs_writes_bytes_total{name!=\"\"}[1m])) by (name)", "legendFormat": "Disk Write - {{name}}", "refId": "B"},
+        {"expr": "sum(rate(container_network_receive_bytes_total{name!=\"\"}[1m])) by (name)", "legendFormat": "Net In - {{name}}", "refId": "C"},
+        {"expr": "sum(rate(container_network_transmit_bytes_total{name!=\"\"}[1m])) by (name)", "legendFormat": "Net Out - {{name}}", "refId": "D"}
       ],
       "gridPos": {"x": 16, "y": 22, "w": 8, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
