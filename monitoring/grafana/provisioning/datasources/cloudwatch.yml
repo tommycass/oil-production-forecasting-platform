@@ -7,4 +7,5 @@ datasources:
     jsonData:
       authType: default
       defaultRegion: us-east-2
+      crossAccountQuerying: false
     editable: true
