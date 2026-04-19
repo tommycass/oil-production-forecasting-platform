@@ -1,22 +1,26 @@
 {
-  "title": "INFRASTRUCTURE MONITORING - VERIFIED",
+  "title": "INFRASTRUCTURE MONITORING",
   "uid": "verified-infra-dash",
   "tags": ["api", "fastapi", "prometheus", "aws", "cloudwatch"],
   "timezone": "utc",
-  "version": 102,
-  "schemaVersion": 38,
-  "refresh": "5s",
+  "version": 103,
+  "schemaVersion": 40,
+  "refresh": "30s",
   "templating": {
     "list": [
       {
         "name": "instance",
         "label": "Instancia EC2",
-        "type": "query",
-        "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
-        "query": "ec2_instance_attribute(us-east-2, InstanceId, {})",
-        "refresh": 1,
-        "includeAll": true,
-        "multi": false
+        "type": "custom",
+        "query": "i-0a4daf1eef0965993,i-0448993ed9fdd0b0f",
+        "current": {"text": "i-0a4daf1eef0965993", "value": "i-0a4daf1eef0965993"},
+        "options": [
+          {"text": "i-0a4daf1eef0965993", "value": "i-0a4daf1eef0965993", "selected": true},
+          {"text": "i-0448993ed9fdd0b0f", "value": "i-0448993ed9fdd0b0f", "selected": false}
+        ],
+        "includeAll": false,
+        "multi": false,
+        "refresh": 0
       }
     ]
   },
@@ -94,21 +98,11 @@
       "description": "Tendencia de peticiones por minuto",
       "targets": [{"expr": "sum(rate(http_requests_total[1m])) * 60", "legendFormat": "Rendimiento (req/min)", "refId": "A"}],
       "gridPos": {"x": 0, "y": 6, "w": 24, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {
         "defaults": {
           "color": {"mode": "palette-classic"},
-          "custom": {
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "opacity",
-            "lineWidth": 2,
-            "spanNulls": false
-          }
+          "custom": {"drawStyle": "line", "fillOpacity": 20, "gradientMode": "opacity", "lineWidth": 2, "spanNulls": false}
         }
       }
     },
@@ -116,24 +110,15 @@
       "id": 4,
       "type": "timeseries",
       "title": "Tiempo de Respuesta (Latencia p95)",
-      "description": "El 95% de las peticiones se completan por debajo de este tiempo. (Umbrales de advertencia en 1s y 2s)",
+      "description": "El 95% de las peticiones se completan por debajo de este tiempo",
       "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95 Latencia", "refId": "A"}],
       "gridPos": {"x": 0, "y": 14, "w": 24, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {
         "defaults": {
           "unit": "s",
           "color": {"mode": "fixed", "fixedColor": "orange"},
-          "custom": {
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 25,
-            "gradientMode": "opacity",
-            "lineWidth": 2
-          },
+          "custom": {"drawStyle": "line", "fillOpacity": 25, "gradientMode": "opacity", "lineWidth": 2},
           "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 2}]}
         }
       }
@@ -142,45 +127,24 @@
       "id": 10,
       "type": "timeseries",
       "title": "Uso de CPU por Contenedor",
-      "description": "CPU usage en %",
       "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}", "refId": "A"}],
       "gridPos": {"x": 0, "y": 22, "w": 8, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
     {
       "id": 11,
       "type": "timeseries",
       "title": "Uso de Memoria por Contenedor",
-      "description": "Memoria utilizada en MB",
       "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}", "refId": "A"}],
       "gridPos": {"x": 8, "y": 22, "w": 8, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
     {
       "id": 12,
       "type": "timeseries",
       "title": "I/O de Disco y Red por Contenedor",
-      "description": "Tasas de transferencia I/O",
       "targets": [
         {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}", "refId": "A"},
         {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}", "refId": "B"},
@@ -188,31 +152,16 @@
         {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}", "refId": "D"}
       ],
       "gridPos": {"x": 16, "y": 22, "w": 8, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "Bps", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
     {
       "id": 13,
       "type": "state-timeline",
       "title": "Registro Histórico de Caídas (API Status)",
-      "description": "Historial de tiempo de actividad y cortes del servicio",
       "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado de la API", "refId": "A"}],
       "gridPos": {"x": 0, "y": 30, "w": 24, "h": 6},
-      "options": {
-        "showValue": "never",
-        "alignValue": "left",
-        "rowHeight": 0.9,
-        "mergeValues": true
-      },
+      "options": {"showValue": "never", "alignValue": "left", "rowHeight": 0.9, "mergeValues": true},
       "fieldConfig": {
         "defaults": {
           "custom": {"lineWidth": 0, "fillOpacity": 80},
@@ -220,10 +169,7 @@
             {"options": {"0": {"text": "Caída (DOWN)"}}, "type": "value"},
             {"options": {"1": {"text": "En Línea (UP)"}}, "type": "value"}
           ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]
-          }
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
         }
       }
     },
@@ -231,25 +177,14 @@
       "id": 14,
       "type": "timeseries",
       "title": "Latencia p95 por Endpoint",
-      "description": "Percentil 95 de latencia desglosado por endpoint",
       "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "{{handler}}", "refId": "A"}],
       "gridPos": {"x": 0, "y": 36, "w": 24, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {
         "defaults": {
           "unit": "s",
           "color": {"mode": "palette-classic"},
-          "custom": {
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "gradientMode": "opacity",
-            "lineWidth": 2,
-            "spanNulls": false
-          },
+          "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "spanNulls": false},
           "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 2}]}
         }
       }
@@ -260,33 +195,32 @@
       "title": "EC2: Utilización de CPU (CloudWatch)",
       "description": "CPU Utilization from AWS CloudWatch",
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "refId": "A",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
           "region": "default",
           "namespace": "AWS/EC2",
           "metricName": "CPUUtilization",
-          "dimensions": {"InstanceId": ["$instance"]},
-          "statistics": ["Average"],
+          "dimensions": {"InstanceId": "$instance"},
+          "statistic": "Average",
           "matchExact": false,
-          "period": "300"
+          "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
+          "label": ""
         }
       ],
       "gridPos": {"x": 0, "y": 44, "w": 12, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
     {
       "id": 16,
@@ -294,48 +228,52 @@
       "title": "EC2: Red - Tráfico (CloudWatch)",
       "description": "Network In and Out from AWS CloudWatch",
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "refId": "A",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
           "region": "default",
           "namespace": "AWS/EC2",
           "metricName": "NetworkIn",
-          "dimensions": {"InstanceId": ["$instance"]},
-          "statistics": ["Average"],
+          "dimensions": {"InstanceId": "$instance"},
+          "statistic": "Average",
           "matchExact": false,
           "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
           "label": "Network In"
         },
         {
           "refId": "B",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
           "region": "default",
           "namespace": "AWS/EC2",
           "metricName": "NetworkOut",
-          "dimensions": {"InstanceId": ["$instance"]},
-          "statistics": ["Average"],
+          "dimensions": {"InstanceId": "$instance"},
+          "statistic": "Average",
           "matchExact": false,
           "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
           "label": "Network Out"
         }
       ],
       "gridPos": {"x": 12, "y": 44, "w": 12, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
     {
       "id": 17,
@@ -343,71 +281,85 @@
       "title": "EBS: Operaciones de I/O (CloudWatch)",
       "description": "EBS Volume Read and Write Ops from AWS CloudWatch",
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "refId": "A",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
           "region": "default",
           "namespace": "AWS/EBS",
           "metricName": "VolumeReadOps",
           "dimensions": {},
-          "statistics": ["Average"],
+          "statistic": "Average",
           "matchExact": false,
           "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
           "label": "Read Ops"
         },
         {
           "refId": "B",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
           "region": "default",
           "namespace": "AWS/EBS",
           "metricName": "VolumeWriteOps",
           "dimensions": {},
-          "statistics": ["Average"],
+          "statistic": "Average",
           "matchExact": false,
           "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
           "label": "Write Ops"
         }
       ],
       "gridPos": {"x": 0, "y": 52, "w": 24, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
     {
       "id": 100,
       "type": "timeseries",
       "title": "EC2: CPU Utilization (api-dev)",
-      "description": "CPU Utilization de la instancia api-dev via CloudWatch",
+      "description": "CPU Utilization instancia api-dev via CloudWatch",
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+      "pluginVersion": "12.4.2",
       "targets": [
         {
           "refId": "A",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
           "queryMode": "Metrics",
           "metricQueryType": 0,
           "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
           "region": "default",
           "namespace": "AWS/EC2",
           "metricName": "CPUUtilization",
-          "dimensions": {"InstanceId": ["i-0a4daf1eef0965993"]},
-          "statistics": ["Average"],
+          "dimensions": {"InstanceId": "i-0a4daf1eef0965993"},
+          "statistic": "Average",
           "matchExact": false,
-          "period": "300"
+          "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
+          "label": ""
         }
       ],
-      "gridPos": {"x": 0, "y": 60, "w": 24, "h": 8}
+      "gridPos": {"x": 0, "y": 60, "w": 24, "h": 8},
+      "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+      "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     }
   ]
 }
