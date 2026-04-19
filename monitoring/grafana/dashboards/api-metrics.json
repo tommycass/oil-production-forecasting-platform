@@ -3,7 +3,7 @@
   "uid": "verified-infra-dash",
   "tags": ["api", "fastapi", "prometheus", "aws", "cloudwatch"],
   "timezone": "utc",
-  "version": 101,
+  "version": 102,
   "schemaVersion": 38,
   "refresh": "5s",
   "templating": {
@@ -22,47 +22,11 @@
   },
   "panels": [
     {
-      "id": 100,
-      "type": "timeseries",
-      "title": "VERIFIED: CPU Utilization (Hardcoded ID)",
-      "description": "Prueba con el ID que funcionó en la terminal",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
-      "targets": [
-        {
-          "region": "us-east-2",
-          "namespace": "AWS/EC2",
-          "metricName": "CPUUtilization",
-          "dimensions": {"InstanceId": "i-0a4daf1eef0965993"},
-          "statistics": ["Average"],
-          "matchExact": true,
-          "period": "300"
-        }
-      ],
-      "gridPos": {"x": 0, "y": 66, "w": 24, "h": 6}
-    },
-    {
-      "id": 99,
-      "type": "timeseries",
-      "title": "DEBUG: Global CPU Utilization (us-east-2)",
-      "description": "Total CPU Utilization for all instances in the region (no filter)",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
-      "targets": [
-        {
-          "region": "us-east-2",
-          "namespace": "AWS/EC2",
-          "metricName": "CPUUtilization",
-          "statistics": ["Average"],
-          "period": "300"
-        }
-      ],
-      "gridPos": {"x": 0, "y": 60, "w": 24, "h": 6}
-    },
-    {
       "id": 1,
       "type": "stat",
       "title": "Uptime",
       "description": "Disponibilidad del servicio API",
-      "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado"}],
+      "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado", "refId": "A"}],
       "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
       "options": {
         "colorMode": "background",
@@ -89,7 +53,7 @@
       "type": "gauge",
       "title": "Tasa de Errores (5xx)",
       "description": "Porcentaje de peticiones fallidas",
-      "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100", "legendFormat": "% Errores"}],
+      "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100", "legendFormat": "% Errores", "refId": "A"}],
       "gridPos": {"x": 8, "y": 0, "w": 8, "h": 6},
       "options": {
         "reduceOptions": {"calcs": ["lastNotNull"]},
@@ -110,7 +74,7 @@
       "type": "stat",
       "title": "Peticiones Históricas",
       "description": "Total de interacciones",
-      "targets": [{"expr": "sum(http_requests_total)", "legendFormat": "Reqs"}],
+      "targets": [{"expr": "sum(http_requests_total)", "legendFormat": "Reqs", "refId": "A"}],
       "gridPos": {"x": 16, "y": 0, "w": 8, "h": 6},
       "options": {
         "colorMode": "value",
@@ -128,7 +92,7 @@
       "type": "timeseries",
       "title": "Volumen de Consultas",
       "description": "Tendencia de peticiones por minuto",
-      "targets": [{"expr": "sum(rate(http_requests_total[1m])) * 60", "legendFormat": "Rendimiento (req/min)"}],
+      "targets": [{"expr": "sum(rate(http_requests_total[1m])) * 60", "legendFormat": "Rendimiento (req/min)", "refId": "A"}],
       "gridPos": {"x": 0, "y": 6, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -153,7 +117,7 @@
       "type": "timeseries",
       "title": "Tiempo de Respuesta (Latencia p95)",
       "description": "El 95% de las peticiones se completan por debajo de este tiempo. (Umbrales de advertencia en 1s y 2s)",
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95 Latencia"}],
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95 Latencia", "refId": "A"}],
       "gridPos": {"x": 0, "y": 14, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -179,7 +143,7 @@
       "type": "timeseries",
       "title": "Uso de CPU por Contenedor",
       "description": "CPU usage en %",
-      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}"}],
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}", "refId": "A"}],
       "gridPos": {"x": 0, "y": 22, "w": 8, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -198,7 +162,7 @@
       "type": "timeseries",
       "title": "Uso de Memoria por Contenedor",
       "description": "Memoria utilizada en MB",
-      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}"}],
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}", "refId": "A"}],
       "gridPos": {"x": 8, "y": 22, "w": 8, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -218,10 +182,10 @@
       "title": "I/O de Disco y Red por Contenedor",
       "description": "Tasas de transferencia I/O",
       "targets": [
-        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}"},
-        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}"},
-        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net In - {{name}}"},
-        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}"}
+        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}", "refId": "A"},
+        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}", "refId": "B"},
+        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net In - {{name}}", "refId": "C"},
+        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}", "refId": "D"}
       ],
       "gridPos": {"x": 16, "y": 22, "w": 8, "h": 8},
       "options": {
@@ -241,7 +205,7 @@
       "type": "state-timeline",
       "title": "Registro Histórico de Caídas (API Status)",
       "description": "Historial de tiempo de actividad y cortes del servicio",
-      "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado de la API"}],
+      "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado de la API", "refId": "A"}],
       "gridPos": {"x": 0, "y": 30, "w": 24, "h": 6},
       "options": {
         "showValue": "never",
@@ -251,10 +215,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "lineWidth": 0,
-            "fillOpacity": 80
-          },
+          "custom": {"lineWidth": 0, "fillOpacity": 80},
           "mappings": [
             {"options": {"0": {"text": "Caída (DOWN)"}}, "type": "value"},
             {"options": {"1": {"text": "En Línea (UP)"}}, "type": "value"}
@@ -271,7 +232,7 @@
       "type": "timeseries",
       "title": "Latencia p95 por Endpoint",
       "description": "Percentil 95 de latencia desglosado por endpoint",
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "{{handler}}"}],
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "{{handler}}", "refId": "A"}],
       "gridPos": {"x": 0, "y": 36, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -301,12 +262,16 @@
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
-          "region": "us-east-2",
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
           "namespace": "AWS/EC2",
           "metricName": "CPUUtilization",
-          "dimensions": {"InstanceId": "$instance"},
+          "dimensions": {"InstanceId": ["$instance"]},
           "statistics": ["Average"],
-          "matchExact": true,
+          "matchExact": false,
           "period": "300"
         }
       ],
@@ -331,23 +296,32 @@
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
-          "region": "us-east-2",
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
           "namespace": "AWS/EC2",
           "metricName": "NetworkIn",
-          "dimensions": {"InstanceId": "$instance"},
+          "dimensions": {"InstanceId": ["$instance"]},
           "statistics": ["Average"],
-          "matchExact": true,
+          "matchExact": false,
           "period": "300",
-          "alias": "Network In"
+          "label": "Network In"
         },
         {
-          "region": "us-east-2",
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
           "namespace": "AWS/EC2",
           "metricName": "NetworkOut",
-          "dimensions": {"InstanceId": "$instance"},
+          "dimensions": {"InstanceId": ["$instance"]},
           "statistics": ["Average"],
-          "period": "",
-          "alias": "Network Out"
+          "matchExact": false,
+          "period": "300",
+          "label": "Network Out"
         }
       ],
       "gridPos": {"x": 12, "y": 44, "w": 12, "h": 8},
@@ -371,18 +345,32 @@
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
           "namespace": "AWS/EBS",
           "metricName": "VolumeReadOps",
+          "dimensions": {},
           "statistics": ["Average"],
-          "period": "",
-          "alias": "Read Ops"
+          "matchExact": false,
+          "period": "300",
+          "label": "Read Ops"
         },
         {
+          "refId": "B",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
           "namespace": "AWS/EBS",
           "metricName": "VolumeWriteOps",
+          "dimensions": {},
           "statistics": ["Average"],
-          "period": "",
-          "alias": "Write Ops"
+          "matchExact": false,
+          "period": "300",
+          "label": "Write Ops"
         }
       ],
       "gridPos": {"x": 0, "y": 52, "w": 24, "h": 8},
@@ -397,6 +385,29 @@
           "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
         }
       }
+    },
+    {
+      "id": 100,
+      "type": "timeseries",
+      "title": "EC2: CPU Utilization (api-dev)",
+      "description": "CPU Utilization de la instancia api-dev via CloudWatch",
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+      "targets": [
+        {
+          "refId": "A",
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/EC2",
+          "metricName": "CPUUtilization",
+          "dimensions": {"InstanceId": ["i-0a4daf1eef0965993"]},
+          "statistics": ["Average"],
+          "matchExact": false,
+          "period": "300"
+        }
+      ],
+      "gridPos": {"x": 0, "y": 60, "w": 24, "h": 8}
     }
   ]
 }
