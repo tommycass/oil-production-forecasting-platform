@@ -3,7 +3,7 @@
   "uid": "verified-infra-dash",
   "tags": ["api", "fastapi", "prometheus", "aws", "cloudwatch"],
   "timezone": "utc",
-  "version": 100,
+  "version": 101,
   "schemaVersion": 38,
   "refresh": "5s",
   "templating": {
@@ -368,7 +368,7 @@
       "type": "timeseries",
       "title": "EBS: Operaciones de I/O (CloudWatch)",
       "description": "EBS Volume Read and Write Ops from AWS CloudWatch",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-infra"},
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "targets": [
         {
           "namespace": "AWS/EBS",
