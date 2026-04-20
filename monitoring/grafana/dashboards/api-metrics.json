@@ -17,6 +17,45 @@
         "refresh": 1,
         "includeAll": true,
         "multi": false
+      },
+      {
+        "name": "container",
+        "label": "Contenedor",
+        "type": "query",
+        "datasource": {"type": "prometheus"},
+        "query": "label_values(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}, name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "sort": 1
+      },
+      {
+        "name": "endpoint",
+        "label": "Endpoint",
+        "type": "query",
+        "datasource": {"type": "prometheus"},
+        "query": "label_values(http_request_duration_seconds_bucket, handler)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "sort": 1
+      },
+      {
+        "name": "interval",
+        "label": "Ventana de cálculo",
+        "type": "custom",
+        "query": "1m,5m,15m,1h",
+        "current": {"selected": true, "text": "5m", "value": "5m"},
+        "options": [
+          {"selected": false, "text": "1m", "value": "1m"},
+          {"selected": true, "text": "5m", "value": "5m"},
+          {"selected": false, "text": "15m", "value": "15m"},
+          {"selected": false, "text": "1h", "value": "1h"}
+        ],
+        "includeAll": false,
+        "multi": false
       }
     ]
   },
@@ -100,7 +139,7 @@
       "type": "timeseries",
       "title": "Volumen de Consultas",
       "description": "Tendencia de peticiones por minuto",
-      "targets": [{"expr": "sum(rate(http_requests_total[1m])) * 60", "legendFormat": "Rendimiento (req/min)"}],
+      "targets": [{"expr": "sum(rate(http_requests_total[$interval])) * 60", "legendFormat": "Rendimiento (req/min)"}],
       "gridPos": {"x": 0, "y": 7, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -133,7 +172,7 @@
       "type": "timeseries",
       "title": "Tiempo de Respuesta (Latencia p95)",
       "description": "El 95% de las peticiones se completan por debajo de este tiempo. (Umbrales de advertencia en 1s y 2s)",
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95 Latencia"}],
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[$interval])) by (le))", "legendFormat": "p95 Latencia"}],
       "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -189,7 +228,7 @@
       "type": "timeseries",
       "title": "Latencia p95 por Endpoint",
       "description": "Percentil 95 de latencia desglosado por endpoint",
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "{{handler}}"}],
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{handler=~\"$endpoint\"}[$interval])) by (le, handler))", "legendFormat": "{{handler}}"}],
       "gridPos": {"x": 0, "y": 30, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -224,7 +263,7 @@
       "type": "timeseries",
       "title": "Uso de CPU por Contenedor",
       "description": "CPU usage en %",
-      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}"}],
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\",name=~\"$container\"}[$interval])) by (name, id) * 100", "legendFormat": "{{name}}"}],
       "gridPos": {"x": 0, "y": 39, "w": 8, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -243,7 +282,7 @@
       "type": "timeseries",
       "title": "Uso de Memoria por Contenedor",
       "description": "Memoria utilizada en MB",
-      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}"}],
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\",name=~\"$container\"}) by (name, id)", "legendFormat": "{{name}}"}],
       "gridPos": {"x": 8, "y": 39, "w": 8, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
@@ -263,10 +302,10 @@
       "title": "I/O de Disco y Red por Contenedor",
       "description": "Tasas de transferencia I/O",
       "targets": [
-        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}"},
-        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}"},
-        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net In - {{name}}"},
-        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}"}
+        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\",name=~\"$container\"}[$interval])) by (name, id)", "legendFormat": "Disk Read - {{name}}"},
+        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\",name=~\"$container\"}[$interval])) by (name, id)", "legendFormat": "Disk Write - {{name}}"},
+        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\",name=~\"$container\"}[$interval])) by (name, id)", "legendFormat": "Net In - {{name}}"},
+        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\",name=~\"$container\"}[$interval])) by (name, id)", "legendFormat": "Net Out - {{name}}"}
       ],
       "gridPos": {"x": 16, "y": 39, "w": 8, "h": 8},
       "options": {
