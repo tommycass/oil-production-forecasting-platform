@@ -221,11 +221,72 @@
       "panels": []
     },
     {
+      "id": 20,
+      "type": "stat",
+      "title": "CPU Total Contenedores (Ahora)",
+      "description": "CPU agregado de los contenedores seleccionados",
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\",name=~\"$container\"}[$interval])) * 100", "legendFormat": "CPU", "refId": "A"}],
+      "gridPos": {"x": 0, "y": 39, "w": 8, "h": 3},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 90}]}
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Memoria Total Contenedores (Ahora)",
+      "description": "Memoria working set agregada",
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{name!=\"\",name=~\"$container\"})", "legendFormat": "Memoria", "refId": "A"}],
+      "gridPos": {"x": 8, "y": 39, "w": 8, "h": 3},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {"mode": "fixed", "fixedColor": "blue"}
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Red Total Contenedores (Ahora)",
+      "description": "In + Out agregado de los contenedores seleccionados",
+      "targets": [{"expr": "sum(rate(container_network_receive_bytes_total{name!=\"\",name=~\"$container\"}[$interval])) + sum(rate(container_network_transmit_bytes_total{name!=\"\",name=~\"$container\"}[$interval]))", "legendFormat": "Red", "refId": "A"}],
+      "gridPos": {"x": 16, "y": 39, "w": 8, "h": 3},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {"mode": "fixed", "fixedColor": "purple"}
+        }
+      }
+    },
+    {
       "id": 10,
       "type": "timeseries",
       "title": "Uso de CPU por Contenedor",
       "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\",name=~\"$container\"}[$interval])) by (name) * 100", "legendFormat": "{{name}}", "refId": "A"}],
-      "gridPos": {"x": 0, "y": 39, "w": 8, "h": 8},
+      "gridPos": {"x": 0, "y": 42, "w": 8, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
@@ -234,7 +295,7 @@
       "type": "timeseries",
       "title": "Uso de Memoria por Contenedor",
       "targets": [{"expr": "sum(container_memory_working_set_bytes{name!=\"\",name=~\"$container\"}) by (name)", "legendFormat": "{{name}}", "refId": "A"}],
-      "gridPos": {"x": 8, "y": 39, "w": 8, "h": 8},
+      "gridPos": {"x": 8, "y": 42, "w": 8, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
@@ -248,7 +309,7 @@
         {"expr": "sum(rate(container_network_receive_bytes_total{name!=\"\",name=~\"$container\"}[$interval])) by (name)", "legendFormat": "Net In - {{name}}", "refId": "C"},
         {"expr": "sum(rate(container_network_transmit_bytes_total{name!=\"\",name=~\"$container\"}[$interval])) by (name)", "legendFormat": "Net Out - {{name}}", "refId": "D"}
       ],
-      "gridPos": {"x": 16, "y": 39, "w": 8, "h": 8},
+      "gridPos": {"x": 16, "y": 42, "w": 8, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "Bps", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
@@ -257,8 +318,96 @@
       "type": "row",
       "title": "Infraestructura AWS (CloudWatch)",
       "collapsed": false,
-      "gridPos": {"x": 0, "y": 47, "w": 24, "h": 1},
+      "gridPos": {"x": 0, "y": 50, "w": 24, "h": 1},
       "panels": []
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "EC2 CPU (Ahora)",
+      "description": "CPU actual de la instancia EC2 seleccionada",
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+      "pluginVersion": "12.4.2",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
+          "region": "default",
+          "namespace": "AWS/EC2",
+          "metricName": "CPUUtilization",
+          "dimensions": {"InstanceId": "$instance"},
+          "statistic": "Average",
+          "matchExact": false,
+          "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
+          "label": ""
+        }
+      ],
+      "gridPos": {"x": 0, "y": 51, "w": 12, "h": 3},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 90}]}
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "stat",
+      "title": "EC2 Memoria (Ahora)",
+      "description": "Memoria vía CloudWatch Agent (namespace CWAgent, mem_used_percent con dimensión InstanceId). Si no hay datos, verificar la config del agente en la EC2.",
+      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+      "pluginVersion": "12.4.2",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "queryLanguage": "CWLI",
+          "region": "default",
+          "namespace": "CWAgent",
+          "metricName": "mem_used_percent",
+          "dimensions": {"InstanceId": "$instance"},
+          "statistic": "Average",
+          "matchExact": false,
+          "period": "300",
+          "expression": "",
+          "sqlExpression": "",
+          "logGroups": [],
+          "id": "",
+          "label": ""
+        }
+      ],
+      "gridPos": {"x": 12, "y": 51, "w": 12, "h": 3},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "auto",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 75}, {"color": "red", "value": 90}]}
+        }
+      }
     },
     {
       "id": 15,
@@ -289,7 +438,7 @@
           "label": ""
         }
       ],
-      "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8},
+      "gridPos": {"x": 0, "y": 54, "w": 12, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "percent", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
@@ -342,7 +491,7 @@
           "label": "Network Out"
         }
       ],
-      "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8},
+      "gridPos": {"x": 12, "y": 54, "w": 12, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
@@ -395,7 +544,7 @@
           "label": "Write Ops"
         }
       ],
-      "gridPos": {"x": 0, "y": 56, "w": 24, "h": 8},
+      "gridPos": {"x": 0, "y": 62, "w": 24, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
       "fieldConfig": {"defaults": {"unit": "ops", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     }
