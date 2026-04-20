@@ -3,7 +3,7 @@
   "uid": "verified-infra-dash",
   "tags": ["api", "fastapi", "prometheus", "aws", "cloudwatch"],
   "timezone": "utc",
-  "version": 100,
+  "version": 101,
   "schemaVersion": 38,
   "refresh": "30s",
   "templating": {
@@ -22,12 +22,20 @@
   },
   "panels": [
     {
+      "id": 200,
+      "type": "row",
+      "title": "Overview - SLOs y KPIs",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 0, "w": 24, "h": 1},
+      "panels": []
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "Uptime",
       "description": "Disponibilidad del servicio API",
       "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado"}],
-      "gridPos": {"x": 0, "y": 0, "w": 8, "h": 6},
+      "gridPos": {"x": 0, "y": 1, "w": 8, "h": 6},
       "options": {
         "colorMode": "background",
         "justifyMode": "auto",
@@ -54,7 +62,7 @@
       "title": "Tasa de Errores (5xx)",
       "description": "Porcentaje de peticiones fallidas",
       "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100", "legendFormat": "% Errores"}],
-      "gridPos": {"x": 8, "y": 0, "w": 8, "h": 6},
+      "gridPos": {"x": 8, "y": 1, "w": 8, "h": 6},
       "options": {
         "reduceOptions": {"calcs": ["lastNotNull"]},
         "showThresholdLabels": false,
@@ -75,7 +83,7 @@
       "title": "Peticiones Históricas",
       "description": "Total de interacciones",
       "targets": [{"expr": "sum(http_requests_total)", "legendFormat": "Reqs"}],
-      "gridPos": {"x": 16, "y": 0, "w": 8, "h": 6},
+      "gridPos": {"x": 16, "y": 1, "w": 8, "h": 6},
       "options": {
         "colorMode": "value",
         "reduceOptions": {"calcs": ["lastNotNull"]}
@@ -93,7 +101,7 @@
       "title": "Volumen de Consultas",
       "description": "Tendencia de peticiones por minuto",
       "targets": [{"expr": "sum(rate(http_requests_total[1m])) * 60", "legendFormat": "Rendimiento (req/min)"}],
-      "gridPos": {"x": 0, "y": 6, "w": 24, "h": 8},
+      "gridPos": {"x": 0, "y": 7, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
         "legend": {"displayMode": "list", "placement": "bottom"}
@@ -113,12 +121,20 @@
       }
     },
     {
+      "id": 201,
+      "type": "row",
+      "title": "Performance de la API",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 15, "w": 24, "h": 1},
+      "panels": []
+    },
+    {
       "id": 4,
       "type": "timeseries",
       "title": "Tiempo de Respuesta (Latencia p95)",
       "description": "El 95% de las peticiones se completan por debajo de este tiempo. (Umbrales de advertencia en 1s y 2s)",
       "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95 Latencia"}],
-      "gridPos": {"x": 0, "y": 14, "w": 24, "h": 8},
+      "gridPos": {"x": 0, "y": 16, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
         "legend": {"displayMode": "list", "placement": "bottom"}
@@ -139,74 +155,12 @@
       }
     },
     {
-      "id": 10,
-      "type": "timeseries",
-      "title": "Uso de CPU por Contenedor",
-      "description": "CPU usage en %",
-      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}"}],
-      "gridPos": {"x": 0, "y": 22, "w": 8, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
-    },
-    {
-      "id": 11,
-      "type": "timeseries",
-      "title": "Uso de Memoria por Contenedor",
-      "description": "Memoria utilizada en MB",
-      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}"}],
-      "gridPos": {"x": 8, "y": 22, "w": 8, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "bytes",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
-    },
-    {
-      "id": 12,
-      "type": "timeseries",
-      "title": "I/O de Disco y Red por Contenedor",
-      "description": "Tasas de transferencia I/O",
-      "targets": [
-        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}"},
-        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}"},
-        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net In - {{name}}"},
-        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}"}
-      ],
-      "gridPos": {"x": 16, "y": 22, "w": 8, "h": 8},
-      "options": {
-        "tooltip": {"mode": "multi"},
-        "legend": {"displayMode": "list", "placement": "bottom"}
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps",
-          "color": {"mode": "palette-classic"},
-          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
-        }
-      }
-    },
-    {
       "id": 13,
       "type": "state-timeline",
       "title": "Registro Histórico de Caídas (API Status)",
       "description": "Historial de tiempo de actividad y cortes del servicio",
       "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado de la API"}],
-      "gridPos": {"x": 0, "y": 30, "w": 24, "h": 6},
+      "gridPos": {"x": 0, "y": 24, "w": 24, "h": 6},
       "options": {
         "showValue": "never",
         "alignValue": "left",
@@ -236,7 +190,7 @@
       "title": "Latencia p95 por Endpoint",
       "description": "Percentil 95 de latencia desglosado por endpoint",
       "targets": [{"expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))", "legendFormat": "{{handler}}"}],
-      "gridPos": {"x": 0, "y": 36, "w": 24, "h": 8},
+      "gridPos": {"x": 0, "y": 30, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
         "legend": {"displayMode": "list", "placement": "bottom"}
@@ -258,6 +212,84 @@
       }
     },
     {
+      "id": 202,
+      "type": "row",
+      "title": "Recursos de Contenedores",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 38, "w": 24, "h": 1},
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Uso de CPU por Contenedor",
+      "description": "CPU usage en %",
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{id=~\"/docker/.*\"}[1m])) by (name, id) * 100", "legendFormat": "{{name}}"}],
+      "gridPos": {"x": 0, "y": 39, "w": 8, "h": 8},
+      "options": {
+        "tooltip": {"mode": "multi"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Uso de Memoria por Contenedor",
+      "description": "Memoria utilizada en MB",
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{id=~\"/docker/.*\"}) by (name, id)", "legendFormat": "{{name}}"}],
+      "gridPos": {"x": 8, "y": 39, "w": 8, "h": 8},
+      "options": {
+        "tooltip": {"mode": "multi"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "I/O de Disco y Red por Contenedor",
+      "description": "Tasas de transferencia I/O",
+      "targets": [
+        {"expr": "sum(rate(container_fs_reads_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Read - {{name}}"},
+        {"expr": "sum(rate(container_fs_writes_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Disk Write - {{name}}"},
+        {"expr": "sum(rate(container_network_receive_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net In - {{name}}"},
+        {"expr": "sum(rate(container_network_transmit_bytes_total{id=~\"/docker/.*\"}[1m])) by (name, id)", "legendFormat": "Net Out - {{name}}"}
+      ],
+      "gridPos": {"x": 16, "y": 39, "w": 8, "h": 8},
+      "options": {
+        "tooltip": {"mode": "multi"},
+        "legend": {"displayMode": "list", "placement": "bottom"}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "color": {"mode": "palette-classic"},
+          "custom": {"axisPlacement": "auto", "drawStyle": "line", "fillOpacity": 15, "gradientMode": "opacity", "lineWidth": 2}
+        }
+      }
+    },
+    {
+      "id": 203,
+      "type": "row",
+      "title": "Infraestructura AWS (CloudWatch)",
+      "collapsed": false,
+      "gridPos": {"x": 0, "y": 47, "w": 24, "h": 1},
+      "panels": []
+    },
+    {
       "id": 15,
       "type": "timeseries",
       "title": "EC2: Utilización de CPU (CloudWatch)",
@@ -274,7 +306,7 @@
           "period": "300"
         }
       ],
-      "gridPos": {"x": 0, "y": 44, "w": 12, "h": 8},
+      "gridPos": {"x": 0, "y": 48, "w": 12, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
         "legend": {"displayMode": "list", "placement": "bottom"}
@@ -314,7 +346,7 @@
           "alias": "Network Out"
         }
       ],
-      "gridPos": {"x": 12, "y": 44, "w": 12, "h": 8},
+      "gridPos": {"x": 12, "y": 48, "w": 12, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
         "legend": {"displayMode": "list", "placement": "bottom"}
@@ -349,7 +381,7 @@
           "alias": "Write Ops"
         }
       ],
-      "gridPos": {"x": 0, "y": 52, "w": 24, "h": 8},
+      "gridPos": {"x": 0, "y": 56, "w": 24, "h": 8},
       "options": {
         "tooltip": {"mode": "multi"},
         "legend": {"displayMode": "list", "placement": "bottom"}
