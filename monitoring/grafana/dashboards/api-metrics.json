@@ -5,7 +5,7 @@
   "timezone": "utc",
   "version": 100,
   "schemaVersion": 38,
-  "refresh": "5s",
+  "refresh": "30s",
   "templating": {
     "list": [
       {
@@ -21,42 +21,6 @@
     ]
   },
   "panels": [
-    {
-      "id": 100,
-      "type": "timeseries",
-      "title": "VERIFIED: CPU Utilization (Hardcoded ID)",
-      "description": "Prueba con el ID que funcionó en la terminal",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
-      "targets": [
-        {
-          "region": "us-east-2",
-          "namespace": "AWS/EC2",
-          "metricName": "CPUUtilization",
-          "dimensions": {"InstanceId": "i-0a4daf1eef0965993"},
-          "statistics": ["Average"],
-          "matchExact": true,
-          "period": "300"
-        }
-      ],
-      "gridPos": {"x": 0, "y": 66, "w": 24, "h": 6}
-    },
-    {
-      "id": 99,
-      "type": "timeseries",
-      "title": "DEBUG: Global CPU Utilization (us-east-2)",
-      "description": "Total CPU Utilization for all instances in the region (no filter)",
-      "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
-      "targets": [
-        {
-          "region": "us-east-2",
-          "namespace": "AWS/EC2",
-          "metricName": "CPUUtilization",
-          "statistics": ["Average"],
-          "period": "300"
-        }
-      ],
-      "gridPos": {"x": 0, "y": 60, "w": 24, "h": 6}
-    },
     {
       "id": 1,
       "type": "stat",
