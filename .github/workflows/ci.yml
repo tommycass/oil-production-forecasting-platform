@@ -118,7 +118,9 @@ jobs:
               "sleep 20",
               "HEALTHY=false; for i in 1 2 3 4 5 6; do curl -sf http://localhost:8000/health && HEALTHY=true && break || sleep 10; done",
               "if [ \"$HEALTHY\" != \"true\" ]; then echo \"Health check failed. Rolling back to previous image...\"; if [ \"$PREV_IMAGE\" != \"none\" ] && [ -n \"$PREV_IMAGE\" ]; then docker tag \"$PREV_IMAGE\" \"$REPO:latest\" && docker compose -f infra/docker-compose.yml up -d api && echo \"Rollback complete.\"; fi; exit 1; fi",
-              "echo \"Post-deploy health check passed. Service is healthy.\""
+              "echo \"Post-deploy health check passed. Service is healthy.\"",
+              "docker image prune -af",
+              "echo \"Docker image cleanup complete.\""
             ]' \
             --query 'Command.CommandId' \
             --output text)
@@ -179,7 +181,9 @@ jobs:
               "sleep 20",
               "HEALTHY=false; for i in 1 2 3 4 5 6; do curl -sf http://localhost:8000/health && HEALTHY=true && break || sleep 10; done",
               "if [ \"$HEALTHY\" != \"true\" ]; then echo \"Health check failed. Rolling back to previous image...\"; if [ \"$PREV_IMAGE\" != \"none\" ] && [ -n \"$PREV_IMAGE\" ]; then docker tag \"$PREV_IMAGE\" \"$REPO:latest\" && docker compose -f infra/docker-compose.yml up -d api && echo \"Rollback complete.\"; fi; exit 1; fi",
-              "echo \"Post-deploy health check passed. Service is healthy.\""
+              "echo \"Post-deploy health check passed. Service is healthy.\"",
+              "docker image prune -af",
+              "echo \"Docker image cleanup complete.\""
             ]' \
             --query 'Command.CommandId' \
             --output text)

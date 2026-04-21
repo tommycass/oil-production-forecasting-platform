@@ -18,6 +18,11 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   prometheus:
     image: prom/prometheus:latest
@@ -27,6 +32,11 @@ services:
       - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   grafana:
     image: grafana/grafana:latest
@@ -43,6 +53,11 @@ services:
       - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.47.0
@@ -60,6 +75,11 @@ services:
     devices:
       - /dev/kmsg
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -70,3 +90,8 @@ services:
       - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ../monitoring/.slack_webhook:/etc/alertmanager/.slack_webhook:ro
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
