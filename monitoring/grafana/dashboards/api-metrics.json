@@ -104,7 +104,7 @@
       "type": "gauge",
       "title": "Tasa de Errores (5xx)",
       "description": "Porcentaje de peticiones fallidas",
-      "targets": [{"expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100", "legendFormat": "% Errores", "refId": "A"}],
+      "targets": [{"expr": "(sum(rate(http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / (sum(rate(http_requests_total[5m])) or vector(1)) * 100", "legendFormat": "% Errores", "refId": "A"}],
       "gridPos": {"x": 8, "y": 1, "w": 8, "h": 6},
       "options": {
         "reduceOptions": {"calcs": ["lastNotNull"]},
