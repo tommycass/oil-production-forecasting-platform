@@ -7,9 +7,9 @@ permissions:
 
 on:
   push:
-    branches: [develop, main]
+    branches: [staging, main]
   pull_request:
-    branches: [develop, main]
+    branches: [staging, main]
 
 jobs:
   test:
@@ -151,7 +151,7 @@ jobs:
   deploy_dev:
     needs: build
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' # Solo despliega en develop
+    if: github.ref == 'refs/heads/staging' # Solo despliega en staging
 
     steps:
       - name: Configure AWS Credentials
@@ -172,7 +172,7 @@ jobs:
               "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $REPO",
               "cd /home/ubuntu/oil-production-forecasting-platform",
               "git config --system --add safe.directory /home/ubuntu/oil-production-forecasting-platform",
-              "git pull origin develop",
+              "git pull origin staging",
               "echo \"${{ secrets.SLACK_WEBHOOK_URL }}\" > monitoring/.slack_webhook",
               "PREV_IMAGE=$(docker compose -f infra/docker-compose.yml ps -q api 2>/dev/null | head -1 | xargs -r docker inspect --format \"{{.Image}}\" 2>/dev/null || echo none)",
               "echo \"Previous image digest: $PREV_IMAGE\"",
