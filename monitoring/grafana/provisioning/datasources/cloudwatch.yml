@@ -1,0 +1,11 @@
+apiVersion: 1
+datasources:
+  - name: AWS-CloudWatch-Verified
+    type: cloudwatch
+    uid: aws-cloudwatch-final
+    access: proxy
+    jsonData:
+      authType: default
+      defaultRegion: us-east-2
+      crossAccountQuerying: false
+    editable: true

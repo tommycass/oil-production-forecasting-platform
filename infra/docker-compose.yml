@@ -12,6 +12,17 @@ services:
     env_file:
       - ../api/.env
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
 
   prometheus:
     image: prom/prometheus:latest
@@ -21,6 +32,41 @@ services:
       - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  grafana-init:
+    image: alpine:3.19
+    restart: "no"
+    environment:
+      - EC2_INSTANCE_ID=${EC2_INSTANCE_ID:-unknown}
+    volumes:
+      - ../monitoring/grafana/dashboards:/dashboards-tpl:ro
+      - grafana_dashboards:/dashboards-out
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        apk add --no-cache curl >/dev/null 2>&1
+        TOKEN=$$(curl -sf -X PUT "http://169.254.169.254/latest/api/token" \
+          -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null) || TOKEN=""
+        if [ -n "$$TOKEN" ]; then
+          INSTANCE_ID=$$(curl -sf -H "X-aws-ec2-metadata-token: $$TOKEN" \
+            http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null) || INSTANCE_ID=""
+        fi
+        if [ -z "$$INSTANCE_ID" ]; then
+          INSTANCE_ID="$$EC2_INSTANCE_ID"
+        fi
+        echo "[grafana-init] resolved EC2 instance id: $$INSTANCE_ID"
+        for tpl in /dashboards-tpl/*.tpl; do
+          [ -f "$$tpl" ] || continue
+          name=$$(basename "$$tpl" .tpl)
+          sed "s|__EC2_INSTANCE_ID__|$$INSTANCE_ID|g" "$$tpl" > "/dashboards-out/$$name"
+          echo "[grafana-init] generated $$name"
+        done
 
   grafana:
     image: grafana/grafana:latest
@@ -29,12 +75,30 @@ services:
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/api-metrics.json
+      - GF_AWS_ALLOWED_AUTH_PROVIDERS=default,credentials,keys,ec2_iam_role
+      - GF_AWS_DEFAULT_REGION=us-east-2
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_AUTH_ANONYMOUS_HIDE_VERSION=true
+      - GF_AUTH_DISABLE_SIGNOUT_MENU=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_VIEWERS_CAN_EDIT=false
+      - GF_EXPLORE_ENABLED=false
+      - GF_SNAPSHOTS_EXTERNAL_ENABLED=false
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_started
+      grafana-init:
+        condition: service_completed_successfully
     volumes:
       - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_dashboards:/var/lib/grafana/dashboards:ro
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.47.0
@@ -52,6 +116,11 @@ services:
     devices:
       - /dev/kmsg
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
 
   alertmanager:
     image: prom/alertmanager:latest
@@ -62,3 +131,11 @@ services:
       - ../monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - ../monitoring/.slack_webhook:/etc/alertmanager/.slack_webhook:ro
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
+volumes:
+  grafana_dashboards:

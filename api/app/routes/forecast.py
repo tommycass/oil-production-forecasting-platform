@@ -1,8 +1,9 @@
 from datetime import date
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from app.schemas.forecast import ForecastResponse
 from app.core.security import verify_api_key
 from app.services.forecast import get_forecast, WELL_BASE_PRODUCTION
+from app.core.rate_limit import limiter
 
 router = APIRouter()
 
@@ -17,9 +18,11 @@ router = APIRouter()
         403: {"description": "API key inválida o ausente"},
         404: {"description": "El pozo no existe"},
         422: {"description": "date_start es posterior a date_end o los parámetros tienen formato inválido"},
+        429: {"description": "Rate limit excedido"},
     },
 )
-def forecast(id_well: str, date_start: date, date_end: date, api_key: None = Depends(verify_api_key)):
+@limiter.limit("60/minute")
+def forecast(request: Request, id_well: str, date_start: date, date_end: date, api_key: None = Depends(verify_api_key)):
     if date_start > date_end:
         raise HTTPException(status_code=422, detail="date_start must be before date_end")
     if id_well not in WELL_BASE_PRODUCTION:

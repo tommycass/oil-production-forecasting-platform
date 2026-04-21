@@ -112,21 +112,21 @@ El proyecto usa **GitFlow**.
 
 ```
 main        → versión estable (entregables)
-develop     → integración continua
+staging     → integración continua
 feature/*   → una rama por funcionalidad
 ```
 
 ### Crear una feature branch
 
 ```bash
-git checkout develop
+git checkout staging
 git pull
 git checkout -b feature/nombre-feature
 ```
 
 ### Abrir un Pull Request
 
-Una vez terminada la feature, abrir un PR hacia `develop`. Otro integrante debe revisar y aprobar antes del merge.
+Una vez terminada la feature, abrir un PR hacia `staging`. Otro integrante debe revisar y aprobar antes del merge.
 
 ---
 

@@ -78,13 +78,13 @@ Petición HTTP → Route handler → Dependencia `verify_api_key` (Chequeo de He
 
 GitHub Actions (`.github/workflows/ci.yml`) ejecuta tres jobs secuenciales:
 
-1. **test** (en push/PR a `develop` o `main`): Ejecuta `ruff check api/app/` y luego `pytest api/tests/ -v` con la API_KEY inyectada.
+1. **test** (en push/PR a `staging` o `main`): Ejecuta `ruff check api/app/` y luego `pytest api/tests/ -v` con la API_KEY inyectada.
 2. **build** (solo si `test` pasa): Construye la imagen apuntando al contexto correcto (`docker build -f infra/Dockerfile api/`), escanea vulnerabilidades con Trivy, chequea la salud del contenedor y publica las imágenes en GHCR.
 3. **deploy** (solo en merge a `main`): Se conecta por SSH a la instancia EC2 en AWS, descarga la última versión del código y despliega utilizando `docker compose -f infra/docker-compose.yml up -d`.
 
 ### Git Workflow    
 
-Basado en GitFlow: ramas de features → `develop` → `main`.
+Basado en GitFlow: ramas de features → `staging` → `main`.
 Nomenclatura de ramas: `feature/`, `fix/`, `docs/`.
 
 ## Restricciones Clave

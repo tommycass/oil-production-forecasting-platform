@@ -37,10 +37,39 @@ Implementaremos la **Alternativa B**, utilizando **GitHub Actions** para orquest
 - GitHub Actions se autentica temporalmente en AWS asumiendo el rol `RolGitHubCI`.
 - Se publican las imágenes en **Amazon ECR** con tags `latest` y el SHA del commit para permitir rollbacks.
 
-**3. Despliegue Automatizado (`deploy`):**
-- Se ejecuta únicamente al hacer merge a la rama `main`.
-- Se utiliza SSM (`aws ssm send-command`) apuntando a la instancia con la etiqueta `Name=api`.
-- El script ingresa al servidor, autentica el demonio de Docker con ECR, actualiza el código (`git pull`) y reinicia los servicios (`sudo docker compose -f infra/docker-compose.yml pull` y `up -d`).
+**3. Despliegue Automatizado (`deploy` / `deploy_dev`):**
+- Se ejecuta únicamente al hacer merge a `main` (producción) o `develop` (dev), apuntando a la instancia EC2 con la etiqueta correspondiente (`Name=api` o `Name=api-dev`).
+- El script en EC2 implementa una estrategia de despliegue de bajo riesgo con rollback automático (ver sección siguiente).
+- El job de GitHub Actions espera activamente el resultado del comando SSM (polling cada 10s, timeout 6 min) y falla si el despliegue en EC2 falla, garantizando visibilidad del estado real del servidor en el pipeline.
+
+### Estrategia de despliegue de bajo riesgo y recuperación automática
+
+**Problema:** `docker compose up -d` actualiza el contenedor sin verificar que el nuevo servicio responde correctamente. Si la imagen nueva está rota, el servicio queda caído hasta intervención manual, y GitHub Actions reportaría éxito igualmente.
+
+**Decisión:** Implementar verificación post-despliegue con rollback automático al digest de imagen previo.
+
+**Flujo en EC2 (ejecutado vía SSM):**
+1. Antes de actualizar, se captura el digest de la imagen actualmente en ejecución (`docker inspect --format "{{.Image}}"`) como punto de restauración.
+2. Se descarga la nueva imagen (`docker compose pull`) y se levantan los contenedores (`docker compose up -d`).
+3. Se espera 20 segundos para que el servicio inicialice y luego se realizan hasta 6 intentos de `curl -sf http://localhost:8000/health` con 10 segundos de pausa entre intentos (ventana total: ~80 segundos).
+4. Si todos los intentos fallan, se re-etiqueta el digest previo como `latest` y se reinicia el contenedor de API con la imagen anterior. El script termina con `exit 1`, lo que propaga el fallo al job de GitHub Actions.
+5. Si el health check pasa, el despliegue se considera exitoso.
+
+**Alternativa descartada:** Guardar el tag SHA del commit anterior y re-descargarlo desde ECR para el rollback. Se descartó porque requiere conocer el SHA previo en el momento del deploy (no disponible directamente en el contexto del script SSM), mientras que el digest local del contenedor en ejecución es siempre accesible sin llamadas externas a ECR.
+
+### Healthcheck en Docker Compose
+
+Se configuró un `healthcheck` en el servicio `api` del `docker-compose.yml`:
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 10s
+```
+
+Esto permite que Docker marque el contenedor como `healthy` o `unhealthy` independientemente del estado `running`. Con `restart: unless-stopped`, Docker reinicia automáticamente contenedores que fallen, pero sin healthcheck no distingue entre un proceso corriendo y un servicio respondiendo. El `start_period` de 10s evita falsos negativos durante el arranque de Uvicorn.
 
 ## Consecuencias
 **Positivas:**

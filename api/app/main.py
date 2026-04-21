@@ -1,6 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from app.routes import health, wells, forecast
 from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi.errors import RateLimitExceeded
+from app.core.rate_limit import limiter
 
 tags_metadata = [
     {
@@ -46,6 +49,17 @@ X-API-Key: <tu-api-key>
         "name": "Equipo Oil & Gas Forecast",
     },
 )
+
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Rate limit exceeded. Try again later."},
+    )
+
 
 app.include_router(health.router)
 app.include_router(wells.router)
