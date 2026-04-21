@@ -37,19 +37,26 @@ oil-production-forecasting-platform/
 │   └── README.md
 │
 ├── docs/
+│   ├── consigna-fase1.md
 │   └── adr/                        # Architecture Decision Records
-│       ├── ADR-001-framework-backend.md
-│       ├── ADR-002-docker.md
-│       └── ADR-003-monitoring.md
+│       ├── 0001-framework-backend.md
+│       ├── 0002-docker-containerizacion.md
+│       ├── 0003-prometheus-grafana-monitoreo.md
+│       ├── 0004-alertmanager-slack-notificaciones.md
+│       ├── 0005-cloudwatch-monitoreo-ec2.md
+│       └── 0006-limpieza-disco-ec2.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
-│   └── docker-compose.yml          # Orquestación: API + Prometheus + Grafana
+│   └── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor
 │
 ├── monitoring/
-│   ├── prometheus.yml              # Configuración de scraping de métricas
+│   ├── prometheus.yml              # Scraping de métricas
+│   ├── alerts.yml                  # Reglas de alerta de Prometheus
+│   ├── alertmanager.yml            # Routing de alertas a Slack
 │   └── grafana/
-│       └── dashboards/             # Dashboards exportados de Grafana
+│       ├── provisioning/           # Datasources (Prometheus, CloudWatch) y proveedor de dashboards
+│       └── dashboards/             # Template del dashboard (api-metrics.json.tpl)
 │
 ├── .gitignore
 └── README.md
@@ -73,6 +80,15 @@ docker compose -f infra/docker-compose.yml up
 | Documentación Swagger | http://localhost:8000/docs |
 | Grafana | http://localhost:3000 |
 | Prometheus | http://localhost:9090 |
+| Alertmanager | http://localhost:9093 |
+| cAdvisor | http://localhost:8080 |
+
+### Acceso a Grafana
+
+- **Administrador:** usuario `admin` / contraseña `admin` (configurable vía `GF_SECURITY_ADMIN_PASSWORD`).
+- **Visor externo (solo lectura):** `ext_read` / `visitor123`. Se provisiona automáticamente al arrancar el stack mediante el init container `grafana-user-init`.
+- **Link kiosko para operarios:** `http://<host>:3000/d/verified-infra-dash?kiosk=true` — oculta la barra de navegación y bloquea edición.
+- **Auto-detección de instancia EC2:** el dashboard es un template (`api-metrics.json.tpl`); un init container (`grafana-init`) consulta IMDSv2 al arrancar y resuelve el `instance-id` del host. La misma imagen corre en staging y producción sin reconfiguración.
 
 ### Sin Docker (desarrollo local)
 
@@ -141,10 +157,13 @@ Una vez terminada la feature, abrir un PR hacia `staging`. Otro integrante debe 
 
 ## Despliegue Continuo (CD) y AWS
 
-El proyecto cuenta con despliegue automatizado hacia una instancia **AWS EC2**. 
+El proyecto cuenta con despliegue automatizado hacia instancias **AWS EC2** (staging y producción).
 
 El flujo funciona de la siguiente manera:
-1. Al mergear un Pull Request hacia la rama `main`, GitHub Actions dispara el pipeline definido en `.github/workflows/ci.yml`.
-2. Se ejecutan los tests, el análisis estático y se construye la imagen Docker.
-3. La imagen se publica en GHCR.
-4. El job de deploy se conecta vía SSH a la instancia EC2, descarga el código más reciente y reinicia los contenedores utilizando el `docker-compose.yml`.
+1. Al mergear un Pull Request hacia `staging` (dev) o `main` (prod), GitHub Actions dispara el pipeline definido en `.github/workflows/ci.yml`.
+2. Se ejecutan los tests (`pytest`), el análisis estático (`ruff`) y se construye la imagen Docker (con escaneo de vulnerabilidades de Trivy).
+3. La imagen se publica en **Amazon ECR** (registro privado), autenticándose con GitHub mediante **OIDC** — sin claves estáticas ni `.pem`.
+4. El job de deploy usa **AWS Systems Manager (SSM)** para enviar el comando de actualización a la instancia EC2 identificada por tag (`Name=api` para prod, `Name=api-dev` para staging), sin abrir puertos SSH.
+5. En la EC2, el script de deploy implementa rollback automático: captura el digest de la imagen actual, pullea la nueva, verifica `/health` con hasta 6 reintentos y si falla restaura la versión anterior.
+
+Detalles completos en [ADR-002](docs/adr/0002-docker-containerizacion.md).

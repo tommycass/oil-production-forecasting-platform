@@ -77,11 +77,10 @@ services:
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/api-metrics.json
       - GF_AWS_ALLOWED_AUTH_PROVIDERS=default,credentials,keys,ec2_iam_role
       - GF_AWS_DEFAULT_REGION=us-east-2
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-      - GF_AUTH_ANONYMOUS_HIDE_VERSION=true
-      - GF_AUTH_DISABLE_SIGNOUT_MENU=true
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_AUTO_ASSIGN_ORG=true
+      - GF_USERS_AUTO_ASSIGN_ORG_ROLE=Viewer
+      - GF_AUTH_DISABLE_SIGNOUT_MENU=true
       - GF_USERS_VIEWERS_CAN_EDIT=false
       - GF_EXPLORE_ENABLED=false
       - GF_SNAPSHOTS_EXTERNAL_ENABLED=false
@@ -99,6 +98,32 @@ services:
       options:
         max-size: "20m"
         max-file: "2"
+
+  grafana-user-init:
+    image: alpine:3.19
+    restart: "no"
+    depends_on:
+      grafana:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        apk add --no-cache curl >/dev/null 2>&1
+        echo "[user-init] waiting for grafana..."
+        until curl -sf http://grafana:3000/api/health >/dev/null 2>&1; do
+          sleep 2
+        done
+        echo "[user-init] grafana ready, ensuring ext_read viewer exists"
+        HTTP=$$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+          http://admin:admin@grafana:3000/api/admin/users \
+          -H "Content-Type: application/json" \
+          -d '{"name":"External Reader","login":"ext_read","password":"visitor123"}')
+        if [ "$$HTTP" = "200" ]; then
+          echo "[user-init] user ext_read created"
+        else
+          echo "[user-init] user already exists or status=$$HTTP"
+        fi
 
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.47.0
