@@ -369,8 +369,8 @@
     {
       "id": 24,
       "type": "stat",
-      "title": "EC2 Memoria (Ahora)",
-      "description": "Memoria vía CloudWatch Agent (namespace CWAgent, mem_used_percent con dimensión InstanceId). Si no hay datos, verificar la config del agente en la EC2.",
+      "title": "EC2 Status Check (Ahora)",
+      "description": "Chequeo combinado de salud de la instancia EC2 (hipervisor + SO) publicado por AWS. 0 = OK, >0 = falla. Respalda el SLO de disponibilidad desde el lado del proveedor.",
       "datasource": {"type": "cloudwatch", "uid": "aws-cloudwatch-final"},
       "pluginVersion": "12.4.2",
       "targets": [
@@ -382,10 +382,10 @@
           "metricEditorMode": 0,
           "queryLanguage": "CWLI",
           "region": "default",
-          "namespace": "CWAgent",
-          "metricName": "mem_used_percent",
+          "namespace": "AWS/EC2",
+          "metricName": "StatusCheckFailed",
           "dimensions": {"InstanceId": "$instance"},
-          "statistic": "Average",
+          "statistic": "Maximum",
           "matchExact": false,
           "period": "300",
           "expression": "",
@@ -404,9 +404,12 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
+          "unit": "short",
           "color": {"mode": "thresholds"},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 75}, {"color": "red", "value": 90}]}
+          "mappings": [
+            {"options": {"0": {"color": "green", "text": "OK"}}, "type": "value"}
+          ],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
         }
       }
     },
