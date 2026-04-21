@@ -3,7 +3,7 @@
   "uid": "verified-infra-dash",
   "tags": ["api", "fastapi", "prometheus", "aws"],
   "timezone": "utc",
-  "version": 105,
+  "version": 106,
   "schemaVersion": 40,
   "refresh": "10s",
   "templating": {
@@ -12,11 +12,11 @@
         "name": "instance",
         "label": "Instancia EC2",
         "type": "custom",
-        "query": "i-0a4daf1eef0965993,i-0448993ed9fdd0b0f",
-        "current": {"text": "i-0a4daf1eef0965993", "value": "i-0a4daf1eef0965993"},
+        "hide": 2,
+        "query": "__EC2_INSTANCE_ID__",
+        "current": {"text": "__EC2_INSTANCE_ID__", "value": "__EC2_INSTANCE_ID__"},
         "options": [
-          {"text": "i-0a4daf1eef0965993", "value": "i-0a4daf1eef0965993", "selected": true},
-          {"text": "i-0448993ed9fdd0b0f", "value": "i-0448993ed9fdd0b0f", "selected": false}
+          {"text": "__EC2_INSTANCE_ID__", "value": "__EC2_INSTANCE_ID__", "selected": true}
         ],
         "includeAll": false,
         "multi": false,
