@@ -77,6 +77,14 @@ services:
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/api-metrics.json
       - GF_AWS_ALLOWED_AUTH_PROVIDERS=default,credentials,keys,ec2_iam_role
       - GF_AWS_DEFAULT_REGION=us-east-2
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_AUTH_ANONYMOUS_HIDE_VERSION=true
+      - GF_AUTH_DISABLE_SIGNOUT_MENU=true
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_VIEWERS_CAN_EDIT=false
+      - GF_EXPLORE_ENABLED=false
+      - GF_SNAPSHOTS_EXTERNAL_ENABLED=false
     depends_on:
       prometheus:
         condition: service_started
