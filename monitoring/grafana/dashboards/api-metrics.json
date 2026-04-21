@@ -124,8 +124,8 @@
       "id": 5,
       "type": "stat",
       "title": "Peticiones Históricas",
-      "description": "Total de interacciones",
-      "targets": [{"expr": "sum(http_requests_total)", "legendFormat": "Reqs", "refId": "A"}],
+      "description": "Total de peticiones en el rango del dashboard, acumulando a través de reinicios de la API",
+      "targets": [{"expr": "sum(increase(http_requests_total[$__range]))", "legendFormat": "Reqs", "refId": "A"}],
       "gridPos": {"x": 16, "y": 1, "w": 8, "h": 6},
       "options": {
         "colorMode": "value",
