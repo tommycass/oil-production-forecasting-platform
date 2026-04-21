@@ -3,9 +3,9 @@
   "uid": "verified-infra-dash",
   "tags": ["api", "fastapi", "prometheus", "aws"],
   "timezone": "utc",
-  "version": 104,
+  "version": 105,
   "schemaVersion": 40,
-  "refresh": "30s",
+  "refresh": "10s",
   "templating": {
     "list": [
       {
@@ -125,7 +125,7 @@
       "type": "stat",
       "title": "Peticiones Históricas",
       "description": "Total de peticiones en el rango del dashboard, acumulando a través de reinicios de la API",
-      "targets": [{"expr": "sum(increase(http_requests_total[$__range]))", "legendFormat": "Reqs", "refId": "A"}],
+      "targets": [{"expr": "round(sum(increase(http_requests_total[$__range])))", "legendFormat": "Reqs", "refId": "A"}],
       "gridPos": {"x": 16, "y": 1, "w": 8, "h": 6},
       "options": {
         "colorMode": "value",
@@ -134,6 +134,7 @@
       "fieldConfig": {
         "defaults": {
           "unit": "short",
+          "decimals": 0,
           "color": {"mode": "fixed", "fixedColor": "super-light-blue"}
         }
       }
@@ -225,8 +226,8 @@
       "id": 20,
       "type": "stat",
       "title": "CPU Total Contenedores (Ahora)",
-      "description": "CPU agregado de los contenedores seleccionados",
-      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\",name=~\"$container\"}[$interval])) * 100", "legendFormat": "CPU", "refId": "A"}],
+      "description": "CPU agregado de los contenedores seleccionados, como % de los cores del host",
+      "targets": [{"expr": "sum(rate(container_cpu_usage_seconds_total{name!=\"\",name=~\"$container\"}[$interval])) / scalar(sum(machine_cpu_cores)) * 100", "legendFormat": "CPU", "refId": "A"}],
       "gridPos": {"x": 0, "y": 39, "w": 8, "h": 3},
       "options": {
         "colorMode": "value",
@@ -246,8 +247,8 @@
       "id": 21,
       "type": "stat",
       "title": "Memoria Total Contenedores (Ahora)",
-      "description": "Memoria working set agregada",
-      "targets": [{"expr": "sum(container_memory_working_set_bytes{name!=\"\",name=~\"$container\"})", "legendFormat": "Memoria", "refId": "A"}],
+      "description": "Memoria working set agregada como % de la memoria del host",
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{name!=\"\",name=~\"$container\"}) / scalar(sum(machine_memory_bytes)) * 100", "legendFormat": "Memoria", "refId": "A"}],
       "gridPos": {"x": 8, "y": 39, "w": 8, "h": 3},
       "options": {
         "colorMode": "value",
@@ -257,8 +258,9 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
-          "color": {"mode": "fixed", "fixedColor": "blue"}
+          "unit": "percent",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 70}, {"color": "red", "value": 90}]}
         }
       }
     },
@@ -295,10 +297,10 @@
       "id": 11,
       "type": "timeseries",
       "title": "Uso de Memoria por Contenedor",
-      "targets": [{"expr": "sum(container_memory_working_set_bytes{name!=\"\",name=~\"$container\"}) by (name)", "legendFormat": "{{name}}", "refId": "A"}],
+      "targets": [{"expr": "sum(container_memory_working_set_bytes{name!=\"\",name=~\"$container\"}) by (name) / 1024 / 1024", "legendFormat": "{{name}}", "refId": "A"}],
       "gridPos": {"x": 8, "y": 42, "w": 8, "h": 8},
       "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
-      "fieldConfig": {"defaults": {"unit": "bytes", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
+      "fieldConfig": {"defaults": {"unit": "mbytes", "color": {"mode": "palette-classic"}, "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2}}}
     },
     {
       "id": 12,
