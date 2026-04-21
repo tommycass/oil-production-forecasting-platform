@@ -40,7 +40,9 @@ docker compose -f infra/docker-compose.yml up --build
 
 # API: http://localhost:8000
 # Prometheus: http://localhost:9090
-# Grafana: http://localhost:3000 (admin/admin
+# Grafana: http://localhost:3000 (admin admin/admin | visor ext_read/visitor123)
+# Alertmanager: http://localhost:9093
+# cAdvisor: http://localhost:8080
 ```
 
 ### Autenticación
@@ -79,8 +81,8 @@ Petición HTTP → Route handler → Dependencia `verify_api_key` (Chequeo de He
 GitHub Actions (`.github/workflows/ci.yml`) ejecuta tres jobs secuenciales:
 
 1. **test** (en push/PR a `staging` o `main`): Ejecuta `ruff check api/app/` y luego `pytest api/tests/ -v` con la API_KEY inyectada.
-2. **build** (solo si `test` pasa): Construye la imagen apuntando al contexto correcto (`docker build -f infra/Dockerfile api/`), escanea vulnerabilidades con Trivy, chequea la salud del contenedor y publica las imágenes en GHCR.
-3. **deploy** (solo en merge a `main`): Se conecta por SSH a la instancia EC2 en AWS, descarga la última versión del código y despliega utilizando `docker compose -f infra/docker-compose.yml up -d`.
+2. **build** (solo si `test` pasa): Construye la imagen apuntando al contexto correcto (`docker build -f infra/Dockerfile api/`), escanea vulnerabilidades con Trivy, chequea la salud del contenedor y publica las imágenes en **Amazon ECR** (autenticación OIDC).
+3. **deploy** (en merge a `staging` o `main`): Usa **AWS Systems Manager (SSM)** para ejecutar el despliegue en la instancia EC2 correspondiente, identificada por tag (`Name=api-dev` o `Name=api`). El script en EC2 captura el digest previo, pullea la nueva imagen, verifica `/health` con reintentos y hace rollback automático si falla.
 
 ### Git Workflow    
 
