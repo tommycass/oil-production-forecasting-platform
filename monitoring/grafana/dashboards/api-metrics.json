@@ -188,9 +188,10 @@
       "fieldConfig": {
         "defaults": {
           "custom": {"lineWidth": 0, "fillOpacity": 80},
+          "color": {"mode": "thresholds"},
           "mappings": [
-            {"options": {"0": {"text": "Caída (DOWN)"}}, "type": "value"},
-            {"options": {"1": {"text": "En Línea (UP)"}}, "type": "value"}
+            {"options": {"0": {"color": "red", "text": "Caída (DOWN)"}}, "type": "value"},
+            {"options": {"1": {"color": "green", "text": "En Línea (UP)"}}, "type": "value"}
           ],
           "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
         }
