@@ -2,7 +2,7 @@
 **Estado:** Aceptado
 
 ## Contexto
-El equipo trabaja de forma distribuida con un modelo de ramas por funcionalidad y Pull Requests hacia main/develop. Sin automatización, la calidad del código depende de revisiones manuales propensas a error, y el despliegue a nuestro servidor AWS EC2 requiere conectarse manualmente por SSH y ejecutar scripts. Necesitamos garantizar que cada cambio no rompa el sistema, que las imágenes Docker sean seguras y publicadas, y automatizar el despliegue al entorno de desarrollo en AWS de forma continua.
+El equipo trabaja de forma distribuida con un modelo de ramas por funcionalidad y Pull Requests hacia main/staging. Sin automatización, la calidad del código depende de revisiones manuales propensas a error, y el despliegue a nuestro servidor AWS EC2 requiere conectarse manualmente por SSH y ejecutar scripts. Necesitamos garantizar que cada cambio no rompa el sistema, que las imágenes Docker sean seguras y publicadas, y automatizar el despliegue al entorno de desarrollo en AWS de forma continua.
 
 ## Alternativas Consideradas para el Despliegue
 
@@ -38,7 +38,7 @@ Implementaremos la **Alternativa B**, utilizando **GitHub Actions** para orquest
 - Se publican las imágenes en **Amazon ECR** con tags `latest` y el SHA del commit para permitir rollbacks.
 
 **3. Despliegue Automatizado (`deploy` / `deploy_dev`):**
-- Se ejecuta únicamente al hacer merge a `main` (producción) o `develop` (dev), apuntando a la instancia EC2 con la etiqueta correspondiente (`Name=api` o `Name=api-dev`).
+- Se ejecuta únicamente al hacer merge a `main` (producción) o `staging` (dev), apuntando a la instancia EC2 con la etiqueta correspondiente (`Name=api` o `Name=api-dev`).
 - El script en EC2 implementa una estrategia de despliegue de bajo riesgo con rollback automático (ver sección siguiente).
 - El job de GitHub Actions espera activamente el resultado del comando SSM (polling cada 10s, timeout 6 min) y falla si el despliegue en EC2 falla, garantizando visibilidad del estado real del servidor en el pipeline.
 
