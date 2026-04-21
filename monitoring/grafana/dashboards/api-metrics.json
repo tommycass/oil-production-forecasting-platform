@@ -173,7 +173,7 @@
         "defaults": {
           "unit": "s",
           "color": {"mode": "fixed", "fixedColor": "orange"},
-          "custom": {"drawStyle": "line", "fillOpacity": 25, "gradientMode": "opacity", "lineWidth": 2},
+          "custom": {"drawStyle": "line", "fillOpacity": 25, "gradientMode": "opacity", "lineWidth": 2, "spanNulls": true},
           "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 2}]}
         }
       }
@@ -207,7 +207,7 @@
         "defaults": {
           "unit": "s",
           "color": {"mode": "palette-classic"},
-          "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "spanNulls": false},
+          "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2, "spanNulls": true},
           "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 2}]}
         }
       }
