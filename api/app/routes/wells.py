@@ -15,9 +15,9 @@ router = APIRouter()
     summary="Listar pozos activos",
     description="Retorna el listado de pozos activos a la fecha indicada. La fecha no puede ser futura.",
     responses={
-        403: {"description": "API key inválida o ausente"},
-        422: {"description": "La fecha es futura o tiene formato inválido"},
-        429: {"description": "Rate limit excedido"},
+        403: {"description": "Invalid or missing API key"},
+        422: {"description": "Date is in the future or has an invalid format"},
+        429: {"description": "Rate limit exceeded"},
     },
 )
 @limiter.limit("60/minute")
