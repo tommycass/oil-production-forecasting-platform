@@ -15,10 +15,10 @@ router = APIRouter()
     summary="Obtener pronóstico de producción",
     description="Retorna el pronóstico de producción diaria de un pozo para el rango de fechas indicado. La fecha de inicio debe ser anterior a la fecha de fin.",
     responses={
-        403: {"description": "API key inválida o ausente"},
-        404: {"description": "El pozo no existe"},
-        422: {"description": "date_start es posterior a date_end o los parámetros tienen formato inválido"},
-        429: {"description": "Rate limit excedido"},
+        403: {"description": "Invalid or missing API key"},
+        404: {"description": "Well does not exist"},
+        422: {"description": "date_start is after date_end or the parameters have an invalid format"},
+        429: {"description": "Rate limit exceeded"},
     },
 )
 @limiter.limit("60/minute")
