@@ -7,46 +7,46 @@ from app.core.rate_limit import limiter
 
 tags_metadata = [
     {
-        "name": "Pozos",
-        "description": "Consulta de pozos petroleros activos a una fecha determinada.",
+        "name": "Wells",
+        "description": "Query active oil wells for a given date.",
     },
     {
         "name": "Forecast",
-        "description": "Pronóstico de producción diaria por pozo para un rango de fechas.",
+        "description": "Daily production forecast per well for a date range.",
     },
     {
         "name": "Health",
-        "description": "Verificación del estado del servicio.",
+        "description": "Service health check.",
     },
 ]
 
 app = FastAPI(
     title="Oil & Gas Forecast API",
     description="""
-## Descripción
+## Description
 
-API REST para consultar pozos petroleros activos y sus pronósticos de producción.
+REST API to query active oil wells and their production forecasts.
 
-## Autenticación
+## Authentication
 
-Todos los endpoints (excepto `/health`) requieren una API key en el header:
+All endpoints (except `/health`) require an API key in the header:
 
 ```
-X-API-Key: <tu-api-key>
+X-API-Key: <your-api-key>
 ```
 
-## Pozos disponibles (mock)
+## Available wells (mock)
 
-| ID | Producción base |
+| ID | Base production |
 |----|----------------|
-| POZO-001 | 200 m³/día |
-| POZO-002 | 150 m³/día |
-| POZO-003 | 100 m³/día |
+| POZO-001 | 200 m³/day |
+| POZO-002 | 150 m³/day |
+| POZO-003 | 100 m³/day |
 """,
     version="1.0.0",
     openapi_tags=tags_metadata,
     contact={
-        "name": "Equipo Oil & Gas Forecast",
+        "name": "Oil & Gas Forecast Team",
     },
 )
 

@@ -12,8 +12,8 @@ router = APIRouter()
     "/api/v1/forecast",
     tags=["Forecast"],
     response_model=ForecastResponse,
-    summary="Obtener pronóstico de producción",
-    description="Retorna el pronóstico de producción diaria de un pozo para el rango de fechas indicado. La fecha de inicio debe ser anterior a la fecha de fin.",
+    summary="Get production forecast",
+    description="Return the daily production forecast for a well over the given date range. The start date must be before the end date.",
     responses={
         403: {"description": "Invalid or missing API key"},
         404: {"description": "Well does not exist"},

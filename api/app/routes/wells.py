@@ -10,10 +10,10 @@ router = APIRouter()
 
 @router.get(
     "/api/v1/wells",
-    tags=["Pozos"],
+    tags=["Wells"],
     response_model=list[WellResponse],
-    summary="Listar pozos activos",
-    description="Retorna el listado de pozos activos a la fecha indicada. La fecha no puede ser futura.",
+    summary="List active wells",
+    description="Return the list of active wells for the given date. The date cannot be in the future.",
     responses={
         403: {"description": "Invalid or missing API key"},
         422: {"description": "Date is in the future or has an invalid format"},
