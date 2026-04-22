@@ -66,3 +66,16 @@ def test_metrics_endpoint_is_not_rate_limited():
             )
     finally:
         limiter.reset()
+
+
+def test_health_endpoint_is_not_rate_limited():
+    limiter.reset()
+    try:
+        for i in range(120):
+            response = client.get("/health")
+            assert response.status_code == 200, (
+                f"request {i + 1}/120 to /health should not be rate limited, "
+                f"got {response.status_code}"
+            )
+    finally:
+        limiter.reset()
