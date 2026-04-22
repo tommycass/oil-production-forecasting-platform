@@ -25,9 +25,7 @@ Se evaluaron cuatro enfoques para cubrir los dos gaps descritos:
 
 2. **Delegar la verificación de disponibilidad a infraestructura externa:** usar `docker inspect` sobre el estado del proceso, un TCP probe al puerto 8000, o un target group de AWS ALB con health check propio. Reemplaza `/health` pero pierde la distinción entre "el proceso Python está vivo" y "FastAPI puede manejar requests HTTP", y requiere mantener configuración específica en cada entorno (docker-compose, EC2, CI) en lugar de un contrato único declarado en la API.
 
-3. **Exponer `/mock-500` como una aplicación o servicio separado:** desplegar un container adicional dedicado sólo a generar respuestas 5xx para probar Alertmanager y Grafana. Agrega infraestructura nueva (imagen, servicio en `docker-compose.yml`, reglas de scraping en Prometheus, panel y alerta propios) y no valida realmente la instrumentación de la API de negocio, porque las métricas provendrían de otro proceso.
-
-4. **Activar `/mock-500` sólo mediante feature flag o variable de entorno:** mantener el endpoint en el código pero condicionar su registro a una env var (`ENABLE_MOCK_500=true`) para que esté disponible en staging/dev y deshabilitado en producción. Evita exponer la ruta en prod, pero implica que el path de alertas nunca se valida contra el entorno productivo real, y agrega una bifurcación de configuración que hay que recordar mantener sincronizada entre entornos.
+3. **Activar `/mock-500` sólo mediante feature flag o variable de entorno:** mantener el endpoint en el código pero condicionar su registro a una env var (`ENABLE_MOCK_500=true`) para que esté disponible en staging/dev y deshabilitado en producción. Evita exponer la ruta en prod, pero implica que el path de alertas nunca se valida contra el entorno productivo real, y agrega una bifurcación de configuración que hay que recordar mantener sincronizada entre entornos.
 
 ## Decisión
 
