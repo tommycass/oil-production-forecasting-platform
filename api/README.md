@@ -19,7 +19,8 @@ api/
 │   │   ├── __init__.py
 │   │   ├── health.py        # GET /health — health check del servicio
 │   │   ├── wells.py         # GET /api/v1/wells
-│   │   └── forecast.py      # GET /api/v1/forecast
+│   │   ├── forecast.py      # GET /api/v1/forecast
+│   │   └── mock_error.py    # GET /mock-500 — endpoint mock que devuelve 500 (testing)
 │   ├── schemas/             # Schemas Pydantic (modelos de request/response)
 │   │   ├── wells.py         # Schema de respuesta para pozos
 │   │   └── forecast.py      # Schemas de respuesta para pronósticos
@@ -104,6 +105,7 @@ Si la clave es inválida o está ausente, la API devuelve HTTP 403 Forbidden.
 | GET | `/health` | Health check — devuelve `{"status": "ok"}` | No |
 | GET | `/api/v1/wells` | Listado de pozos disponibles | Sí |
 | GET | `/api/v1/forecast` | Pronóstico de producción de un pozo | Sí |
+| GET | `/mock-500` | Endpoint mock que siempre devuelve HTTP 500 (uso exclusivo para testing) | No |
 
 ### Parámetros
 
@@ -127,6 +129,7 @@ Si la clave es inválida o está ausente, la API devuelve HTTP 403 Forbidden.
 | 403 | API key inválida o ausente |
 | 404 | Pozo no encontrado |
 | 422 | Parámetros inválidos (ej: `date_start` mayor a `date_end`) |
+| 500 | Error interno del servidor (devuelto de forma determinística por `/mock-500` para testing) |
 
 ## Documentación Interactiva
 
