@@ -10,18 +10,19 @@ router = APIRouter()
 
 @router.get(
     "/api/v1/wells",
-    tags=["Pozos"],
+    tags=["Wells"],
     response_model=list[WellResponse],
-    summary="Listar pozos activos",
-    description="Retorna el listado de pozos activos a la fecha indicada. La fecha no puede ser futura.",
+    summary="List active wells",
+    description="Return the list of active wells for the given date. The date cannot be in the future.",
     responses={
-        403: {"description": "API key inválida o ausente"},
-        422: {"description": "La fecha es futura o tiene formato inválido"},
-        429: {"description": "Rate limit excedido"},
+        403: {"description": "Invalid or missing API key"},
+        422: {"description": "Date is in the future or has an invalid format"},
+        429: {"description": "Rate limit exceeded"},
     },
 )
 @limiter.limit(RATE_LIMIT)
 def wells(request: Request, date_query: date, api_key: None = Depends(verify_api_key)):
+    """Return the list of active wells for the given date; rejects future dates with HTTP 422."""
     if date_query > date.today():
         raise HTTPException(status_code=422, detail="date_query cannot be a future date")
     return get_wells(date_query)
