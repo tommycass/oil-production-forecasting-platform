@@ -31,3 +31,25 @@ def test_rate_limit_returns_429_after_exceeding_limit():
             assert over_limit.status_code == 429
     finally:
         limiter.reset()
+
+
+def test_rate_limit_response_body_matches_custom_handler():
+    limiter.reset()
+    try:
+        with patch("app.core.security.API_KEY", API_KEY):
+            for _ in range(60):
+                client.get(
+                    "/api/v1/wells",
+                    params={"date_query": "2024-01-01"},
+                    headers=HEADERS,
+                )
+            over_limit = client.get(
+                "/api/v1/wells",
+                params={"date_query": "2024-01-01"},
+                headers=HEADERS,
+            )
+            assert over_limit.status_code == 429
+            assert over_limit.headers["content-type"].startswith("application/json")
+            assert over_limit.json() == {"detail": "Rate limit exceeded. Try again later."}
+    finally:
+        limiter.reset()
