@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from app.routes import health, wells, forecast
+from app.routes import health, wells, forecast, mock_error
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi.errors import RateLimitExceeded
 from app.core.rate_limit import limiter
@@ -64,5 +64,6 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
 app.include_router(health.router)
 app.include_router(wells.router)
 app.include_router(forecast.router)
+app.include_router(mock_error.router)
 
 Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app)
