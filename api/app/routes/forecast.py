@@ -23,6 +23,7 @@ router = APIRouter()
 )
 @limiter.limit("60/minute")
 def forecast(request: Request, id_well: str, date_start: date, date_end: date, api_key: None = Depends(verify_api_key)):
+    """Return the daily production forecast for a well between date_start and date_end."""
     if date_start > date_end:
         raise HTTPException(status_code=422, detail="date_start must be before date_end")
     if id_well not in WELL_BASE_PRODUCTION:
