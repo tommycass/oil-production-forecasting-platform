@@ -1,6 +1,6 @@
 # Título: ADR-009: Estrategia de unit testing de la API
 
-**Estado:** Propuesto
+**Estado:** Aceptado
 
 ## Contexto
 
@@ -28,3 +28,44 @@ Se evaluaron cuatro enfoques para validar el comportamiento de la API:
 3. **Tests unitarios a nivel lógica interna del mock:** testear directamente funciones como `get_forecast()` o `get_wells()` y el contenido del diccionario `WELL_BASE_PRODUCTION`, validando la fórmula de declinación lineal, los IDs de pozos mock, y las estructuras de datos internas. Da cobertura alta en el reporte pero cae en *overfitting*: la capa mock es explícitamente temporal (se reemplazará por fuentes reales de datos), por lo que estos tests se volverán obsoletos o falsamente rojos en el primer refactor serio, y mientras tanto no protegen ninguno de los contratos observables de los que depende la infraestructura (auth, rate limit, códigos y bodies de error, exenciones operativas).
 
 4. **Tests unitarios a nivel de contrato HTTP con el `TestClient` de FastAPI:** usar `fastapi.testclient.TestClient` para ejercitar la aplicación ASGI en memoria — sin sockets, sin contenedor, sin red — y afirmar sobre el status code, headers, y body JSON devueltos. Permite patchear constantes como `app.core.security.API_KEY` con `unittest.mock.patch` para controlar el entorno por test, resetear el estado del `limiter` entre tests para cubrir rate limiting sin esperar ventanas reales, y correr la suite completa en menos de un segundo. El costo es aceptar que algunos comportamientos específicos de red (timeouts, headers insertados por proxies, comportamiento del sistema operativo bajo concurrencia) no se cubren — pero esos no son contratos que la API declare, sino propiedades del entorno de deploy.
+
+## Decisión
+
+Se decidió la **alternativa 4: tests unitarios a nivel de contrato HTTP con `pytest` y `fastapi.testclient.TestClient`**, con una regla explícita de scope y con ejecución bloqueante en el pipeline de CI.
+
+### Framework y herramientas
+
+- **Runner:** `pytest` (ya presente en `api/requirements-dev.txt`).
+- **Cliente de pruebas:** `fastapi.testclient.TestClient`, que monta la app ASGI en memoria y permite hacer requests HTTP contra ella sin abrir sockets.
+- **Patching:** `unittest.mock.patch` para sustituir constantes sensibles al entorno — en particular `app.core.security.API_KEY` — sin requerir variables de entorno reales ni archivos `.env` durante los tests.
+- **Fixtures comunes:** un `TestClient` compartido se declara en `api/tests/conftest.py` para que todos los módulos de test usen la misma instancia de la app.
+
+### Regla de scope
+
+La suite testea **contratos observables desde el cliente**, no implementación interna. Concretamente:
+
+- **Sí se testea:** códigos de estado (200, 403, 404, 422, 429, 500), bodies JSON completos (no sólo claves), headers (`content-type`), contratos de auth (header ausente/inválido/válido, case-insensitivity del nombre del header), contratos de rate limit (que efectivamente devuelve 429 al exceder el límite, que el body sale del handler custom, que `/health` y `/metrics` están exentos), exenciones de API Key en endpoints operativos (`/health`, `/metrics`), y mensajes de error descriptivos (`"Well not found"`, `"Forbidden"`, etc.).
+- **No se testea:** la fórmula exacta de declinación lineal del mock (`base - day * 0.5`), los valores numéricos de `WELL_BASE_PRODUCTION`, ni la estructura interna de los servicios (`services/wells.py`, `services/forecast.py`). Estas piezas son temporales — se reemplazarán por fuentes de datos reales — y atarles tests equivaldría a bloquear refactors legítimos con fallas que no reflejan un cambio de contrato.
+
+### Organización
+
+La suite vive en `api/tests/` con un archivo por área de responsabilidad: `test_auth.py`, `test_health.py`, `test_metrics.py`, `test_wells.py`, `test_forecast.py` y `test_rate_limit.py`. El archivo dedicado a rate limiting usa `try`/`finally` con `limiter.reset()` alrededor de cada test para evitar contaminar el singleton compartido entre módulos de test.
+
+### Ejecución en CI/CD
+
+El workflow `.github/workflows/ci.yml` declara un job `test` que ejecuta `pytest api/tests/ -v` en cada push y pull request, y el job `build-and-push` declara `needs: test`. Esto convierte a la suite en un **gate obligatorio para la publicación de la imagen a ECR**: si algún test falla, la imagen no se construye, el deploy a staging o producción no ocurre, y la infraestructura productiva nunca recibe una versión que haya quebrado un contrato testeado.
+
+## Consecuencias
+
+**Positivas:**
+
+- Los contratos declarados en ADRs previos quedan **anclados por tests ejecutables**: las exenciones de rate limit de `/health` y `/metrics` del ADR-007, los bodies de error, el formato del 429 del handler custom, y las decisiones operativas del ADR-008 dejan de ser promesas escritas sólo en markdown y pasan a ser verificaciones automáticas en cada push.
+- Las regresiones se detectan **antes del deploy**: una ruta que accidentalmente pida API Key en `/health`, un cambio en el detail de un 404, o una regresión del handler custom del 429, son bloqueados por el gate del job `test` antes de que lleguen a ECR.
+- La suite es **barata de correr**: la suite completa termina en menos de un segundo localmente, lo que mantiene el ciclo de feedback corto para quien desarrolla y hace prácticamente gratis correrla en CI en cada commit.
+- El patrón de tests es **replicable**: cada vez que se agrega un contrato nuevo (un endpoint, una exención, un código de error), el costo marginal de cubrirlo es mínimo y hay precedente claro de cómo escribir el test.
+
+**Negativas:**
+
+- La fórmula del mock y los datos de los tres pozos no están cubiertos. Si alguien rompe la lógica de `get_forecast()` manteniendo la forma del response, los tests pasan. Se acepta el trade-off porque el mock es explícitamente temporal; cuando se reemplace por una fuente real de datos, la estrategia deberá revisarse para incluir tests de integración contra esa fuente.
+- `TestClient` no ejerce la pila de red real: no cubre timeouts, comportamiento de reverse proxies ni concurrencia real entre procesos. Para el stack actual (una sola instancia EC2 detrás de Docker Compose) esto no introduce riesgo significativo, pero si en el futuro se incorpora un balanceador o múltiples réplicas, se deberá evaluar sumar un tramo de tests de integración que sí ejercite red.
+- Los tests de rate limiting dependen de un detalle de implementación de `slowapi` (`limiter.reset()` para limpiar el storage). Si la librería cambia esa API, habrá que actualizar los tests afectados. El impacto está acotado a un archivo (`api/tests/test_rate_limit.py`) y compensa sobradamente el costo de testear rate limit por tiempo real.
