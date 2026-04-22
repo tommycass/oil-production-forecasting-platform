@@ -30,6 +30,7 @@ Se decidió implementar **rate limiting a nivel aplicación con `slowapi`** por 
 - **Granularidad por endpoint:** `slowapi` permite aplicar límites distintos a cada ruta (o directamente no aplicar ninguno). Esto es importante porque hay endpoints que **no deben ser limitados**: concretamente `/metrics`, que Prometheus scrapea cada 15 segundos según `monitoring/prometheus.yml`. Un límite global bloquearía el scraping, rompería la recolección de métricas y apagaría los dashboards de Grafana y las alertas de Alertmanager (ADR-003 y ADR-004). Con `slowapi`, el decorador se coloca únicamente en los endpoints de negocio (`/wells`, `/forecast`), dejando `/metrics` y `/health` fuera del control de tasa por diseño.
 - **Sin infraestructura adicional:** el backend por defecto es en memoria, lo cual es aceptable mientras corra una sola instancia EC2. Si en el futuro se escala horizontalmente, se puede migrar a Redis cambiando solo la configuración del `Limiter`, sin reescribir los decoradores.
 - **Complementa, no reemplaza, la API Key:** la API Key sigue validando autorización (¿quién sos?), mientras que el rate limiting controla el uso (¿cuántas veces podés pedir?). Son capas ortogonales.
+- **Valor del límite externalizado como variable de entorno (`RATE_LIMIT`):** el umbral no se hardcodea en los decoradores sino que se lee de la variable `RATE_LIMIT` (declarada en `api/.env.example` y cargada vía `python-dotenv` en `app/core/rate_limit.py`, con default `60/minute` si no está definida). Esto permite calibrar el límite por entorno (dev, staging, prod) o ajustarlo en caliente ante un abuso detectado en Grafana/Alertmanager, sin reconstruir la imagen Docker ni modificar código. Es coherente con el tratamiento que ya se le da a `API_KEY` y encaja en el flujo CI/CD existente: `docker-compose.yml` inyecta el `.env` al contenedor mediante `env_file`, por lo que cambiar el límite es reiniciar el servicio con un `.env` actualizado.
 
 ## Consecuencias
 
@@ -39,6 +40,7 @@ Se decidió implementar **rate limiting a nivel aplicación con `slowapi`** por 
 - Defensa en profundidad: aunque la API Key se filtre, el atacante no puede generar volumen arbitrario de requests.
 - Configuración declarativa y versionada, coherente con el paradigma IaC del proyecto.
 - Las respuestas `429` son automáticamente visibles en Prometheus (vía `http_requests_total` por código de estado), permitiendo alertar sobre abusos desde Grafana.
+- El valor del límite es configurable por entorno sin reconstruir la imagen: basta con modificar `RATE_LIMIT` en el `.env` y reiniciar el contenedor.
 
 **Negativas:**
 
