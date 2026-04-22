@@ -40,6 +40,7 @@ Se decidió implementar **rate limiting a nivel aplicación con `slowapi`** por 
 - Defensa en profundidad: aunque la API Key se filtre, el atacante no puede generar volumen arbitrario de requests.
 - Configuración declarativa y versionada, coherente con el paradigma IaC del proyecto.
 - Las respuestas `429` son automáticamente visibles en Prometheus (vía `http_requests_total` por código de estado), permitiendo alertar sobre abusos desde Grafana.
+- El valor del límite es configurable por entorno sin reconstruir la imagen: basta con modificar `RATE_LIMIT` en el `.env` y reiniciar el contenedor.
 
 **Negativas:**
 
