@@ -75,3 +75,14 @@ def test_forecast_production_decreases():
     )
     data = response.json()["data"]
     assert data[0]["prod"] > data[1]["prod"] > data[2]["prod"]
+
+
+def test_forecast_well_not_found_response_body():
+    response = client.get(
+        "/api/v1/forecast",
+        params={"id_well": "POZO-999", "date_start": "2024-01-01", "date_end": "2024-01-05"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {"detail": "Well not found"}
