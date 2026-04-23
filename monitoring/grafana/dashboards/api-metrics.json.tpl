@@ -141,23 +141,21 @@
     },
     {
       "id": 6,
-      "type": "gauge",
-      "title": "Disponibilidad (%)",
-      "description": "Porcentaje del tiempo que la API respondió al scrape de Prometheus en el rango visible",
-      "targets": [{"expr": "avg_over_time(up{job=\"api\"}[$__range]) * 100", "legendFormat": "% Disponibilidad", "refId": "A"}],
+      "type": "stat",
+      "title": "Peticiones bloqueadas (429)",
+      "description": "Cantidad de peticiones rechazadas por rate limiting en el rango del dashboard. 0 es el estado esperado; valores altos sugieren abuso o un cliente que supera su cuota (ADR-007).",
+      "targets": [{"expr": "round(sum(increase(http_requests_total{status=\"429\"}[$__range])) or vector(0))", "legendFormat": "429s", "refId": "A"}],
       "gridPos": {"x": 18, "y": 1, "w": 6, "h": 6},
       "options": {
-        "reduceOptions": {"calcs": ["lastNotNull"]},
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
       },
       "fieldConfig": {
         "defaults": {
-          "min": 0,
-          "max": 100,
-          "unit": "percent",
-          "decimals": 2,
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 99}, {"color": "green", "value": 99.9}]}
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 50}]}
         }
       }
     },
