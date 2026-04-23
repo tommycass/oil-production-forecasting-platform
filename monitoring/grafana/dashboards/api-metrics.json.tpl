@@ -140,6 +140,28 @@
       }
     },
     {
+      "id": 6,
+      "type": "gauge",
+      "title": "Disponibilidad (%)",
+      "description": "Porcentaje del tiempo que la API respondió al scrape de Prometheus en el rango visible",
+      "targets": [{"expr": "avg_over_time(up{job=\"api\"}[$__range]) * 100", "legendFormat": "% Disponibilidad", "refId": "A"}],
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 6},
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"]},
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "decimals": 2,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 99}, {"color": "green", "value": 99.9}]}
+        }
+      }
+    },
+    {
       "id": 3,
       "type": "timeseries",
       "title": "Volumen de Consultas",
