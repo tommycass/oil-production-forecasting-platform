@@ -78,7 +78,7 @@
       "title": "Uptime",
       "description": "Disponibilidad del servicio API",
       "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado", "refId": "A"}],
-      "gridPos": {"x": 0, "y": 1, "w": 8, "h": 6},
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 6},
       "options": {
         "colorMode": "background",
         "justifyMode": "auto",
@@ -105,7 +105,7 @@
       "title": "Tasa de Errores (5xx)",
       "description": "Porcentaje de peticiones fallidas",
       "targets": [{"expr": "(sum(rate(http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / (sum(rate(http_requests_total[5m])) or vector(1)) * 100", "legendFormat": "% Errores", "refId": "A"}],
-      "gridPos": {"x": 8, "y": 1, "w": 8, "h": 6},
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 6},
       "options": {
         "reduceOptions": {"calcs": ["lastNotNull"]},
         "showThresholdLabels": false,
@@ -126,7 +126,7 @@
       "title": "Peticiones Históricas",
       "description": "Total de peticiones en el rango del dashboard, acumulando a través de reinicios de la API",
       "targets": [{"expr": "round(sum(increase(http_requests_total[$__range])))", "legendFormat": "Reqs", "refId": "A"}],
-      "gridPos": {"x": 16, "y": 1, "w": 8, "h": 6},
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 6},
       "options": {
         "colorMode": "value",
         "reduceOptions": {"calcs": ["lastNotNull"]}
