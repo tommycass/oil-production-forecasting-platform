@@ -143,7 +143,7 @@
       "id": 6,
       "type": "stat",
       "title": "Peticiones bloqueadas (429)",
-      "description": "Cantidad de peticiones rechazadas por rate limiting en el rango del dashboard. 0 es el estado esperado; valores altos sugieren abuso o un cliente que supera su cuota (ADR-007).",
+      "description": "Peticiones rechazadas con 429 por superar el rate limit. 0 es el estado esperado.",
       "targets": [{"expr": "round(sum(increase(http_requests_total{status=\"429\"}[$__range])) or vector(0))", "legendFormat": "429s", "refId": "A"}],
       "gridPos": {"x": 18, "y": 1, "w": 6, "h": 6},
       "options": {
