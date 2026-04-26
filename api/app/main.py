@@ -4,6 +4,7 @@ from app.routes import health, wells, forecast, mock_error
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi.errors import RateLimitExceeded
 from app.core.rate_limit import limiter
+from app.core.security import APIKeyMiddleware
 
 tags_metadata = [
     {
@@ -51,6 +52,7 @@ X-API-Key: <your-api-key>
 )
 
 app.state.limiter = limiter
+app.add_middleware(APIKeyMiddleware)
 
 
 @app.exception_handler(RateLimitExceeded)
