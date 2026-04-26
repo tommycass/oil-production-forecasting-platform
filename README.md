@@ -25,15 +25,23 @@ oil-production-forecasting-platform/
 │
 ├── api/
 │   ├── app/
-│   │   ├── middleware/             # Interceptores HTTP (ej. autenticación por API key)
-│   │   ├── models/                 # Entidades del dominio
+│   │   ├── core/                   # Lógica transversal
+│   │   │   ├── security.py         # Middleware de validación de API key (X-API-Key)
+│   │   │   ├── rate_limit.py       # Configuración de rate limiting (SlowAPI)
+│   │   │   └── demo_data.py        # Datos mock de pozos y producción base
 │   │   ├── routes/                 # Endpoints de la API
-│   │   ├── schemas/                # Estructuras de request/response
+│   │   │   ├── health.py           # GET /health
+│   │   │   ├── wells.py            # GET /api/v1/wells
+│   │   │   ├── forecast.py         # GET /api/v1/forecast
+│   │   │   └── mock_error.py       # GET /mock-500 (testing)
+│   │   ├── schemas/                # Schemas Pydantic (request/response)
 │   │   ├── services/               # Lógica de negocio y generación de datos mock
 │   │   ├── __init__.py
 │   │   └── main.py                 # Punto de entrada de la aplicación FastAPI
-│   ├── tests/                      # Tests unitarios y de integración
-│   ├── requirements.txt
+│   ├── tests/                      # Tests unitarios y de integración (pytest)
+│   ├── .env.example                # Variables de entorno requeridas (ej. API_KEY)
+│   ├── requirements.txt            # Dependencias de runtime
+│   ├── requirements-dev.txt        # Dependencias de desarrollo (pytest, ruff, etc.)
 │   └── README.md
 │
 ├── docs/
@@ -44,7 +52,11 @@ oil-production-forecasting-platform/
 │       ├── 0003-prometheus-grafana-monitoreo.md
 │       ├── 0004-alertmanager-slack-notificaciones.md
 │       ├── 0005-cloudwatch-monitoreo-ec2.md
-│       └── 0006-limpieza-disco-ec2.md
+│       ├── 0006-limpieza-disco-ec2.md
+│       ├── 0007-rate-limiting-api.md
+│       ├── 0008-operational-endpoints.md
+│       ├── 0009-testing-strategy-api.md
+│       └── 0010-api-key-validation-strategy.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
@@ -56,8 +68,10 @@ oil-production-forecasting-platform/
 │   ├── alertmanager.yml            # Routing de alertas a Slack
 │   └── grafana/
 │       ├── provisioning/           # Datasources (Prometheus, CloudWatch) y proveedor de dashboards
-│       └── dashboards/             # Template del dashboard (api-metrics.json.tpl)
+│       └── dashboards/
+│           └── api-metrics.json.tpl  # Template del dashboard (resuelto por grafana-init)
 │
+├── CONTRIBUTING.md                 # Guía de contribución y workflow de PRs
 ├── .gitignore
 └── README.md
 ```
