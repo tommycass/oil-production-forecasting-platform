@@ -213,15 +213,7 @@ Si el header está ausente o no coincide con el valor configurado, la API respon
 
 ## Workflow de desarrollo
 
-El proyecto usa **GitFlow**.
-
-```
-main        → versión estable (entregables)
-staging     → integración continua
-feature/*   → una rama por funcionalidad
-```
-
-### Crear una feature branch
+El proyecto usa **GitFlow** con ramas `main` (versión estable / entregables), `staging` (integración continua) y ramas de trabajo con prefijo `feature/`, `fix/` o `docs/` según el tipo de cambio.
 
 ```bash
 git checkout staging
@@ -229,18 +221,34 @@ git pull
 git checkout -b feature/nombre-feature
 ```
 
-### Abrir un Pull Request
-
-Una vez terminada la feature, abrir un PR hacia `staging`. Otro integrante debe revisar y aprobar antes del merge.
+Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe revisar y aprobar antes del merge. Los detalles de comandos comunes, restricciones y convenciones están en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
 ## Tecnologías
 
-- **Python / FastAPI / Uvicorn** — backend y API REST
-- **Docker / Docker Compose** — contenerización y orquestación
-- **GitHub Actions** — pipeline de CI/CD
-- **Prometheus + Grafana** — monitoreo y visualización de métricas
+**Backend / API**
+- **Python 3.11 / FastAPI / Uvicorn** — framework web y servidor ASGI
+- **Pydantic** — validación y serialización de schemas
+- **SlowAPI** — rate limiting por IP
+
+**Infraestructura**
+- **Docker / Docker Compose** — contenerización y orquestación local
+- **AWS ECR** — registro privado de imágenes
+- **AWS EC2 + Systems Manager (SSM)** — hosts de staging/producción y despliegue sin SSH
+- **GitHub OIDC** — autenticación contra AWS sin claves estáticas
+
+**CI/CD**
+- **GitHub Actions** — pipeline de test, build y deploy
+- **Pytest** — suite de tests unitarios y de integración
+- **Ruff** — análisis estático de código
+- **Trivy** — escaneo de vulnerabilidades de imágenes Docker
+
+**Monitoreo**
+- **Prometheus** — recolección de métricas (`/metrics` instrumentado por `prometheus-fastapi-instrumentator`)
+- **Grafana** — dashboards de latencia, disponibilidad y uso de recursos
+- **Alertmanager** — routing de alertas a Slack
+- **cAdvisor** — métricas de contenedores
 
 ---
 
