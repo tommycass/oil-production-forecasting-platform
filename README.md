@@ -6,6 +6,17 @@ El sistema expone una API REST que simula el comportamiento de una plataforma de
 
 ---
 
+## Servicio desplegado
+
+| Ambiente | URL |
+|---|---|
+| Producción | _Pendiente de publicación_ |
+| Staging | _Pendiente de publicación_ |
+
+> Las URLs se actualizarán en cuanto el servicio esté disponible públicamente. Todas las rutas bajo `/api/v1/` requieren autenticación por API key (ver sección [Autenticación](#autenticación)).
+
+---
+
 ## Integrantes
 
  - Michanie Micol
@@ -78,6 +89,25 @@ oil-production-forecasting-platform/
 
 ---
 
+## Configuración
+
+Antes de levantar el sistema (con o sin Docker), crear el archivo `api/.env` a partir del ejemplo:
+
+```bash
+cp api/.env.example api/.env
+```
+
+Y completar las variables requeridas:
+
+| Variable | Descripción |
+|---|---|
+| `API_KEY` | Clave estática que valida el header `X-API-Key` en cada request. **Usar el valor preconfigurado especificado en la consigna de la Fase 1.** |
+| `RATE_LIMIT` | Límite de requests por IP (formato SlowAPI, ej. `60/minute`). |
+
+> El `.env` está ignorado por git. La clave nunca se commitea al repositorio.
+
+---
+
 ## Levantar el sistema
 
 ### Con Docker (recomendado)
@@ -132,7 +162,28 @@ API disponible en http://localhost:8000 — documentación en http://localhost:8
 | GET | `/api/v1/wells` | Listado de pozos disponibles |
 | GET | `/api/v1/forecast` | Pronóstico de producción de un pozo |
 
-Ver la [documentación completa en Swagger](http://localhost:8000/docs) con el servicio corriendo.
+Documentación interactiva disponible en `/docs` (Swagger UI) y `/redoc` (ReDoc) con el servicio corriendo. Detalle de parámetros y códigos de respuesta en [api/README.md](api/README.md).
+
+---
+
+## Autenticación
+
+Todos los endpoints bajo `/api/v1/` requieren una API key estática enviada por header:
+
+```
+X-API-Key: <API_KEY>
+```
+
+Donde `<API_KEY>` es el valor preconfigurado definido en la consigna de la Fase 1 (el mismo que se setea en `api/.env` del lado del servidor).
+
+Ejemplo de request:
+
+```bash
+curl -H "X-API-Key: <API_KEY>" \
+  "<URL_DEL_SERVICIO>/api/v1/wells?date_query=2024-01-01"
+```
+
+Si el header está ausente o no coincide con el valor configurado, la API responde **HTTP 403 Forbidden**.
 
 ---
 
