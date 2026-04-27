@@ -108,41 +108,47 @@ Y completar las variables requeridas:
 
 ---
 
-## Levantar el sistema
+## Levantar el sistema localmente
+
+> Las URLs de esta sección apuntan al **host local** del desarrollador (puertos publicados por Docker o por Uvicorn). La URL pública del servicio desplegado se documenta en [Servicio desplegado](#servicio-desplegado).
 
 ### Con Docker (recomendado)
 
-Requiere tener [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado.
+Requiere tener [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado y el `api/.env` creado (ver [Configuración](#configuración)).
 
 ```bash
 docker compose -f infra/docker-compose.yml up
 ```
 
-| Servicio | URL |
-|---|---|
-| API REST | http://localhost:8000 |
-| Documentación Swagger | http://localhost:8000/docs |
-| Grafana | http://localhost:3000 |
-| Prometheus | http://localhost:9090 |
-| Alertmanager | http://localhost:9093 |
-| cAdvisor | http://localhost:8080 |
+Servicios expuestos en el host local:
+
+| Servicio | Puerto | Ruta |
+|---|---|---|
+| API REST | 8000 | `/` |
+| Documentación Swagger | 8000 | `/docs` |
+| Grafana | 3000 | `/` |
+| Prometheus | 9090 | `/` |
+| Alertmanager | 9093 | `/` |
+| cAdvisor | 8080 | `/` |
 
 ### Acceso a Grafana
 
 - **Administrador:** usuario `admin` / contraseña `admin` (configurable vía `GF_SECURITY_ADMIN_PASSWORD`).
 - **Visor externo (solo lectura):** `ext_read` / `visitor123`. Se provisiona automáticamente al arrancar el stack mediante el init container `grafana-user-init`.
-- **Link kiosko para operarios:** `http://<host>:3000/d/verified-infra-dash?kiosk=true` — oculta la barra de navegación y bloquea edición.
+- **Link kiosko para operarios:** ruta `/d/verified-infra-dash?kiosk=true` sobre el host de Grafana — oculta la barra de navegación y bloquea edición.
 - **Auto-detección de instancia EC2:** el dashboard es un template (`api-metrics.json.tpl`); un init container (`grafana-init`) consulta IMDSv2 al arrancar y resuelve el `instance-id` del host. La misma imagen corre en staging y producción sin reconfiguración.
 
 ### Sin Docker (desarrollo local)
+
+Requiere Python 3.11+ y el `api/.env` creado (ver [Configuración](#configuración)).
 
 ```bash
 cd api
 
 # Crear y activar entorno virtual
 python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # Linux/Mac
+source venv/bin/activate       # Linux/Mac
+# venv\Scripts\activate        # Windows
 
 # Instalar dependencias
 pip install -r requirements.txt
@@ -151,16 +157,34 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-API disponible en http://localhost:8000 — documentación en http://localhost:8000/docs.
+La API queda disponible en el puerto `8000` del host (`/docs` para Swagger).
+
+---
+
+## Tests
+
+Desde la raíz del repositorio, instalar dependencias de desarrollo y correr la suite de pytest:
+
+```bash
+pip install -r api/requirements-dev.txt
+API_KEY=test-key pytest api/tests/ -v
+```
+
+El análisis estático (mismo que corre el CI) se ejecuta con:
+
+```bash
+ruff check api/app/
+```
 
 ---
 
 ## Endpoints principales
 
-| Método | Endpoint | Descripción |
-|---|---|---|
-| GET | `/api/v1/wells` | Listado de pozos disponibles |
-| GET | `/api/v1/forecast` | Pronóstico de producción de un pozo |
+| Método | Endpoint | Descripción | Auth |
+|---|---|---|---|
+| GET | `/health` | Health check del servicio | No |
+| GET | `/api/v1/wells` | Listado de pozos disponibles | Sí |
+| GET | `/api/v1/forecast` | Pronóstico de producción de un pozo | Sí |
 
 Documentación interactiva disponible en `/docs` (Swagger UI) y `/redoc` (ReDoc) con el servicio corriendo. Detalle de parámetros y códigos de respuesta en [api/README.md](api/README.md).
 
