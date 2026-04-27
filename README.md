@@ -273,7 +273,7 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 
 | # | Título | Resumen |
 |---|---|---|
-| [001](docs/adr/0001-framework-backend.md) | Elección del framework backend | Por qué se eligió FastAPI sobre Flask y Django REST Framework |
+| [001](docs/adr/0001-framework-backend.md) | Elección del framework backend | Por qué se eligió FastAPI y Uvicorn para el backend de la API REST |
 | [002](docs/adr/0002-docker-containerizacion.md) | Uso de Docker para contenerización | Pipeline CI/CD completo, ECR + EC2 + SSM y rollback automático |
 | [003](docs/adr/0003-prometheus-grafana-monitoreo.md) | Prometheus + Grafana para monitoreo | Recolección de métricas y dashboards on-premise vs SaaS |
 | [004](docs/adr/0004-alertmanager-slack-notificaciones.md) | Notificaciones de incidentes con Alertmanager y Slack | Routing de alertas declarativas hacia el canal de incidentes |
