@@ -78,7 +78,7 @@
       "title": "Uptime",
       "description": "Disponibilidad del servicio API",
       "targets": [{"expr": "up{job=\"api\"}", "legendFormat": "Estado", "refId": "A"}],
-      "gridPos": {"x": 0, "y": 1, "w": 8, "h": 6},
+      "gridPos": {"x": 0, "y": 1, "w": 6, "h": 6},
       "options": {
         "colorMode": "background",
         "justifyMode": "auto",
@@ -105,7 +105,7 @@
       "title": "Tasa de Errores (5xx)",
       "description": "Porcentaje de peticiones fallidas",
       "targets": [{"expr": "(sum(rate(http_requests_total{status=~\"5..\"}[5m])) or vector(0)) / (sum(rate(http_requests_total[5m])) or vector(1)) * 100", "legendFormat": "% Errores", "refId": "A"}],
-      "gridPos": {"x": 8, "y": 1, "w": 8, "h": 6},
+      "gridPos": {"x": 6, "y": 1, "w": 6, "h": 6},
       "options": {
         "reduceOptions": {"calcs": ["lastNotNull"]},
         "showThresholdLabels": false,
@@ -126,7 +126,7 @@
       "title": "Peticiones Históricas",
       "description": "Total de peticiones en el rango del dashboard, acumulando a través de reinicios de la API",
       "targets": [{"expr": "round(sum(increase(http_requests_total[$__range])))", "legendFormat": "Reqs", "refId": "A"}],
-      "gridPos": {"x": 16, "y": 1, "w": 8, "h": 6},
+      "gridPos": {"x": 12, "y": 1, "w": 6, "h": 6},
       "options": {
         "colorMode": "value",
         "reduceOptions": {"calcs": ["lastNotNull"]}
@@ -136,6 +136,26 @@
           "unit": "short",
           "decimals": 0,
           "color": {"mode": "fixed", "fixedColor": "super-light-blue"}
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Peticiones bloqueadas (429)",
+      "description": "Peticiones rechazadas con 429 por superar el rate limit. 0 es el estado esperado.",
+      "targets": [{"expr": "round(sum(increase(http_requests_total{status=\"429\"}[$__range])) or vector(0))", "legendFormat": "429s", "refId": "A"}],
+      "gridPos": {"x": 18, "y": 1, "w": 6, "h": 6},
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {"calcs": ["lastNotNull"]}
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}, {"color": "red", "value": 50}]}
         }
       }
     },

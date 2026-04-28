@@ -7,8 +7,9 @@ router = APIRouter()
     "/health",
     tags=["Health"],
     summary="Health check",
-    description="Verifica que el servicio esté funcionando correctamente.",
+    description="Verify that the service is running correctly.",
     responses={200: {"content": {"application/json": {"example": {"status": "ok"}}}}},
 )
 def health_check():
+    """Return a simple status payload used to verify that the service is running."""
     return {"status": "ok"}
