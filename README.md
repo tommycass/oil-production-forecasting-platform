@@ -8,12 +8,12 @@ El sistema expone una API REST que simula el comportamiento de una plataforma de
 
 ## Servicio desplegado
 
-| Ambiente | URL |
+| Ambiente | IP |
 |---|---|
-| Producción | _Pendiente de publicación_ |
-| Staging | _Pendiente de publicación_ |
+| Producción | 18.117.126.59 |
+| Staging | _No Disponible_ |
 
-> Las URLs se actualizarán en cuanto el servicio esté disponible públicamente. Todas las rutas bajo `/api/v1/` requieren autenticación por API key (ver sección [Autenticación](#autenticación)).
+> Todas las rutas bajo `/api/v1/` requieren autenticación por API key (ver sección [Autenticación](#autenticación)). Se debe completar la ruta con IP:PORT/RUTA (ver sección Servicios expuestos en el host)
 
 ---
 
@@ -120,7 +120,7 @@ Requiere tener [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 docker compose -f infra/docker-compose.yml up
 ```
 
-Servicios expuestos en el host local:
+Servicios expuestos en el host:
 
 | Servicio | Puerto | Ruta |
 |---|---|---|
@@ -133,7 +133,6 @@ Servicios expuestos en el host local:
 
 ### Acceso a Grafana
 
-- **Administrador:** usuario `admin` / contraseña `admin` (configurable vía `GF_SECURITY_ADMIN_PASSWORD`).
 - **Visor externo (solo lectura):** `ext_read` / `visitor123`. Se provisiona automáticamente al arrancar el stack mediante el init container `grafana-user-init`.
 - **Link kiosko para operarios:** ruta `/d/verified-infra-dash?kiosk=true` sobre el host de Grafana — oculta la barra de navegación y bloquea edición.
 - **Auto-detección de instancia EC2:** el dashboard es un template (`api-metrics.json.tpl`); un init container (`grafana-init`) consulta IMDSv2 al arrancar y resuelve el `instance-id` del host. La misma imagen corre en staging y producción sin reconfiguración.
