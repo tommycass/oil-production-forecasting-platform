@@ -165,10 +165,3 @@ La API expone métricas en formato Prometheus en `GET /metrics` mediante `promet
 | 422 | Parámetros inválidos (ej: `date_query` futura, `date_start` mayor a `date_end`, formato incorrecto) |
 | 429 | Rate limit excedido |
 | 500 | Error interno del servidor (devuelto de forma determinística por `/mock-500` para testing) |
-
-## Documentación Interactiva
-
-FastAPI genera documentación automática accesible en:
-
-- **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
