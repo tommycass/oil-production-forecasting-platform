@@ -13,6 +13,8 @@ El sistema expone una API REST que simula el comportamiento de una plataforma de
 | Producción | 18.117.126.59 |
 | Staging | _No Disponible_ |
 
+**Documentación interactiva (Swagger UI):** http://18.117.126.59:8000/docs
+
 > Todas las rutas bajo `/api/v1/` requieren autenticación por API key (ver sección [Autenticación](#autenticación)). Se debe completar la ruta con IP:PORT/RUTA (ver sección Servicios expuestos en el host)
 
 ---
