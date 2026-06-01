@@ -162,5 +162,33 @@ services:
         max-size: "20m"
         max-file: "2"
 
+  # Data Warehouse (Fase 2): Postgres aloja las capas Silver y Gold del modelo
+  # estrella y el esquema dq de resultados de calidad. En AWS se reemplaza por un
+  # Postgres gestionado (ej. RDS) apuntando las mismas variables de entorno.
+  postgres:
+    image: postgres:16
+    container_name: oil-dw-postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-oil}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-oil}
+      - POSTGRES_DB=${POSTGRES_DB:-oil_dw}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-oil} -d $${POSTGRES_DB:-oil_dw}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
 volumes:
   grafana_dashboards:
+  postgres_data:
