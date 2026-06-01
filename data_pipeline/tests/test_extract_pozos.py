@@ -1,0 +1,63 @@
+"""Tests unitarios de la extracción de pozos → Bronze.
+
+No tocan la red: simulan la descarga mockeando `requests.get` con un CSV de
+prueba. Verifican el comportamiento que nos importa del crudo en Bronze
+(descarte de BOM, datos como texto, ruta versionada por fecha, idempotencia).
+"""
+
+from datetime import date
+
+import pandas as pd
+import pytest
+
+from data_pipeline.extraction import extract_pozos as mod
+
+# CSV de prueba: arranca con un BOM (﻿) a propósito, como la fuente real.
+_CSV_CON_BOM = "﻿idpozo,sigla\n144081,315\n144082,316\n".encode("utf-8")
+
+
+class _FakeResponse:
+    """Respuesta HTTP mínima para reemplazar la de requests en el test."""
+
+    content = _CSV_CON_BOM
+
+    def raise_for_status(self) -> None:
+        pass
+
+
+@pytest.fixture
+def bronze_tmp(tmp_path, monkeypatch):
+    """Redirige la capa Bronze a un directorio temporal y mockea la descarga."""
+    monkeypatch.setattr(mod, "BRONZE_DIR", tmp_path)
+    monkeypatch.setattr(mod.requests, "get", lambda *a, **k: _FakeResponse())
+    return tmp_path
+
+
+def test_descarta_bom_de_la_primera_columna(bronze_tmp):
+    archivo = mod.extract_pozos(ingesta=date(2026, 6, 1))
+    df = pd.read_parquet(archivo)
+    # La columna debe ser "idpozo", no "﻿idpozo".
+    assert list(df.columns) == ["idpozo", "sigla"]
+    assert df["idpozo"].tolist() == ["144081", "144082"]
+
+
+def test_guarda_todo_como_texto(bronze_tmp):
+    archivo = mod.extract_pozos(ingesta=date(2026, 6, 1))
+    df = pd.read_parquet(archivo)
+    # Bronze es crudo: ningún tipo se infiere, todo queda como object (texto).
+    assert set(df.dtypes.astype(str)) == {"object"}
+
+
+def test_ruta_versionada_por_fecha_de_ingesta(bronze_tmp):
+    archivo = mod.extract_pozos(ingesta=date(2026, 6, 1))
+    assert archivo == bronze_tmp / "pozos" / "ingesta=2026-06-01" / "pozos.parquet"
+    assert archivo.exists()
+
+
+def test_idempotente_misma_fecha(bronze_tmp):
+    mod.extract_pozos(ingesta=date(2026, 6, 1))
+    archivo = mod.extract_pozos(ingesta=date(2026, 6, 1))  # segunda corrida
+    # Sigue habiendo un solo parquet para esa ingesta, sin filas duplicadas.
+    parquets = list((bronze_tmp / "pozos" / "ingesta=2026-06-01").glob("*.parquet"))
+    assert len(parquets) == 1
+    assert len(pd.read_parquet(archivo)) == 2

@@ -1,0 +1,6 @@
+# Dependencias del pipeline de datos (Fase 2 — ingesta + capa Bronze).
+# Separadas de api/requirements.txt para aislar las deps del backend.
+
+pandas>=2.0        # lectura de los CSV de datos.gob.ar y manejo de DataFrames
+pyarrow>=15.0      # motor para escribir/leer parquet en la capa Bronze
+requests>=2.31     # descarga de las fuentes por HTTP (con timeout)
