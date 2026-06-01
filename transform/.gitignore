@@ -3,3 +3,6 @@ dbt_packages/
 logs/
 venv/
 .user.yml
+# Archivos de ícono de carpeta de macOS Finder ("Icon\r")
+Icon
+Icon?
