@@ -38,7 +38,7 @@ Usaremos **Dagster** como herramienta de orquestación, modelando el pipeline co
 
 ### Por qué Dagster sobre Airflow
 
-- **Overhead acorde al equipo.** Airflow exige scheduler, webserver, base de metadatos y típicamente un worker: varios contenedores que sumar al `docker-compose` y mantener entre 3 personas en 2 semanas. Dagster corre con un único servicio y su UI, suficiente para nuestra escala con DuckDB.
+- **Overhead acorde al equipo.** Airflow exige scheduler, webserver, base de metadatos y típicamente un worker: varios contenedores que sumar al `docker-compose` y mantener entre 3 personas en 2 semanas. Dagster corre con un único servicio y su UI, suficiente para nuestra escala.
 - **El lineage nativo de Airflow no compensa.** Su principal ventaja para nosotros sería la integración con DataHub, pero ese linaje también lo obtendremos por el plugin de Dagster y por la ingesta de metadata desde el propio DW que hará la Persona C. No justifica el costo operativo.
 
 El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upsert por `idpozo + anio + mes` para producción) se implementa sobre el modelo de particiones de Dagster y se justifica en el ADR-012.
@@ -48,7 +48,7 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upse
 **Positivas:**
 - Backfill e idempotencia resueltos de forma nativa, cubriendo los requisitos más ponderados de la fase sin código a medida.
 - El grafo de assets documenta y visualiza la arquitectura Medallion, aportando linaje interno desde el inicio.
-- Overhead operativo contenido (un servicio y su UI) frente a Airflow, compatible con el `docker-compose` actual y el DW file-based.
+- Overhead operativo contenido (un servicio y su UI) frente a Airflow, compatible con el `docker-compose` actual.
 - Retries con backoff y logs/status accesibles vía la UI, cumpliendo observabilidad.
 
 **Negativas:**
@@ -60,5 +60,5 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upse
 
 - **Coordinación con gobierno:** confirmar la ruta de emisión de linaje a DataHub (plugin de Dagster o ingesta desde el DW). Es la única pata de esta decisión que no es exclusiva del Data Engineer.
 - **Particionado:** los assets de producción se particionan por `anio/mes`; el catálogo de pozos se trata como asset no particionado (full refresh).
-- **Persistencia:** IO manager hacia DuckDB y archivos parquet en la capa Bronze (`data/bronze/`, ya versionada como estructura y con los datos gitignoreados).
+- **Persistencia:** IO manager hacia el data warehouse (cuya elección corresponde al Analytics Engineer, ver su ADR) y archivos parquet en la capa Bronze (`data/bronze/`, ya versionada como estructura y con los datos gitignoreados).
 - **Despliegue:** Dagster se suma como servicio en el `docker-compose` existente, coordinando con Infraestructura.
