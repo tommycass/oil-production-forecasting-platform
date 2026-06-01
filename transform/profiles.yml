@@ -1,0 +1,18 @@
+# Perfil de conexión al Data Warehouse (PostgreSQL).
+# Driven por variables de entorno: en local apunta al container `postgres` del
+# docker-compose (defaults oil/oil/oil_dw); en AWS se setean las mismas variables
+# apuntando al Postgres gestionado (ej. RDS).
+#
+# Uso: dbt corre con --profiles-dir . (o exportando DBT_PROFILES_DIR=transform).
+oil_dw:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('POSTGRES_USER', 'oil') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'oil') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'oil_dw') }}"
+      schema: gold
+      threads: 4

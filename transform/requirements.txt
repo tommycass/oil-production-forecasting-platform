@@ -1,0 +1,8 @@
+dbt-core>=1.8,<2.0
+dbt-postgres>=1.8,<2.0
+# Carga de la capa Bronze (parquet/CSV) a Postgres
+pandas>=2.0
+pyarrow>=15.0
+SQLAlchemy>=2.0
+psycopg2-binary>=2.9
+requests>=2.31
