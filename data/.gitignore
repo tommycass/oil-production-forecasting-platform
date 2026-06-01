@@ -1,0 +1,4 @@
+# Datos crudos y de exploracion no se versionan
+_explore/
+*.csv
+*.parquet
