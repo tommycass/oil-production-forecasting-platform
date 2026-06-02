@@ -30,3 +30,42 @@ Se evalúan tres estrategias de carga:
    corrida anterior.
 3. **Merge / upsert:** insertar o actualizar por clave, resolviendo a un único
    registro vigente por entidad.
+
+## Decisión
+
+**La extracción desde la fuente es full en ambos datasets** (es la única opción:
+la fuente solo publica el archivo completo). La diferencia está en cómo se
+persiste en Bronze y dónde se resuelve la corrección de datos.
+
+### Listado de pozos → full refresh (snapshot por fecha de ingesta)
+
+Catálogo chico y sin grano temporal: se baja entero y se persiste como snapshot
+versionado por fecha de ingesta. El costo de reescribirlo completo es trivial
+(~84k filas) y mantener snapshots datados da trazabilidad del catálogo en el
+tiempo a bajo costo.
+
+### Producción → full refresh particionado por `anio/mes`
+
+Se baja el archivo completo y se reescriben las particiones `anio/mes`. Aunque la
+extracción es full, el **particionado por período** permite tratar cada mes de
+forma independiente: re-materializar un solo mes (backfill) sin tocar el resto.
+La reescritura por partición es idempotente (re-correr deja Bronze igual).
+
+### El merge/upsert se difiere a Silver, no se hace en Bronze
+
+La resolución de los meses corregidos —quedarse con un único registro vigente por
+`(idpozo, anio, mes)` según `fecha_data`— se realiza **en Silver** (Persona B),
+no en Bronze. Bronze conserva **todos** los registros crudos, incluidas las
+versiones corregidas, porque su rol es ser fiel e inmutable: esa historia es el
+insumo para auditar y reprocesar.
+
+### Por qué no las otras estrategias
+
+- **Incremental append (descartada):** la fuente no expone un filtro "desde la
+  última corrida", así que no podríamos traer solo lo nuevo de forma confiable; y
+  como la fuente reemite meses corregidos, el append duplicaría registros en
+  lugar de actualizarlos.
+- **Merge/upsert en Bronze (descartada para esta capa):** es la estrategia
+  correcta para resolver correcciones, pero aplicarla en Bronze destruiría la
+  historia cruda (sobrescribiría el registro original con el corregido). Por eso
+  el upsert vive en Silver, sobre un Bronze que permanece inmutable.
