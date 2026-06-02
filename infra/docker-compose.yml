@@ -163,11 +163,16 @@ services:
         max-file: "2"
 
   # Data Warehouse (Fase 2): Postgres aloja las capas Silver y Gold del modelo
-  # estrella y el esquema dq de resultados de calidad. En AWS se reemplaza por un
-  # Postgres gestionado (ej. RDS) apuntando las mismas variables de entorno.
+  # estrella y el esquema dq de resultados de calidad.
+  #   - staging / local: se levanta este container (perfil "local-db").
+  #   - producción: NO se levanta; se usa un Postgres gestionado (RDS) apuntando
+  #     las mismas variables de entorno (POSTGRES_HOST/PORT/USER/PASSWORD/DB).
+  # El perfil hace que `docker compose up -d` no arranque el container salvo que
+  # COMPOSE_PROFILES incluya "local-db" (o se nombre el servicio explícitamente).
   postgres:
     image: postgres:16
     container_name: oil-dw-postgres
+    profiles: ["local-db"]
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-oil}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-oil}
