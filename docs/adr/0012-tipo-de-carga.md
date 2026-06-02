@@ -69,3 +69,24 @@ insumo para auditar y reprocesar.
   correcta para resolver correcciones, pero aplicarla en Bronze destruiría la
   historia cruda (sobrescribiría el registro original con el corregido). Por eso
   el upsert vive en Silver, sobre un Bronze que permanece inmutable.
+
+## Consecuencias
+
+**Positivas:**
+- Bronze inmutable y fiel: conserva la historia de correcciones, habilitando
+  auditoría y reprocesamiento.
+- El particionado de producción por `anio/mes` habilita el backfill de un mes
+  puntual, requisito de la consigna.
+- Cargas idempotentes en ambos datasets: re-correr no duplica.
+- Estrategia simple y robusta frente a una fuente que solo ofrece descarga
+  completa, sin depender de mecanismos de captura incremental inexistentes.
+
+**Negativas:**
+- Se descarga el archivo completo en cada corrida aunque cambien pocos meses;
+  para el volumen actual (~144 MB) el costo es asumible, pero no escala
+  indefinidamente.
+- La resolución de duplicados por corrección queda fuera de Bronze: un consumidor
+  que lea Bronze directo verá registros duplicados por `(idpozo, anio, mes)` y
+  debe ir a Silver para el dato vigente.
+- Mantener snapshots datados del catálogo de pozos crece en almacenamiento con el
+  tiempo (acotado por el tamaño chico del dataset).
