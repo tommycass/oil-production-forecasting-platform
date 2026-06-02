@@ -70,3 +70,24 @@ La asimetría es deliberada: guardar snapshots datados del dataset grande de
 producción (144 MB por corrida) no se justifica, porque la fuente ya reemite las
 correcciones dentro del archivo; el catálogo es chico y su historia es barata de
 conservar.
+
+## Consecuencias
+
+**Positivas:**
+- Bronze fiel al crudo (todo texto, sin transformar) y a la vez eficiente de leer
+  y almacenar (parquet comprimido con esquema).
+- El particionado de producción por `anio/mes` habilita backfill y lecturas
+  selectivas por período desde Silver.
+- El descarte de BOM evita el bug que ensuciaba el nombre de la primera columna,
+  validado con tests.
+- La separación crudo/limpieza deja claro el contrato con Silver: Bronze entrega
+  el literal, Silver castea y normaliza.
+
+**Negativas:**
+- Todo como texto obliga a Silver a castear cada columna; el esquema tipado no se
+  define en Bronze.
+- La retención asimétrica (snapshots en pozos, sobrescritura en producción)
+  implica que no hay historial de ingestas de producción: para reconstruir un
+  estado pasado se depende de volver a la fuente.
+- Parquet no es legible "a ojo" como un CSV; inspeccionarlo requiere una
+  herramienta (pandas, DuckDB).
