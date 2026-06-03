@@ -4,3 +4,7 @@
 pandas>=2.0        # lectura de los CSV de datos.gob.ar y manejo de DataFrames
 pyarrow>=15.0      # motor para escribir/leer parquet en la capa Bronze
 requests>=2.31     # descarga de las fuentes por HTTP (con timeout)
+
+# Orquestación (ADR-011)
+dagster>=1.7            # orquestador: define los assets del pipeline
+dagster-webserver>=1.7  # UI web de Dagster (logs, status, materializaciones)

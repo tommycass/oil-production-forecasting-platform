@@ -59,6 +59,6 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upse
 ## Decisiones Técnicas Posteriores
 
 - **Coordinación con gobierno:** confirmar la ruta de emisión de linaje a DataHub (plugin de Dagster o ingesta desde el DW). Es la única pata de esta decisión que no es exclusiva del Data Engineer.
-- **Particionado:** los assets de producción se particionan por `anio/mes`; el catálogo de pozos se trata como asset no particionado (full refresh).
+- **Particionado:** la extracción a Bronze **no** se modela como asset particionado por mes. La fuente publica un único archivo completo (no permite descargar un mes puntual), así que particionar la descarga no ahorraría trabajo: traer un solo mes igual implicaría bajar todo. Por eso la extracción es un asset de full refresh (ver ADR-012), y el backfill por partición se aprovecha aguas abajo (Silver/Gold), donde reprocesar un mes sí evita rehacer el resto.
 - **Persistencia:** IO manager hacia el data warehouse (cuya elección corresponde al Analytics Engineer, ver su ADR) y archivos parquet en la capa Bronze (`data/bronze/`, ya versionada como estructura y con los datos gitignoreados).
 - **Despliegue:** Dagster se suma como servicio en el `docker-compose` existente, coordinando con Infraestructura.
