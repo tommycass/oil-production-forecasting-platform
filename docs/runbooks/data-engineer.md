@@ -31,3 +31,36 @@ de forma idempotente.
 - Acceso de lectura al Data Warehouse (Postgres) para validar Silver/Gold, o
   coordinación con la Persona B (Analytics Engineer) para esa parte.
 - Saber el período afectado: `anio` y `mes` a reprocesar.
+
+## Pasos
+
+1. **Confirmar el período y la corrección.** Identificar el `anio/mes` reportado y
+   verificar contra la fuente que efectivamente hay registros corregidos
+   (aparecen filas con `rectificado = t` o cambió la `fecha_data` del período).
+
+2. **Re-ingestar a Bronze.** Re-ejecutar la extracción de producción. Como la
+   fuente publica el archivo completo, esto re-descarga todo y **reescribe todas
+   las particiones** `anio/mes` (incluida la corregida) de forma idempotente.
+   - Vía Dagster (recomendado): materializar el asset `bronze_produccion` desde la
+     UI (`dagster dev -m data_pipeline.orchestration.definitions`) o por CLI:
+     ```bash
+     dagster asset materialize --select bronze_produccion \
+       -m data_pipeline.orchestration.definitions
+     ```
+   - Vía función directa (fallback sin orquestador):
+     ```bash
+     python -m data_pipeline.extraction.extract_produccion
+     ```
+
+3. **Verificar Bronze.** Confirmar que la partición del mes quedó reescrita y que
+   contiene la versión corregida:
+   ```bash
+   python -c "import pandas as pd; df=pd.read_parquet('data/bronze/produccion/anio=2024/mes=3/produccion.parquet'); print(len(df), df['rectificado'].value_counts().to_dict())"
+   ```
+   (Reemplazar `anio=2024/mes=3` por el período afectado.)
+
+4. **Propagar a Silver y Gold.** Disparar el reproceso aguas abajo de ese período,
+   coordinando con la Persona B (Analytics Engineer). Silver deduplica por
+   `(idpozo, anio, mes)` conservando el registro vigente (último `fecha_data`), de
+   modo que el dato corregido reemplaza al anterior; Gold se re-materializa a
+   partir de Silver. El reproceso es por partición (mes), no global.
