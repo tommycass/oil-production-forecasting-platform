@@ -64,3 +64,39 @@ de forma idempotente.
    `(idpozo, anio, mes)` conservando el registro vigente (último `fecha_data`), de
    modo que el dato corregido reemplaza al anterior; Gold se re-materializa a
    partir de Silver. El reproceso es por partición (mes), no global.
+
+## Validación
+
+Sé que el reproceso salió bien cuando:
+
+- **Bronze:** la partición del mes existe y se reescribió en esta corrida (timestamp
+  del parquet actualizado), y `rectificado` muestra los registros corregidos
+  esperados (paso 3).
+- **Conteos coherentes:** la cantidad de filas y los totales de producción
+  (`prod_gas`, `prod_pet`) del mes en Gold cambian respecto del valor previo en la
+  dirección reportada, y no varían los otros meses.
+- **Calidad:** la tabla de resultados de DQ (esquema `dq`) registra los checks del
+  período como *pasados*, sin fallas críticas (schema, completeness, validity).
+- **Frescura:** la marca de última actualización del período refleja la corrida de
+  hoy (visible también en el grafo de assets de Dagster y, si está integrado, en
+  DataHub).
+- **Idempotencia:** re-correr el paso 2 deja el mismo resultado (no duplica filas
+  ni particiones).
+
+## Si algo falla
+
+- **Falla la descarga (fuente caída o lenta):** la extracción es idempotente; se
+  puede re-ejecutar sin riesgo. Con Dagster, los reintentos con backoff
+  (incremento que se suma en el paso 5 del roadmap) cubren los errores
+  transitorios; si persiste, esperar y reintentar más tarde.
+- **Bronze quedó con datos sospechosos tras reescribir:** Bronze de producción es
+  *full refresh* sin snapshots datados (ver retención en ADR-013), así que **no
+  hay versión anterior en el repo para restaurar**. Plan B: la fuente es la verdad
+  de referencia → volver a ejecutar la extracción; si la propia fuente publicó un
+  dato erróneo, **no promover** y escalar.
+- **El gate de calidad bloquea Silver→Gold (ADR-016):** Bronze queda actualizado
+  pero Gold no se promueve. Escalar a la **Persona B (Analytics Engineer)** para
+  investigar la falla de DQ del período; no forzar la promoción.
+- **Escalamiento:** problemas de Silver/Gold/DQ → Analytics Engineer; sospecha de
+  que la fuente oficial publicó datos incorrectos → elevar al equipo antes de
+  propagar la corrección.
