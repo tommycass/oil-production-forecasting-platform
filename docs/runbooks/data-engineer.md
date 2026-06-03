@@ -100,3 +100,50 @@ Sé que el reproceso salió bien cuando:
 - **Escalamiento:** problemas de Silver/Gold/DQ → Analytics Engineer; sospecha de
   que la fuente oficial publicó datos incorrectos → elevar al equipo antes de
   propagar la corrección.
+
+## Consideraciones no funcionales
+
+Límites y garantías que el Data Engineer ownea en este procedimiento:
+
+- **Frescura:** Bronze debe reflejar la última publicación de la fuente dentro de
+  la cadencia definida (ver decisión no funcional abajo); las correcciones urgentes
+  se cubren fuera de ciclo con este runbook.
+- **Costo:** cada corrida descarga el archivo completo (~144 MB) y reescribe todas
+  las particiones. Acotado hoy, pero no escala indefinidamente.
+- **Calidad de dato:** el DE garantiza **fidelidad** del crudo (sin transformar,
+  con el BOM correctamente descartado), no la limpieza (eso lo valida Silver/DQ).
+- **Idempotencia:** re-ejecutar no duplica ni corrompe; es seguro reintentar.
+- **Seguridad / PII:** la fuente es pública (datos.gob.ar) y no contiene datos
+  personales; el riesgo de privacidad es bajo.
+- **Gobernanza:** la corrida queda trazada (grafo de assets de Dagster y, si está
+  integrado, linaje a nivel tabla en DataHub).
+
+## Decisiones del procedimiento
+
+### Decisión funcional: Bronze conserva el crudo sin deduplicar
+
+El procedimiento **no resuelve la corrección en Bronze**: guarda todos los
+registros tal como llegan (incluida la versión vieja y la corregida) y delega a
+Silver quedarse con el vigente por `fecha_data`. Esta decisión la ownea y empuja
+el Data Engineer por un interés propio y concreto: cuando un analista discute un
+número ("este mes cambió, ¿por qué?"), el primero a quien le preguntan es al DE, y
+la única forma de responder con autoridad es **poder mostrar qué dijo la fuente
+antes y después de la corrección**. Si el DE deduplicara en Bronze, destruiría esa
+evidencia y quedaría sin defensa ante una disputa o una auditoría. Conservar el
+crudo íntegro es, para el DE, su seguro: le permite probar que el pipeline es fiel
+y reprocesar desde una base confiable en vez de depender de que la fuente todavía
+tenga el dato.
+
+### Decisión no funcional: la extracción programada corre con cadencia semanal
+
+La corrida automática de extracción se programa **semanal**, no diaria ni horaria
+(este runbook cubre los reprocesos urgentes entre corridas). La decisión responde
+a los incentivos del DE, que está expuesto por dos lados opuestos: si el dato queda
+viejo, los consumidores (analistas y la Persona B) se quejan y el DE es el
+responsable; pero si el job corre de más, son descargas de 144 MB desperdiciadas y
+más oportunidades de fallas transitorias que el DE tiene que ir a vigilar. Como la
+producción oficial se publica con ritmo aproximadamente mensual y las correcciones
+son esporádicas, una cadencia semanal acompaña el ritmo real de la fuente:
+minimiza a la vez las quejas por desactualización y el trabajo operativo de
+babysitting. Diaria sería puro overhead (el dato casi no cambia día a día) y
+mensual arriesgaría tardar demasiado en capturar una corrección.
