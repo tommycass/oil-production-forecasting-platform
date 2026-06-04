@@ -57,8 +57,25 @@ oil-production-forecasting-platform/
 │   ├── requirements-dev.txt        # Dependencias de desarrollo (pytest, ruff, etc.)
 │   └── README.md
 │
+├── data_pipeline/                  # Pipeline de datos (Fase 2 — ingesta + Bronze)
+│   ├── config.py                   # URLs de las fuentes + rutas (landing/Bronze)
+│   ├── extraction/                 # Extracción de las 2 fuentes datos.gob.ar
+│   │   ├── extract_pozos.py
+│   │   └── extract_produccion.py
+│   ├── orchestration/              # Assets de Dagster (orquestación)
+│   │   ├── assets.py
+│   │   └── definitions.py
+│   ├── tests/                      # Tests del pipeline (pytest)
+│   ├── requirements.txt
+│   └── requirements-dev.txt
+│
+├── data/                           # Datos crudos (gitignored): landing + capa Bronze
+│
 ├── docs/
 │   ├── consigna-fase1.md
+│   ├── consigna-fase2.md
+│   ├── runbooks/                   # Runbooks por rol
+│   │   └── data-engineer.md        # Reprocesar un mes corregido por la fuente
 │   └── adr/                        # Architecture Decision Records
 │       ├── 0001-framework-backend.md
 │       ├── 0002-docker-containerizacion.md
@@ -69,7 +86,10 @@ oil-production-forecasting-platform/
 │       ├── 0007-rate-limiting-api.md
 │       ├── 0008-operational-endpoints.md
 │       ├── 0009-testing-strategy-api.md
-│       └── 0010-api-key-validation-strategy.md
+│       ├── 0010-api-key-validation-strategy.md
+│       ├── 0011-orquestador.md
+│       ├── 0012-tipo-de-carga.md
+│       └── 0013-diseno-capa-bronze.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
@@ -319,6 +339,11 @@ Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe rev
 - **Pydantic** — validación y serialización de schemas
 - **SlowAPI** — rate limiting por IP
 
+**Pipeline de datos (Fase 2)**
+- **Dagster** — orquestador: assets, particiones mensuales y retries con backoff
+- **pandas / pyarrow** — lectura de los CSV y escritura de la capa Bronze en parquet
+- **requests** — descarga de las fuentes de datos.gob.ar
+
 **Infraestructura**
 - **Docker / Docker Compose** — contenerización y orquestación local
 - **AWS ECR** — registro privado de imágenes
@@ -370,3 +395,6 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [008](docs/adr/0008-operational-endpoints.md) | Endpoints operativos `/health` y `/mock-500` | Para qué sirven, por qué quedan fuera de la API key |
 | [009](docs/adr/0009-testing-strategy-api.md) | Estrategia de unit testing de la API | Alcance de los tests, fixtures y patching de la API key |
 | [010](docs/adr/0010-api-key-validation-strategy.md) | Estrategia de validación de API Key | Por qué la validación corre como middleware ASGI (fail-fast on auth) |
+| [011](docs/adr/0011-orquestador.md) | Elección de la herramienta de orquestación | Airflow vs Prefect vs Dagster — por qué Dagster para la ingesta de datos |
+| [012](docs/adr/0012-tipo-de-carga.md) | Tipo de carga a la capa Bronze | Full refresh vs incremental vs merge — justificado por dataset |
+| [013](docs/adr/0013-diseno-capa-bronze.md) | Diseño de la capa Bronze | Formato parquet, todo como texto, particionado por anio/mes y landing |
