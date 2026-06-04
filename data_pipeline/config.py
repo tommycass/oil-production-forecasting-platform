@@ -7,10 +7,12 @@ fuentes se definen una sola vez.
 
 from pathlib import Path
 
-# Raíz del repo (data_pipeline/ está un nivel debajo) y capa Bronze:
-# datos crudos versionados por fecha de ingesta. El contenido de data/ está
-# gitignoreado; solo se versiona la estructura.
+# Raíz del repo (data_pipeline/ está un nivel debajo) y rutas de datos.
+# El contenido de data/ está gitignoreado; solo se versiona la estructura.
+#  - LANDING_DIR: descarga cruda completa (una sola por corrida), pre-Bronze.
+#  - BRONZE_DIR:  crudo persistido (parquet); producción particionada por anio/mes.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LANDING_DIR = PROJECT_ROOT / "data" / "landing"
 BRONZE_DIR = PROJECT_ROOT / "data" / "bronze"
 
 # Fuentes datos.gob.ar — Producción de petróleo y gas por pozo (Capítulo IV).
