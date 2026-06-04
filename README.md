@@ -179,6 +179,92 @@ ruff check api/app/
 
 ---
 
+## Workflows del pipeline de datos
+
+La ingesta de datos (Fase 2) se orquesta con **Dagster**. Trae las dos fuentes de
+datos.gob.ar a la **capa Bronze** (parquet crudo en `data/`). Los assets son:
+
+| Asset | Qué hace |
+|---|---|
+| `bronze_pozos` | Descarga el listado de pozos → Bronze (full refresh) |
+| `produccion_raw` | Descarga el CSV completo de producción → landing (una vez) |
+| `bronze_produccion` | Particionado por mes; deriva cada partición del landing |
+
+### Requisitos
+
+```bash
+pip install -r data_pipeline/requirements.txt
+```
+
+### Levantar Dagster (UI con logs y status)
+
+```bash
+dagster dev -m data_pipeline.orchestration.definitions
+```
+
+La UI queda en **http://localhost:3000**: muestra el grafo de assets, los logs y
+el status de cada corrida, y permite materializar desde el navegador.
+
+### Correr la ingesta completa
+
+Desde la UI: *Materialize all* (Dagster respeta el orden `produccion_raw` →
+`bronze_produccion`). O por línea de comandos:
+
+```bash
+# Catálogo de pozos
+dagster asset materialize --select bronze_pozos -m data_pipeline.orchestration.definitions
+# Producción completa (descarga + todas las particiones)
+python -m data_pipeline.extraction.extract_produccion
+```
+
+### Backfill — reprocesar un mes corregido por la fuente
+
+Reprocesar un período puntual reescribe **solo esa partición**, leyendo del landing
+ya descargado (sin volver a bajar el archivo completo):
+
+```bash
+# Un mes (la partición usa el formato AAAA-MM-01)
+dagster asset materialize --select bronze_produccion --partition "2024-03-01" \
+  -m data_pipeline.orchestration.definitions
+
+# Un rango de meses
+dagster asset materialize --select bronze_produccion \
+  --partition-range 2024-01-01...2024-03-01 \
+  -m data_pipeline.orchestration.definitions
+```
+
+También se puede lanzar desde la UI con el botón **Backfill** del asset. El
+procedimiento completo (disparador, validación, rollback) está en el
+[runbook del Data Engineer](docs/runbooks/data-engineer.md).
+
+### Actualizar / agregar workflows
+
+La lógica de extracción vive en `data_pipeline/extraction/` y los assets en
+`data_pipeline/orchestration/assets.py`. Tras editar, validar que cargan:
+
+```bash
+dagster definitions validate -m data_pipeline.orchestration.definitions
+```
+
+### Tests del pipeline
+
+```bash
+pip install -r data_pipeline/requirements-dev.txt
+pytest data_pipeline/tests/
+```
+
+### Troubleshooting
+
+- **Falla la descarga (fuente caída/lenta):** los assets reintentan con backoff
+  exponencial (3 intentos). La extracción es idempotente, así que re-materializar
+  es seguro. El detalle del error queda en los logs de la corrida en la UI.
+- **Una partición quedó vacía:** las particiones mensuales cubren todo el rango
+  desde 2006; un mes sin datos en la fuente genera un parquet de 0 filas (no es un
+  error).
+- **Cambió un mes histórico:** ver *Backfill* arriba; reescribe solo ese mes.
+
+---
+
 ## Endpoints principales
 
 | Método | Endpoint | Descripción | Auth |
