@@ -1,8 +1,8 @@
-"""Tests unitarios de la extracción de producción → Bronze.
+"""Tests unitarios de la extracción de producción → landing + Bronze.
 
 No tocan la red: simulan la descarga mockeando `requests.get` con un CSV de
-prueba. Verifican lo propio de producción: particionado por anio/mes, descarte
-de BOM, conservación del crudo e idempotencia (full refresh).
+prueba. Cubren las dos funciones del flujo: descarga del landing y escritura de
+una partición (backfill selectivo por mes), además de la corrida completa.
 """
 
 import pandas as pd
@@ -10,8 +10,8 @@ import pytest
 
 from data_pipeline.extraction import extract_produccion as mod
 
-# CSV de prueba con BOM (﻿). Tres filas en dos particiones: (2020,1) con dos
-# filas y (2020,2) con una. Incluye rectificado y fecha_data (contrato con Silver).
+# CSV de prueba con BOM (﻿): 3 filas en dos meses (2020-01 con dos, 2020-02 con una).
+# Incluye rectificado y fecha_data (contrato con Silver).
 _CSV_CON_BOM = (
     "﻿idempresa,anio,mes,idpozo,prod_gas,rectificado,fecha_data\n"
     "YPF,2020,1,100,50.5,f,2020-02-01\n"
@@ -28,38 +28,47 @@ class _FakeResponse:
 
 
 @pytest.fixture
-def bronze_tmp(tmp_path, monkeypatch):
-    """Redirige Bronze a un directorio temporal y mockea la descarga."""
-    monkeypatch.setattr(mod, "BRONZE_DIR", tmp_path)
+def entorno_tmp(tmp_path, monkeypatch):
+    """Redirige landing y Bronze a temporales y mockea la descarga."""
+    monkeypatch.setattr(mod, "_LANDING_FILE", tmp_path / "landing" / "produccion.parquet")
+    monkeypatch.setattr(mod, "BRONZE_DIR", tmp_path / "bronze")
     monkeypatch.setattr(mod.requests, "get", lambda *a, **k: _FakeResponse())
     return tmp_path
 
 
-def test_particiona_por_anio_mes(bronze_tmp):
-    mod.extract_produccion()
-    p1 = bronze_tmp / "produccion" / "anio=2020" / "mes=1" / "produccion.parquet"
-    p2 = bronze_tmp / "produccion" / "anio=2020" / "mes=2" / "produccion.parquet"
-    assert p1.exists() and p2.exists()
-    # Cada partición tiene exactamente las filas de su mes.
-    assert len(pd.read_parquet(p1)) == 2
-    assert len(pd.read_parquet(p2)) == 1
-
-
-def test_descarta_bom_y_conserva_crudo(bronze_tmp):
-    mod.extract_produccion()
-    df = pd.read_parquet(bronze_tmp / "produccion" / "anio=2020" / "mes=1" / "produccion.parquet")
-    # BOM descartado: la primera columna es "idempresa", no "﻿idempresa".
+def test_descargar_landing_descarta_bom_y_conserva_crudo(entorno_tmp):
+    archivo = mod.descargar_landing()
+    df = pd.read_parquet(archivo)
+    # BOM descartado: primera columna "idempresa", no "﻿idempresa".
     assert df.columns[0] == "idempresa"
     # Crudo fiel: todo texto y se conservan las columnas que usa Silver.
     assert set(df.dtypes.astype(str)) == {"object"}
     assert {"rectificado", "fecha_data"}.issubset(df.columns)
+    assert len(df) == 3
 
 
-def test_idempotente_full_refresh(bronze_tmp):
-    mod.extract_produccion()
-    mod.extract_produccion()  # segunda corrida
-    parquets = list((bronze_tmp / "produccion").rglob("produccion.parquet"))
-    # Sigue habiendo una sola partición por mes (2) y sin filas duplicadas.
+def test_escribir_particion_escribe_solo_su_mes(entorno_tmp):
+    mod.descargar_landing()
+    archivo = mod.escribir_particion("2020", "1")
+    df = pd.read_parquet(archivo)
+    assert len(df) == 2
+    assert set(df["anio"]) == {"2020"} and set(df["mes"]) == {"1"}
+
+
+def test_backfill_de_un_mes_no_toca_otras_particiones(entorno_tmp):
+    mod.extract_produccion_full()
+    bronze = entorno_tmp / "bronze" / "produccion"
+    p_febrero = bronze / "anio=2020" / "mes=2" / "produccion.parquet"
+    mtime_febrero = p_febrero.stat().st_mtime
+
+    # Reprocesar solo enero no debe reescribir la partición de febrero.
+    mod.escribir_particion("2020", "1")
+    assert p_febrero.stat().st_mtime == mtime_febrero
+
+
+def test_extract_produccion_full_idempotente(entorno_tmp):
+    mod.extract_produccion_full()
+    mod.extract_produccion_full()  # segunda corrida
+    parquets = list((entorno_tmp / "bronze" / "produccion").rglob("produccion.parquet"))
     assert len(parquets) == 2
-    total = sum(len(pd.read_parquet(p)) for p in parquets)
-    assert total == 3
+    assert sum(len(pd.read_parquet(p)) for p in parquets) == 3
