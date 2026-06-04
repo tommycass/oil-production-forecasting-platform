@@ -61,6 +61,21 @@ eso es decodificar bien, no transformar el dato.
 Se descarta usar un **único esquema para ambas**: no comparten naturaleza
 (una tiene grano temporal y necesita backfill; la otra es un catálogo de estado).
 
+### Landing: una sola descarga, derivar las particiones
+
+Producción se baja primero completa a una zona de **landing** (`data/landing/`), y
+las particiones de Bronze se derivan de ese archivo. Se evaluaron dos formas de
+poblar las particiones:
+
+- **Descargar por partición (descartada):** que cada partición mensual traiga lo
+  suyo. Inviable: la fuente solo publica el archivo completo, así que materializar
+  un mes implicaría bajar los 144 MB enteros, y un backfill de varios meses, una
+  descarga por cada uno.
+- **Descarga única → derivar particiones (elegida):** un paso `produccion_raw` baja
+  el CSV una vez al landing; cada partición de Bronze lee de ahí y escribe solo su
+  mes. Un backfill no re-descarga nada y no toca las demás particiones (ver
+  ADR-011 y ADR-012).
+
 ### Ubicación y retención
 
 Los archivos viven en `data/bronze/<fuente>/...`, fuera de git. Producción se
@@ -76,8 +91,9 @@ conservar.
 **Positivas:**
 - Bronze fiel al crudo (todo texto, sin transformar) y a la vez eficiente de leer
   y almacenar (parquet comprimido con esquema).
-- El particionado de producción por `anio/mes` habilita backfill y lecturas
-  selectivas por período desde Silver.
+- El particionado de producción por `anio/mes`, derivado del landing, habilita el
+  backfill de un mes puntual (reescribe solo esa partición, sin re-descargar) y
+  lecturas selectivas por período desde Silver.
 - El descarte de BOM evita el bug que ensuciaba el nombre de la primera columna,
   validado con tests.
 - La separación crudo/limpieza deja claro el contrato con Silver: Bronze entrega
@@ -89,5 +105,7 @@ conservar.
 - La retención asimétrica (snapshots en pozos, sobrescritura en producción)
   implica que no hay historial de ingestas de producción: para reconstruir un
   estado pasado se depende de volver a la fuente.
+- El landing guarda una copia completa extra del crudo en disco (además de las
+  particiones), a cambio de no re-descargar en cada backfill.
 - Parquet no es legible "a ojo" como un CSV; inspeccionarlo requiere una
   herramienta (pandas, DuckDB).
