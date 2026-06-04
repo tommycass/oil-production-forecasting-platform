@@ -57,7 +57,7 @@ oil-production-forecasting-platform/
 │   ├── requirements-dev.txt        # Dependencias de desarrollo (pytest, ruff, etc.)
 │   └── README.md
 │
-├── data_pipeline/                  # Pipeline de datos (Fase 2 — ingesta + Bronze)
+├── data_pipeline/                  # Pipeline de datos 
 │   ├── config.py                   # URLs de las fuentes + rutas (landing/Bronze)
 │   ├── extraction/                 # Extracción de las 2 fuentes datos.gob.ar
 │   │   ├── extract_pozos.py
@@ -201,7 +201,7 @@ ruff check api/app/
 
 ## Workflows del pipeline de datos
 
-La ingesta de datos (Fase 2) se orquesta con **Dagster**. Trae las dos fuentes de
+La ingesta de datos se orquesta con **Dagster**. Trae las dos fuentes de
 datos.gob.ar a la **capa Bronze** (parquet crudo en `data/`). Los assets son:
 
 | Asset | Qué hace |
@@ -339,7 +339,7 @@ Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe rev
 - **Pydantic** — validación y serialización de schemas
 - **SlowAPI** — rate limiting por IP
 
-**Pipeline de datos (Fase 2)**
+**Pipeline de datos**
 - **Dagster** — orquestador: assets, particiones mensuales y retries con backoff
 - **pandas / pyarrow** — lectura de los CSV y escritura de la capa Bronze en parquet
 - **requests** — descarga de las fuentes de datos.gob.ar
