@@ -44,12 +44,22 @@ versionado por fecha de ingesta. El costo de reescribirlo completo es trivial
 (~84k filas) y mantener snapshots datados da trazabilidad del catálogo en el
 tiempo a bajo costo.
 
-### Producción → full refresh particionado por `anio/mes`
+### Producción → full refresh, materializado por partición (vía landing)
 
-Se baja el archivo completo y se reescriben las particiones `anio/mes`. Aunque la
-extracción es full, el **particionado por período** permite tratar cada mes de
-forma independiente: re-materializar un solo mes (backfill) sin tocar el resto.
-La reescritura por partición es idempotente (re-correr deja Bronze igual).
+El archivo completo se baja a una zona de landing **una sola vez** y desde ahí se
+escribe cada partición `anio/mes` por separado. La carga sigue siendo full (la
+fuente obliga a bajar todo), pero la persistencia a Bronze es **por partición**.
+Se evaluaron dos formas de materializar ese full refresh:
+
+- **Rewrite global (descartada):** borrar Bronze entero y reescribir las ~244
+  particiones en cada corrida. Es simple, pero reescribe meses que no cambiaron y
+  "toca" todas las particiones, lo que re-dispararía el reproceso aguas abajo
+  aunque solo se haya corregido un mes.
+- **Por partición desde el landing (elegida):** materializar solo la partición del
+  mes a reprocesar, leyendo del landing ya descargado. Reescribe únicamente ese
+  mes, sin re-descargar ni re-disparar el resto, y habilita el backfill por
+  partición de Dagster (ver ADR-011 y ADR-013). La escritura por partición es
+  idempotente.
 
 ### El merge/upsert se difiere a Silver, no se hace en Bronze
 
