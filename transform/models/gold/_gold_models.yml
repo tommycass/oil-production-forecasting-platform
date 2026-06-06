@@ -1,0 +1,72 @@
+version: 2
+
+models:
+  - name: fact_produccion_mensual
+    description: "Fact de producción mensual. Grano: (sk_pozo, sk_fecha) = (pozo, mes)."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['sk_pozo', 'sk_fecha']
+          config: { severity: error, tags: ['dq:uniqueness'] }
+    columns:
+      - name: sk_pozo
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+          - relationships:
+              to: ref('dim_pozo')
+              field: sk_pozo
+              config: { severity: error, tags: ['dq:validity'] }
+      - name: sk_operadora
+        data_tests:
+          - relationships:
+              to: ref('dim_operadora')
+              field: sk_operadora
+              config: { severity: error, tags: ['dq:validity'] }
+      - name: sk_yacimiento
+        data_tests:
+          - relationships:
+              to: ref('dim_yacimiento')
+              field: sk_yacimiento
+              config: { severity: error, tags: ['dq:validity'] }
+      - name: sk_fecha
+        data_tests:
+          - relationships:
+              to: ref('dim_fecha')
+              field: sk_fecha
+              config: { severity: error, tags: ['dq:validity'] }
+
+  - name: dim_pozo
+    columns:
+      - name: sk_pozo
+        data_tests:
+          - unique:
+              config: { severity: error, tags: ['dq:uniqueness'] }
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+
+  - name: dim_operadora
+    columns:
+      - name: sk_operadora
+        data_tests:
+          - unique:
+              config: { severity: error, tags: ['dq:uniqueness'] }
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+
+  - name: dim_yacimiento
+    columns:
+      - name: sk_yacimiento
+        data_tests:
+          - unique:
+              config: { severity: error, tags: ['dq:uniqueness'] }
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+
+  - name: dim_fecha
+    columns:
+      - name: sk_fecha
+        data_tests:
+          - unique:
+              config: { severity: error, tags: ['dq:uniqueness'] }
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
