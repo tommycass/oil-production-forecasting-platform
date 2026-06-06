@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import re
 from datetime import datetime, timezone
 
 import pandas as pd
@@ -27,6 +28,32 @@ from sqlalchemy import create_engine, text
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BRONZE_DIR = os.path.join(REPO_ROOT, "data", "bronze")
 FUENTES = ("produccion", "pozos")
+
+# Fecha de ingesta codificada en el path de pozos (data/bronze/pozos/ingesta=YYYY-MM-DD/).
+_INGESTA_RE = re.compile(r"ingesta=(\d{4}-\d{2}-\d{2})")
+
+
+def _texto_preservando_nulos(df: pd.DataFrame) -> pd.DataFrame:
+    """Convierte todo a texto pero deja los faltantes como None (→ SQL NULL).
+
+    El crudo de A trae los campos vacíos como NaN; un `.astype(str)` los volvería
+    el literal "nan", que Silver no reconoce como vacío (su `nullif(..., '')` solo
+    atrapa el string vacío) y rompería los casts a integer/date. Acá los nulos se
+    preservan como None para que lleguen al DW como NULL.
+    """
+    str_df = df.astype("string")  # valores → str, faltantes → <NA>
+    return str_df.astype(object).where(str_df.notna(), None)
+
+
+def _fecha_ingesta_de(path: str, fallback: datetime) -> datetime:
+    """Deriva la fecha de ingesta del path (`ingesta=YYYY-MM-DD`); si no está, fallback.
+
+    Pozos es full-refresh versionado por fecha de ingesta: usar la fecha real del
+    snapshot (no `now()`) hace determinístico el dedupe de silver_pozos, que se
+    queda con el snapshot más reciente por idpozo.
+    """
+    m = _INGESTA_RE.search(path)
+    return datetime.fromisoformat(m.group(1)) if m else fallback
 
 
 def engine_from_env():
@@ -47,9 +74,13 @@ def load_fuente(engine, fuente: str) -> int:
         print(f"[load_bronze] sin parquet para '{fuente}' en {pattern} — se omite")
         return 0
 
-    frames = [pd.read_parquet(f) for f in files]
-    df = pd.concat(frames, ignore_index=True).astype(str)
-    df["fecha_ingesta"] = datetime.now(timezone.utc).replace(tzinfo=None)
+    ahora = datetime.now(timezone.utc).replace(tzinfo=None)
+    frames = []
+    for f in files:
+        fdf = _texto_preservando_nulos(pd.read_parquet(f))
+        fdf["fecha_ingesta"] = _fecha_ingesta_de(f, ahora)
+        frames.append(fdf)
+    df = pd.concat(frames, ignore_index=True)
 
     with engine.begin() as conn:
         conn.execute(text("create schema if not exists bronze"))

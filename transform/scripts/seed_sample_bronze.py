@@ -50,8 +50,19 @@ def fetch_head(url: str, n_rows: int) -> pd.DataFrame:
     return pd.read_csv(io.StringIO("\n".join(lines)), dtype=str)
 
 
+def _texto_preservando_nulos(df: pd.DataFrame) -> pd.DataFrame:
+    """Convierte todo a texto pero deja los faltantes como None (→ SQL NULL).
+
+    Igual que en load_bronze.py: un `.astype(str)` volvería los campos vacíos el
+    literal "nan", que Silver no reconoce como vacío y rompería los casts a
+    integer/date. Acá los nulos se preservan como None.
+    """
+    str_df = df.astype("string")  # valores → str, faltantes → <NA>
+    return str_df.astype(object).where(str_df.notna(), None)
+
+
 def seed(engine, fuente: str, url: str, n_rows: int) -> int:
-    df = fetch_head(url, n_rows).astype(str)
+    df = _texto_preservando_nulos(fetch_head(url, n_rows))
     df["fecha_ingesta"] = datetime.now(timezone.utc).replace(tzinfo=None)
     with engine.begin() as conn:
         conn.execute(text("create schema if not exists bronze"))
