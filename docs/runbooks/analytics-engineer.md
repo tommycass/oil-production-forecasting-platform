@@ -34,6 +34,27 @@ Materializar Silver y Gold a partir de Bronze y dejar el modelo estrella listo y
 - **Insumo:** capa Bronze poblada en el esquema `bronze` (la deja A vía
   `load_bronze.py`, o `seed_sample_bronze.py` para una muestra de prueba).
 
+### Provisión inicial del DW (una vez por entorno)
+
+Las bases del DW (`oil_dw_staging`, `oil_dw_prod`) deben existir antes de correr el
+pipeline. Crearlas es idempotente con `infra/db/bootstrap.sql` (usa `\gexec`; ver el
+header del archivo). dbt y `load_bronze.py` crean los **schemas** solos
+(`bronze/silver/gold/dq`), no hace falta crearlos a mano.
+
+```bash
+# Conecta a la base de mantenimiento `postgres`; el secreto va por el entorno.
+psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres \
+     -v ON_ERROR_STOP=1 -f infra/db/bootstrap.sql
+```
+
+En AWS (RDS) el cliente psql se puede correr vía Docker desde la EC2 con acceso a RDS:
+
+```bash
+sudo docker run --rm -i -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16 \
+  psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres \
+       -v ON_ERROR_STOP=1 < infra/db/bootstrap.sql
+```
+
 ## 3. Pasos
 
 ```bash
