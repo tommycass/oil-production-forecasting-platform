@@ -64,6 +64,17 @@ source venv/bin/activate            # o crear venv + pip install -r requirements
 export POSTGRES_HOST=localhost POSTGRES_PORT=5432 \
        POSTGRES_USER=oil POSTGRES_PASSWORD=oil POSTGRES_DB=oil_dw
 
+# 1b. (Recomendado en checkouts compartidos / root-owned, p.ej. la EC2 de staging)
+#     Escribir los artefactos efímeros de dbt FUERA del repo, en un dir del usuario.
+#     Así el ownership del repo (el deploy hace `git pull` como root) no rompe dbt
+#     con PermissionError al crear logs/ o target/. En local/CI dejá estas vars sin
+#     setear: dbt usa los defaults dentro del proyecto.
+export DBT_LOG_PATH="$HOME/dbt-runtime/logs"
+export DBT_TARGET_PATH="$HOME/dbt-runtime/target"
+#     Nota: target/ contiene manifest.json (lo consumen `dbt docs`, las corridas con
+#     `state:` y el lineage de dbt a DataHub). Si lo relocalizás, esos consumidores
+#     deben apuntar al mismo DBT_TARGET_PATH.
+
 # 2. Asegurar paquetes dbt
 dbt deps
 
