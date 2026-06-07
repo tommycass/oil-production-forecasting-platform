@@ -105,6 +105,7 @@ jobs:
             --comment "Deploying latest API image" \
             --timeout-seconds 300 \
             --parameters 'commands=[
+              "set -e",
               "REPO=597437436418.dkr.ecr.us-east-2.amazonaws.com/oil-forecast-api",
               "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $REPO",
               "cd /home/ubuntu/oil-production-forecasting-platform",
@@ -168,6 +169,7 @@ jobs:
             --comment "Deploying latest API image to DEV" \
             --timeout-seconds 300 \
             --parameters 'commands=[
+              "set -e",
               "REPO=597437436418.dkr.ecr.us-east-2.amazonaws.com/oil-forecast-api",
               "aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $REPO",
               "cd /home/ubuntu/oil-production-forecasting-platform",
