@@ -375,6 +375,10 @@ El flujo funciona de la siguiente manera:
 4. El job de deploy usa **AWS Systems Manager (SSM)** para enviar el comando de actualización a la instancia EC2 identificada por tag (`Name=api` para prod, `Name=api-dev` para staging), sin abrir puertos SSH.
 5. En la EC2, el script de deploy implementa rollback automático: captura el digest de la imagen actual, pullea la nueva, verifica `/health` con hasta 6 reintentos y si falla restaura la versión anterior.
 
+### Autenticación de la EC2 hacia GitHub
+
+El `git pull` que corre en cada deploy autentica mediante **deploy keys SSH** — una clave ed25519 por instancia, registrada como read-only en el repositorio (Settings → Deploy keys). Las claves privadas viven en `/root/.ssh/github_deploy` de cada EC2. Esto es independiente del punto anterior: la EC2 sigue siendo gestionada por SSM sin exponer el puerto 22; el protocolo SSH aquí refiere únicamente a la autenticación del cliente git contra GitHub. No se usan Personal Access Tokens: no vencen, no tienen alcance de cuenta, y no se filtran en logs de SSM.
+
 Detalles completos en [ADR-002](docs/adr/0002-docker-containerizacion.md).
 
 ---
