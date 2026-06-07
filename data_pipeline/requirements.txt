@@ -8,3 +8,9 @@ requests>=2.31     # descarga de las fuentes por HTTP (con timeout)
 # Orquestación (ADR-011)
 dagster>=1.7            # orquestador: define los assets del pipeline
 dagster-webserver>=1.7  # UI web de Dagster (logs, status, materializaciones)
+dagster-dbt>=0.23       # integra los modelos dbt (Silver/Gold/DQ) como assets + asset checks
+
+# El grafo se extiende al DW: los assets de carga corren transform/scripts/load_bronze.py
+# y los modelos dbt corren vía el CLI de dbt. Ese paso necesita además las deps de
+# transform/requirements.txt (dbt-core, dbt-postgres, SQLAlchemy, psycopg2). En la EC2
+# se instalan AMBOS requirements en el mismo venv (ver runbook del Analytics Engineer).

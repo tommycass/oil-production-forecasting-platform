@@ -6,12 +6,15 @@ backfill por partición materializando assets sin tocar la red.
 
 import pandas as pd
 import pytest
-from dagster import Backoff, materialize
+from dagster import AssetKey, Backoff, materialize
 
 from data_pipeline.extraction import extract_produccion as extract_mod
 from data_pipeline.orchestration.assets import (
+    _DwDbtTranslator,
     bronze_pozos,
+    bronze_pozos_db,
     bronze_produccion,
+    bronze_produccion_db,
     produccion_raw,
 )
 
@@ -70,3 +73,21 @@ def test_backfill_de_una_particion_no_toca_las_otras(entorno_tmp):
     # Enero quedó correcto y sin duplicar.
     df_enero = pd.read_parquet(bronze / "anio=2020" / "mes=1" / "produccion.parquet")
     assert len(df_enero) == 2
+
+
+def test_assets_de_carga_usan_la_key_de_las_dbt_sources():
+    # La key de los assets de carga = la dbt source, para que el grafo se conecte.
+    assert AssetKey(["bronze", "produccion"]) in bronze_produccion_db.keys
+    assert AssetKey(["bronze", "pozos"]) in bronze_pozos_db.keys
+
+
+def test_carga_depende_del_bronze_parquet():
+    deps = bronze_produccion_db.asset_deps[AssetKey(["bronze", "produccion"])]
+    assert AssetKey("bronze_produccion") in deps
+
+
+def test_translator_liga_source_bronze_al_asset_de_carga():
+    key = _DwDbtTranslator().get_asset_key(
+        {"resource_type": "source", "source_name": "bronze", "name": "produccion"}
+    )
+    assert key == AssetKey(["bronze", "produccion"])
