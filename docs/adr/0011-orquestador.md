@@ -62,3 +62,31 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upse
 - **Particionado:** producción se modela en **dos assets** para aprovechar el backfill nativo por mes sin pagar la descarga completa por partición. Como la fuente publica un único archivo (no permite bajar un mes puntual), un primer asset `produccion_raw` descarga el CSV completo **una vez** a una zona de landing; un segundo asset `bronze_produccion`, **particionado por mes** (`MonthlyPartitionsDefinition`), lee de ese landing y escribe solo la partición de su mes. Así, reprocesar un mes corregido es materializar esa partición desde la UI de Dagster: reescribe únicamente ese mes, sin re-descargar ni tocar el resto (ver ADR-012 y ADR-013).
 - **Persistencia:** IO manager hacia el data warehouse (cuya elección corresponde al Analytics Engineer, ver su ADR) y archivos parquet en la capa Bronze (`data/bronze/`, ya versionada como estructura y con los datos gitignoreados).
 - **Despliegue:** Dagster se suma como servicio en el `docker-compose` existente, coordinando con Infraestructura.
+
+## Actualización (jun-2026) — el grafo se extiende al DW y corre en AWS
+
+> Propuesta del Analytics Engineer (Persona B), **pendiente de review del Data Engineer**
+> (dueño de este ADR). Toca la zona de orquestación, por eso se documenta acá.
+
+Para dejar el flujo Medallion andando end-to-end en AWS (objetivo: que BI/gobierno
+consuman Gold sin pasos manuales), el grafo de assets **se extiende más allá de Bronze**:
+
+- **Bronze→Postgres:** dos assets nuevos (`bronze/produccion`, `bronze/pozos`) cargan el
+  parquet al esquema `bronze` del DW corriendo `transform/scripts/load_bronze.py`.
+- **Silver/Gold/DQ:** los modelos dbt se integran con **`dagster-dbt`** (un asset por
+  modelo); los tests de Data Quality aparecen como **asset checks** y un check `error`
+  hace fallar el run (mantiene el bloqueo Silver→Gold del ADR-016). Esto materializa la
+  "pata de linaje" que el ADR dejaba pendiente: el manifest de dbt alimenta a DataHub.
+
+**Ejecución (ajuste al despliegue original).** En lugar de levantar Dagster como servicio
+persistente en `docker-compose` (daemon + webserver), en las EC2 actuales (t2.small, 2 GB)
+se dispara **headless por cron del SO** vía `data_pipeline/orchestration/run_pipeline.sh`
+(`dagster job execute`/`asset materialize`), sin daemon ni UI. Motivo: la caja no tiene RAM
+para un servicio persistente además de la API y el monitoreo. Si la instancia se agranda,
+se puede volver al daemon + schedule nativo sin cambiar los assets.
+
+**Env-driven (staging y prod).** Todo lee `POSTGRES_*` del `infra/.env` de cada EC2, así el
+mismo código corre contra `oil_dw_staging` y `oil_dw_prod` cambiando solo esa variable.
+
+Procedimiento operativo (setup del venv, swap/instancia, backfill histórico, cron, rollout
+a prod): ver el runbook del Analytics Engineer.
