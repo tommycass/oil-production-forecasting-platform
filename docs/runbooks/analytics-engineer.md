@@ -90,6 +90,85 @@ dbt build --profiles-dir .
 dbt docs generate --profiles-dir .
 ```
 
+## 3.1 Orquestación end-to-end en AWS (Dagster + cron)
+
+Los pasos de §3 son la corrida manual de dbt. En AWS el flujo corre **completo y
+automatizado**: un grafo de Dagster (`data_pipeline/orchestration/`) materializa
+`Bronze(parquet) → Bronze(Postgres) → Silver/Gold/DQ` y lo dispara el cron. Así BI
+(tablas `gold.*`) y gobierno (manifest de dbt) consumen sin pasos manuales. Es
+**env-driven**: el mismo procedimiento sirve a staging (`oil_dw_staging`) y prod
+(`oil_dw_prod`); lo único que cambia es el `infra/.env` de cada EC2.
+
+> El grafo extiende la zona de orquestación de A — ver "Actualización (jun-2026)" en
+> ADR-011 (pendiente de su review).
+
+### a) Setup (una vez por EC2)
+
+```bash
+cd /home/ubuntu/oil-production-forecasting-platform
+# El deploy hace `git pull` como root → asegurar ownership de ubuntu:
+sudo chown -R ubuntu:ubuntu /home/ubuntu/oil-production-forecasting-platform
+
+# Memoria: los pasos pandas (landing 144 MB, load_bronze) pueden necesitar RAM.
+# Opción A (recomendada): agrandar la instancia. Opción B (red de seguridad): swap.
+sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile \
+  && sudo mkswap /swapfile && sudo swapon /swapfile      # persistir: agregar a /etc/fstab
+
+# Venv ÚNICO para Dagster, FUERA del repo (no lo pisa el deploy/chown):
+python3 -m venv ~/dagster-venv
+source ~/dagster-venv/bin/activate
+pip install -r data_pipeline/requirements.txt -r transform/requirements.txt
+
+# Manifest de dbt (lo consume dagster-dbt) + paquetes dbt:
+set -a; source infra/.env; set +a        # exporta POSTGRES_* (incl. POSTGRES_DB del entorno)
+cd transform && dbt deps && dbt parse --profiles-dir . && cd ..
+```
+
+### b) Backfill histórico (una vez, "carga real")
+
+Puebla todas las particiones de Bronze y construye el DW. La fuente no convencional
+no arranca en 2006; se toma el rango real del landing ya bajado.
+
+```bash
+source ~/dagster-venv/bin/activate
+set -a; source infra/.env; set +a
+MOD=data_pipeline.orchestration.definitions
+
+dagster asset materialize -m $MOD --select produccion_raw   # landing (1 vez)
+dagster asset materialize -m $MOD --select bronze_pozos
+
+# Rango real de años en la fuente:
+python - <<'PY'
+import pandas as pd
+from data_pipeline.extraction.extract_produccion import _LANDING_FILE
+a = pd.read_parquet(_LANDING_FILE, columns=["anio"])["anio"].astype(int)
+print("RANGO", a.min(), a.max())
+PY
+
+# Materializar cada mes del rango (meses sin datos escriben parquet vacío, inocuo):
+for y in $(seq <MIN> <MAX>); do for m in $(seq 1 12); do
+  dagster asset materialize -m $MOD --select bronze_produccion --partition "$(printf '%04d-%02d-01' $y $m)"
+done; done
+
+dagster job execute -m $MOD -j dw_publish   # Bronze→Postgres + dbt (Silver/Gold/DQ)
+```
+
+### c) Refresh recurrente (cron)
+
+`run_pipeline.sh` refresca los últimos `REFRESH_MONTHS` meses (default 3, atrapa altas
+y meses corregidos vía `rectificado`) + `dw_publish`. La fuente es mensual, así que un
+cron mensual alcanza:
+
+```bash
+mkdir -p ~/dagster-runtime
+crontab -l 2>/dev/null | { cat; echo "0 3 5 * * /home/ubuntu/oil-production-forecasting-platform/data_pipeline/orchestration/run_pipeline.sh >> /home/ubuntu/dagster-runtime/cron.log 2>&1"; } | crontab -
+```
+
+### d) Rollout a producción
+
+Repetir (a)–(c) en la EC2 de prod. **Único cambio:** su `infra/.env` tiene
+`POSTGRES_DB=oil_dw_prod`. El código y los comandos son idénticos.
+
 ## 4. Validación (cómo sé que salió bien)
 
 - La corrida termina en `Completed successfully` con `ERROR=0` y `SKIP=0`.

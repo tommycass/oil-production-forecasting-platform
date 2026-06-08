@@ -15,7 +15,17 @@ data_pipeline/
   extraction/
     extract_pozos.py     Listado de pozos      → Bronze  (carga full refresh)
     extract_produccion.py Producción por pozo  → Bronze  (carga merge/upsert)
+  orchestration/
+    assets.py            Assets Dagster: Bronze(parquet) → Bronze(Postgres) → dbt
+    definitions.py       Punto de entrada + recurso dbt + job dw_publish
+    dbt_project.py       Proyecto dbt (transform/) expuesto a dagster-dbt
+    run_pipeline.sh      Refresh headless para cron (env-driven: staging/prod)
 ```
+
+> **Nota (jun-2026):** el grafo de Dagster se **extiende al DW** (carga a Postgres +
+> modelos dbt Silver/Gold/DQ vía `dagster-dbt`) para correr end-to-end en AWS. Ese
+> tramo lo agregó el Analytics Engineer y está **pendiente de review del Data Engineer**
+> (ver "Actualización (jun-2026)" en ADR-011 y el runbook del Analytics Engineer).
 
 Los datos crudos se escriben en `data/bronze/` (fuera de este paquete y
 gitignoreado: ver `data/.gitignore`). Solo se versiona la estructura, nunca los
@@ -30,5 +40,7 @@ archivos de datos.
 
 ## Estado
 
-Estructura inicial. La lógica de extracción, el orquestador (ADR-011) y el
-procedimiento de backfill están pendientes — los stubs marcan dónde van.
+Extracción, orquestador (ADR-011) y backfill por mes **implementados** (assets de
+Dagster en `orchestration/`, con retries y particiones mensuales). El grafo se extiende
+al DW (carga a Postgres + dbt) para el flujo end-to-end en AWS; ese tramo está pendiente
+de review del Data Engineer. Procedimiento operativo en el runbook del Analytics Engineer.
