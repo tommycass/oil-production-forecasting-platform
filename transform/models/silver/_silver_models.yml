@@ -1,0 +1,88 @@
+version: 2
+
+models:
+  - name: silver_produccion
+    description: >
+      Producción mensual limpia, tipada y deduplicada. Grano: (idpozo, anio, mes).
+      Contiene SOLO filas válidas: las que fallan una regla de validez dura (medida
+      negativa) se desvían a la cuarentena `silver_produccion_rechazos`. Gate de
+      Data Quality previo a Gold (ADR-016): los checks `error` bloquean la
+      materialización de la capa Gold.
+    columns:
+      - name: idpozo
+        description: "Identificador del pozo (clave de negocio)."
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+          - dbt_expectations.expect_column_to_exist:
+              config: { severity: error, tags: ['dq:schema'] }
+      - name: anio
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 2000
+              max_value: 2100
+              config: { severity: error, tags: ['dq:validity'] }
+      - name: mes
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+              max_value: 12
+              config: { severity: error, tags: ['dq:validity'] }
+      - name: prod_gas
+        description: "Producción de gas del mes (no puede ser negativa)."
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              config: { severity: error, tags: ['dq:validity'] }
+          - dbt_expectations.expect_column_values_to_be_of_type:
+              column_type: numeric
+              config: { severity: warn, tags: ['dq:schema'] }
+      - name: prod_pet
+        description: "Producción de petróleo del mes (no puede ser negativa)."
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              config: { severity: error, tags: ['dq:validity'] }
+      - name: prod_agua
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              config: { severity: warn, tags: ['dq:validity'] }
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['idpozo', 'anio', 'mes']
+          config: { severity: error, tags: ['dq:uniqueness'] }
+
+  - name: silver_produccion_rechazos
+    description: >
+      Cuarentena (quarantine/dead-letter, ADR-016): filas de producción excluidas de
+      `silver_produccion` por fallar una regla de validez dura (medida negativa). Se
+      persisten con su `motivo_rechazo` para auditoría y para reconciliar
+      bronze = silver + rechazos. Vive en el schema `dq`. No bloquea: es registro.
+    columns:
+      - name: motivo_rechazo
+        description: "Razón por la que la fila fue desviada a cuarentena."
+        data_tests:
+          - not_null:
+              config: { severity: warn, tags: ['dq:audit'] }
+      - name: idpozo
+        data_tests:
+          - not_null:
+              config: { severity: warn, tags: ['dq:audit'] }
+
+  - name: silver_pozos
+    description: "Catálogo de pozos limpio. Un registro por idpozo."
+    columns:
+      - name: idpozo
+        description: "Identificador único del pozo."
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+          - unique:
+              config: { severity: error, tags: ['dq:uniqueness'] }
+          - dbt_expectations.expect_column_to_exist:
+              config: { severity: error, tags: ['dq:schema'] }

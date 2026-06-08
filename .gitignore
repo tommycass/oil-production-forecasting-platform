@@ -23,3 +23,8 @@ Enunciado.pdf
 
 # Secrets
 monitoring/.slack_webhook
+
+# Dagster (storage/logs que genera al correr; no se versionan)
+.dagster/
+dagster_home/
+.tmp_dagster_home_*/

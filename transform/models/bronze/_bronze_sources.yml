@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: bronze
+    schema: bronze
+    description: >
+      Capa Bronze: crudo de datos.gob.ar cargado a Postgres como texto (dueño:
+      Data Engineer). Columnas tal cual la fuente + `fecha_ingesta` (timestamp de
+      carga). El tipado y la limpieza ocurren en Silver. Ver scripts/load_bronze.py.
+    tables:
+      - name: produccion
+        description: "Producción mensual por pozo (gas/petróleo no convencional). Grano: idpozo+anio+mes."
+        loaded_at_field: fecha_ingesta
+        freshness:
+          warn_after: { count: 7, period: day }
+          error_after: { count: 30, period: day }
+      - name: pozos
+        description: "Catálogo de pozos cargados por empresa operadora. Clave: idpozo."
+        loaded_at_field: fecha_ingesta

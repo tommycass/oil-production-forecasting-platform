@@ -57,8 +57,25 @@ oil-production-forecasting-platform/
 │   ├── requirements-dev.txt        # Dependencias de desarrollo (pytest, ruff, etc.)
 │   └── README.md
 │
+├── data_pipeline/                  # Pipeline de datos 
+│   ├── config.py                   # URLs de las fuentes + rutas (landing/Bronze)
+│   ├── extraction/                 # Extracción de las 2 fuentes datos.gob.ar
+│   │   ├── extract_pozos.py
+│   │   └── extract_produccion.py
+│   ├── orchestration/              # Assets de Dagster (orquestación)
+│   │   ├── assets.py
+│   │   └── definitions.py
+│   ├── tests/                      # Tests del pipeline (pytest)
+│   ├── requirements.txt
+│   └── requirements-dev.txt
+│
+├── data/                           # Datos crudos (gitignored): landing + capa Bronze
+│
 ├── docs/
 │   ├── consigna-fase1.md
+│   ├── consigna-fase2.md
+│   ├── runbooks/                   # Runbooks por rol
+│   │   └── data-engineer.md        # Reprocesar un mes corregido por la fuente
 │   └── adr/                        # Architecture Decision Records
 │       ├── 0001-framework-backend.md
 │       ├── 0002-docker-containerizacion.md
@@ -69,7 +86,10 @@ oil-production-forecasting-platform/
 │       ├── 0007-rate-limiting-api.md
 │       ├── 0008-operational-endpoints.md
 │       ├── 0009-testing-strategy-api.md
-│       └── 0010-api-key-validation-strategy.md
+│       ├── 0010-api-key-validation-strategy.md
+│       ├── 0011-orquestador.md
+│       ├── 0012-tipo-de-carga.md
+│       └── 0013-diseno-capa-bronze.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
@@ -179,6 +199,92 @@ ruff check api/app/
 
 ---
 
+## Workflows del pipeline de datos
+
+La ingesta de datos se orquesta con **Dagster**. Trae las dos fuentes de
+datos.gob.ar a la **capa Bronze** (parquet crudo en `data/`). Los assets son:
+
+| Asset | Qué hace |
+|---|---|
+| `bronze_pozos` | Descarga el listado de pozos → Bronze (full refresh) |
+| `produccion_raw` | Descarga el CSV completo de producción → landing (una vez) |
+| `bronze_produccion` | Particionado por mes; deriva cada partición del landing |
+
+### Requisitos
+
+```bash
+pip install -r data_pipeline/requirements.txt
+```
+
+### Levantar Dagster (UI con logs y status)
+
+```bash
+dagster dev -m data_pipeline.orchestration.definitions
+```
+
+La UI queda en **http://localhost:3000**: muestra el grafo de assets, los logs y
+el status de cada corrida, y permite materializar desde el navegador.
+
+### Correr la ingesta completa
+
+Desde la UI: *Materialize all* (Dagster respeta el orden `produccion_raw` →
+`bronze_produccion`). O por línea de comandos:
+
+```bash
+# Catálogo de pozos
+dagster asset materialize --select bronze_pozos -m data_pipeline.orchestration.definitions
+# Producción completa (descarga + todas las particiones)
+python -m data_pipeline.extraction.extract_produccion
+```
+
+### Backfill — reprocesar un mes corregido por la fuente
+
+Reprocesar un período puntual reescribe **solo esa partición**, leyendo del landing
+ya descargado (sin volver a bajar el archivo completo):
+
+```bash
+# Un mes (la partición usa el formato AAAA-MM-01)
+dagster asset materialize --select bronze_produccion --partition "2024-03-01" \
+  -m data_pipeline.orchestration.definitions
+
+# Un rango de meses
+dagster asset materialize --select bronze_produccion \
+  --partition-range 2024-01-01...2024-03-01 \
+  -m data_pipeline.orchestration.definitions
+```
+
+También se puede lanzar desde la UI con el botón **Backfill** del asset. El
+procedimiento completo (disparador, validación, rollback) está en el
+[runbook del Data Engineer](docs/runbooks/data-engineer.md).
+
+### Actualizar / agregar workflows
+
+La lógica de extracción vive en `data_pipeline/extraction/` y los assets en
+`data_pipeline/orchestration/assets.py`. Tras editar, validar que cargan:
+
+```bash
+dagster definitions validate -m data_pipeline.orchestration.definitions
+```
+
+### Tests del pipeline
+
+```bash
+pip install -r data_pipeline/requirements-dev.txt
+pytest data_pipeline/tests/
+```
+
+### Troubleshooting
+
+- **Falla la descarga (fuente caída/lenta):** los assets reintentan con backoff
+  exponencial (3 intentos). La extracción es idempotente, así que re-materializar
+  es seguro. El detalle del error queda en los logs de la corrida en la UI.
+- **Una partición quedó vacía:** las particiones mensuales cubren todo el rango
+  desde 2006; un mes sin datos en la fuente genera un parquet de 0 filas (no es un
+  error).
+- **Cambió un mes histórico:** ver *Backfill* arriba; reescribe solo ese mes.
+
+---
+
 ## Endpoints principales
 
 | Método | Endpoint | Descripción | Auth |
@@ -233,6 +339,11 @@ Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe rev
 - **Pydantic** — validación y serialización de schemas
 - **SlowAPI** — rate limiting por IP
 
+**Pipeline de datos**
+- **Dagster** — orquestador: assets, particiones mensuales y retries con backoff
+- **pandas / pyarrow** — lectura de los CSV y escritura de la capa Bronze en parquet
+- **requests** — descarga de las fuentes de datos.gob.ar
+
 **Infraestructura**
 - **Docker / Docker Compose** — contenerización y orquestación local
 - **AWS ECR** — registro privado de imágenes
@@ -264,6 +375,10 @@ El flujo funciona de la siguiente manera:
 4. El job de deploy usa **AWS Systems Manager (SSM)** para enviar el comando de actualización a la instancia EC2 identificada por tag (`Name=api` para prod, `Name=api-dev` para staging), sin abrir puertos SSH.
 5. En la EC2, el script de deploy implementa rollback automático: captura el digest de la imagen actual, pullea la nueva, verifica `/health` con hasta 6 reintentos y si falla restaura la versión anterior.
 
+### Autenticación de la EC2 hacia GitHub
+
+El `git pull` que corre en cada deploy autentica mediante **deploy keys SSH** — una clave ed25519 por instancia, registrada como read-only en el repositorio (Settings → Deploy keys). Las claves privadas viven en `/root/.ssh/github_deploy` de cada EC2. Esto es independiente del punto anterior: la EC2 sigue siendo gestionada por SSM sin exponer el puerto 22; el protocolo SSH aquí refiere únicamente a la autenticación del cliente git contra GitHub. No se usan Personal Access Tokens: no vencen, no tienen alcance de cuenta, y no se filtran en logs de SSM.
+
 Detalles completos en [ADR-002](docs/adr/0002-docker-containerizacion.md).
 
 ---
@@ -284,3 +399,6 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [008](docs/adr/0008-operational-endpoints.md) | Endpoints operativos `/health` y `/mock-500` | Para qué sirven, por qué quedan fuera de la API key |
 | [009](docs/adr/0009-testing-strategy-api.md) | Estrategia de unit testing de la API | Alcance de los tests, fixtures y patching de la API key |
 | [010](docs/adr/0010-api-key-validation-strategy.md) | Estrategia de validación de API Key | Por qué la validación corre como middleware ASGI (fail-fast on auth) |
+| [011](docs/adr/0011-orquestador.md) | Elección de la herramienta de orquestación | Airflow vs Prefect vs Dagster — por qué Dagster para la ingesta de datos |
+| [012](docs/adr/0012-tipo-de-carga.md) | Tipo de carga a la capa Bronze | Full refresh vs incremental vs merge — justificado por dataset |
+| [013](docs/adr/0013-diseno-capa-bronze.md) | Diseño de la capa Bronze | Formato parquet, todo como texto, particionado por anio/mes y landing |
