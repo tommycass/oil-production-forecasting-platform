@@ -30,14 +30,22 @@ set +a
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 
+# DAGSTER_HOME persiste el historial de runs/logs (si no, Dagster usa un dir temporal
+# por corrida). Default a ~/dagster-runtime; se puede override por entorno.
+export DAGSTER_HOME="${DAGSTER_HOME:-$HOME/dagster-runtime}"
+mkdir -p "$DAGSTER_HOME"
+
 echo "[run_pipeline] $(date -Is) DB=$POSTGRES_DB refresh=${REFRESH_MONTHS}m"
 
 # 1) Landing (descarga el CSV completo una vez) + catálogo de pozos.
 dagster asset materialize -m "$MOD" --select produccion_raw
 dagster asset materialize -m "$MOD" --select bronze_pozos
 
-# 2) Particiones Bronze de los últimos N meses (incluye el actual).
-for i in $(seq 0 "$((REFRESH_MONTHS - 1))"); do
+# 2) Particiones Bronze de los últimos N meses YA COMPLETOS. La fuente es mensual y
+#    se publica con atraso: el mes en curso aún no es una partición válida (la
+#    MonthlyPartitionsDefinition con end_offset=0 solo incluye meses cerrados).
+#    Refrescar meses recientes atrapa altas tardías y meses corregidos (rectificado).
+for i in $(seq 1 "$REFRESH_MONTHS"); do
   mes="$(date -d "$i months ago" +%Y-%m-01)"
   echo "[run_pipeline] bronze_produccion partición $mes"
   dagster asset materialize -m "$MOD" --select bronze_produccion --partition "$mes"
