@@ -53,6 +53,13 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 2. **Alerta:** Dagster detecta el fallo del step de dbt y dispara una alerta reutilizando el **stack de Alertmanager/Slack ya montado en Fase 1** (webhook existente), notificando qué check crítico falló.
 3. **Marca de calidad visible:** `dq.dq_results` + las tablas de `store_failures` dejan el resultado navegable en el DW y en DataHub.
 
+### Manejo de filas inválidas: cuarentena vs bloqueo
+
+No todo fallo de validez debe frenar el pipeline. Distinguimos dos casos:
+
+- **Invariantes de integridad** (unicidad de `idpozo+anio+mes`, no-nulos de claves, integridad referencial fact→dim): si fallan, el problema es *nuestra* lógica, no la fuente → `severity: error`, **bloquean** la promoción a Gold.
+- **Suciedad física irreparable de la fuente** (producción/inyección negativa: físicamente imposible y NO marcada como `rectificado`): la fuente pública la trae así y A no puede corregirla (Bronze es crudo inmutable). Bloquear para siempre dejaría el DW sin actualizarse. Para estos casos aplicamos el **patrón de cuarentena (quarantine/dead-letter)**: las filas inválidas se **desvían** del Silver limpio a la tabla `dq.silver_produccion_rechazos` con su `motivo_rechazo`, en vez de dropearlas en silencio. Así: (a) Silver queda limpio y Gold suma bien; (b) las filas excluidas quedan auditables y se reconcilia `bronze = silver + rechazos`; (c) el check `expect_column_values_to_be_between ≥ 0` sobre Silver pasa a ser un **invariante post-limpieza** (si alguna vez fallara, significaría que la cuarentena se rompió → ahí sí bloquea, legítimamente).
+
 ## Consecuencias
 
 **Positivas:**
@@ -68,7 +75,7 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 
 ## Decisiones Técnicas Posteriores
 
-- **Clasificación de severidad:** definir qué checks son `error` (bloquean: unicidad de PK, no-nulos de claves, producción no negativa) vs `warn` (variantes de nombres, outliers leves). Se documenta junto a cada test.
+- **Clasificación de severidad:** definir qué checks son `error` (bloquean: unicidad de PK, no-nulos de claves, integridad referencial) vs `warn` (variantes de nombres, outliers leves). La producción negativa NO bloquea: se desvía a cuarentena en Silver (ver "Manejo de filas inválidas") y el check ≥ 0 queda como invariante post-limpieza. Se documenta junto a cada test.
 - **Umbral de freshness:** acordar con A el SLA de frescura (p. ej. fallar si la última ingesta supera N días) según la cadencia real del DAG.
 - **Retención de `store_failures`:** truncado/rotación de las tablas `dq.*` para que no crezcan sin límite.
 - **Exposición en gobierno:** coordinar con C para que `dq.dq_results` se ingiera en DataHub como señal de calidad a nivel tabla.
