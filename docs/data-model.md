@@ -209,7 +209,7 @@ Bronze retiene la historia cruda para auditoría/backfill, así que no se pierde
 | Nombres de operadora con variantes (mayúsc., espacios) | normalización (trim, casing consistente) → base de `dim_operadora` |
 | Nulos en medidas | producción/inyección nula → 0; nulos en claves → se marcan y caen en checks de completeness |
 | Provincias/cuencas con variantes | normalización de etiquetas |
-| Valores fuera de rango (producción negativa) | detectados por checks de validity (ADR-016); bloquean si son críticos |
+| Valores fuera de rango (producción negativa, físicamente imposible) | se desvían a cuarentena (`dq.silver_produccion_rechazos`) con su motivo; no bloquean (ADR-019). El check de no-negatividad queda como invariante post-limpieza |
 
 ---
 

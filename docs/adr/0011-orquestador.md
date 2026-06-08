@@ -90,3 +90,7 @@ mismo código corre contra `oil_dw_staging` y `oil_dw_prod` cambiando solo esa v
 
 Procedimiento operativo (setup del venv, swap/instancia, backfill histórico, cron, rollout
 a prod): ver el runbook del Analytics Engineer.
+
+La **decisión formal con comparación de alternativas** de esta extensión (integración de dbt
+vía `dagster-dbt` vs asset-subprocess; disparo por cron headless vs daemon) está en el
+**[ADR-018](0018-orquestacion-end-to-end-dw.md)**.
