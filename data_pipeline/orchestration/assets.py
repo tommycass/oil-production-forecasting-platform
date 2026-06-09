@@ -16,7 +16,7 @@ re-descargar:
   - `produccion_raw`: baja el CSV completo a landing (una vez).
   - `bronze_produccion`: particionado por mes; cada partición lee del landing y
     escribe solo su mes. El refresh automático (run_pipeline.sh) materializa todas
-    las particiones (full reload, ADR-020); reprocesar un mes puntual = materializar
+    las particiones (full reload, ADR-021); reprocesar un mes puntual = materializar
     esa partición.
 """
 

@@ -3,7 +3,7 @@
 # producción desde el landing (full reload: atrapa altas y correcciones de
 # cualquier antigüedad vía `rectificado`/`fecha_data`, no solo meses recientes),
 # lo carga a Postgres y corre dbt (Silver/Gold/Data Quality). Env-driven: el mismo
-# script sirve a staging y prod según el infra/.env de cada EC2. Ver ADR-0020.
+# script sirve a staging y prod según el infra/.env de cada EC2. Ver ADR-021.
 #
 # Uso:
 #   data_pipeline/orchestration/run_pipeline.sh
@@ -44,7 +44,7 @@ dagster asset materialize -m "$MOD" --select bronze_pozos
 #    (full reload). Del propio landing se derivan los meses con datos y ya
 #    cerrados (el mes en curso no es partición válida, end_offset=0). Reescribir
 #    cada mes con el dato actual atrapa correcciones de cualquier antigüedad —no
-#    solo de los últimos meses— y Silver resuelve la versión vigente (ADR-0020).
+#    solo de los últimos meses— y Silver resuelve la versión vigente (ADR-021).
 PARTICIONES="$(python - <<'PY'
 import pandas as pd
 from datetime import date

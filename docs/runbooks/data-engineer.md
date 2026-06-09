@@ -16,7 +16,7 @@ de forma idempotente.
   mes "cambiaron" o no cuadran contra la fuente oficial.
 - **Alerta de calidad:** un check de freshness o de validez (ADR-016) marca que un
   período tiene registros con `rectificado = t` recién aparecidos.
-- **Programado:** la corrida regular hace **full reload** de todo Bronze (ADR-020),
+- **Programado:** la corrida regular hace **full reload** de todo Bronze (ADR-021),
   así que ya absorbe las correcciones de cualquier mes sin intervención; este runbook
   es para **forzar/verificar** el reproceso de un mes puntual fuera de ciclo.
 

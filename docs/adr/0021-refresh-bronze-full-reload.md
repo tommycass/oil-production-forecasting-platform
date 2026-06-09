@@ -1,4 +1,4 @@
-# Título: ADR-020: Estrategia de refresh de Bronze (full reload vs ventana incremental)
+# Título: ADR-021: Estrategia de refresh de Bronze (full reload vs ventana incremental)
 
 **Estado:** Aceptado
 
