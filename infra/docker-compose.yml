@@ -162,11 +162,8 @@ services:
         max-size: "20m"
         max-file: "2"
 
-  # Data Warehouse (Fase 2): Postgres para las capas Silver/Gold y el esquema dq.
-  # SOLO desarrollo local: staging y producción usan un Postgres gestionado (RDS) —
-  # la misma instancia con dos bases (oil_dw_staging / oil_dw_prod). El perfil hace
-  # que `docker compose up -d` NO arranque el container salvo que COMPOSE_PROFILES
-  # incluya "local-db" (o se nombre el servicio: `docker compose up -d postgres`).
+  # DW para Silver/Gold/dq. En staging y prod se usa RDS, no este container;
+  # por eso va en el perfil "local-db" y no arranca con un `up` normal.
   postgres:
     image: postgres:16
     container_name: oil-dw-postgres
@@ -185,6 +182,35 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
+  # Metabase (BI, ADR-020): lee gold.* del DW. Perfil "bi" (no arranca por defecto).
+  # Metadata propia en una base Postgres dedicada (metabase_app), no en H2.
+  metabase:
+    image: metabase/metabase:${METABASE_VERSION:-latest}
+    container_name: oil-metabase
+    profiles: ["bi"]
+    ports:
+      - "3001:3000"   # 3000 lo usa Grafana
+    environment:
+      - MB_DB_TYPE=postgres
+      - MB_DB_HOST=${METABASE_DB_HOST:-postgres}
+      - MB_DB_PORT=${POSTGRES_PORT:-5432}
+      - MB_DB_DBNAME=${METABASE_DB_NAME:-metabase_app}
+      - MB_DB_USER=${POSTGRES_USER:-oil}
+      - MB_DB_PASS=${POSTGRES_PASSWORD:-oil}
+      - JAVA_TIMEZONE=${TZ:-America/Argentina/Buenos_Aires}
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s   # arranca lento (migraciones)
     restart: unless-stopped
     logging:
       driver: "json-file"
