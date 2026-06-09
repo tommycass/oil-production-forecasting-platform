@@ -60,6 +60,8 @@ No todo fallo de validez debe frenar el pipeline. Distinguimos dos casos:
 - **Invariantes de integridad** (unicidad de `idpozo+anio+mes`, no-nulos de claves, integridad referencial fact→dim): si fallan, el problema es *nuestra* lógica, no la fuente → `severity: error`, **bloquean** la promoción a Gold.
 - **Suciedad física irreparable de la fuente** (producción/inyección negativa: físicamente imposible y NO marcada como `rectificado`): la fuente pública la trae así y A no puede corregirla (Bronze es crudo inmutable). Bloquear para siempre dejaría el DW sin actualizarse. Para estos casos aplicamos el **patrón de cuarentena (quarantine/dead-letter)**: las filas inválidas se **desvían** del Silver limpio a la tabla `dq.silver_produccion_rechazos` con su `motivo_rechazo`, en vez de dropearlas en silencio. Así: (a) Silver queda limpio y Gold suma bien; (b) las filas excluidas quedan auditables y se reconcilia `bronze = silver + rechazos`; (c) el check `expect_column_values_to_be_between ≥ 0` sobre Silver pasa a ser un **invariante post-limpieza** (si alguna vez fallara, significaría que la cuarentena se rompió → ahí sí bloquea, legítimamente).
 
+> La **decisión formal con comparación de alternativas** (bloqueo duro vs clamp a 0 vs exclusión silenciosa vs `warn` vs cuarentena) está en el **[ADR-019](0019-tratamiento-registros-invalidos.md)**.
+
 ## Consecuencias
 
 **Positivas:**
