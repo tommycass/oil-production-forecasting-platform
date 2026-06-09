@@ -15,7 +15,9 @@ Producción se modela en dos assets para habilitar el backfill por mes sin
 re-descargar:
   - `produccion_raw`: baja el CSV completo a landing (una vez).
   - `bronze_produccion`: particionado por mes; cada partición lee del landing y
-    escribe solo su mes. Reprocesar un mes = materializar esa partición.
+    escribe solo su mes. El refresh automático (run_pipeline.sh) materializa todas
+    las particiones (full reload, ADR-020); reprocesar un mes puntual = materializar
+    esa partición.
 """
 
 import subprocess
