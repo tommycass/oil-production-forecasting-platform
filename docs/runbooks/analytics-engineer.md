@@ -155,9 +155,9 @@ dagster job execute -m $MOD -j dw_publish   # Bronze→Postgres + dbt (Silver/Go
 
 ### c) Refresh recurrente (cron)
 
-`run_pipeline.sh` refresca los últimos `REFRESH_MONTHS` meses (default 3, atrapa altas
-y meses corregidos vía `rectificado`) + `dw_publish`. La fuente es mensual, así que un
-cron mensual alcanza:
+`run_pipeline.sh` recarga **todo** Bronze (full reload: atrapa altas y correcciones de
+cualquier mes vía `rectificado`, ver ADR-020) + `dw_publish`. La fuente es mensual, así
+que un cron mensual alcanza:
 
 ```bash
 mkdir -p ~/dagster-runtime
