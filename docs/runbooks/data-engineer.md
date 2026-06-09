@@ -16,8 +16,9 @@ de forma idempotente.
   mes "cambiaron" o no cuadran contra la fuente oficial.
 - **Alerta de calidad:** un check de freshness o de validez (ADR-016) marca que un
   período tiene registros con `rectificado = t` recién aparecidos.
-- **Programado:** la corrida regular de extracción ya trae las correcciones; este
-  runbook es para forzar/verificar el reproceso de un mes puntual fuera de ciclo.
+- **Programado:** la corrida regular hace **full reload** de todo Bronze (ADR-020),
+  así que ya absorbe las correcciones de cualquier mes sin intervención; este runbook
+  es para **forzar/verificar** el reproceso de un mes puntual fuera de ciclo.
 
 ## Rol, dueño y prerrequisitos
 
@@ -38,19 +39,18 @@ de forma idempotente.
    verificar contra la fuente que efectivamente hay registros corregidos
    (aparecen filas con `rectificado = t` o cambió la `fecha_data` del período).
 
-2. **Re-ingestar a Bronze.** Re-ejecutar la extracción de producción. Como la
-   fuente publica el archivo completo, esto re-descarga todo y **reescribe todas
-   las particiones** `anio/mes` (incluida la corregida) de forma idempotente.
-   - Vía Dagster (recomendado): materializar el asset `bronze_produccion` desde la
-     UI (`dagster dev -m data_pipeline.orchestration.definitions`) o por CLI:
+2. **Re-ingestar el mes a Bronze.** Para forzar un mes puntual sin esperar al cron,
+   refrescar el landing y re-materializar **solo esa partición** (rápido, no toca el
+   resto):
+   - Vía Dagster (recomendado), reemplazando `2024-03` por el mes afectado:
      ```bash
-     dagster asset materialize --select bronze_produccion \
-       -m data_pipeline.orchestration.definitions
+     MOD=data_pipeline.orchestration.definitions
+     dagster asset materialize -m $MOD --select produccion_raw          # refresca el landing
+     dagster asset materialize -m $MOD --select bronze_produccion --partition 2024-03-01
      ```
-   - Vía función directa (fallback sin orquestador):
-     ```bash
-     python -m data_pipeline.extraction.extract_produccion
-     ```
+   - **Full reload** (todo Bronze, idéntico a lo que hace el cron): correr
+     `data_pipeline/orchestration/run_pipeline.sh`, o como fallback sin orquestador
+     `python -m data_pipeline.extraction.extract_produccion`.
 
 3. **Verificar Bronze.** Confirmar que la partición del mes quedó reescrita y que
    contiene la versión corregida:
@@ -86,9 +86,8 @@ Sé que el reproceso salió bien cuando:
 ## Si algo falla
 
 - **Falla la descarga (fuente caída o lenta):** la extracción es idempotente; se
-  puede re-ejecutar sin riesgo. Con Dagster, los reintentos con backoff
-  (incremento que se suma en el paso 5 del roadmap) cubren los errores
-  transitorios; si persiste, esperar y reintentar más tarde.
+  puede re-ejecutar sin riesgo. Con Dagster, los reintentos con backoff exponencial
+  cubren los errores transitorios; si persiste, esperar y reintentar más tarde.
 - **Bronze quedó con datos sospechosos tras reescribir:** Bronze de producción es
   *full refresh* sin snapshots datados (ver retención en ADR-013), así que **no
   hay versión anterior en el repo para restaurar**. Plan B: la fuente es la verdad
