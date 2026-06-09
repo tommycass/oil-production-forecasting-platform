@@ -64,6 +64,15 @@ por `fecha_data`/`rectificado`), no en Bronze: Bronze conserva el crudo tal como
 - **El costo extra es asumible:** el landing se baja entero igual (sin descarga
   adicional) y reescribir las particiones de un dataset de ~144 MB son segundos; el
   cuello es el cómputo de reescritura, acotado a esta escala.
+- **Reconcilia con ADR-012:** aquel ADR había **descartado** reescribir todas las
+  particiones en cada corrida ("rewrite global") con el argumento de que
+  "re-dispararía el reproceso aguas abajo aunque solo se haya corregido un mes". Esa
+  objeción **ya no aplica**: Silver y Gold son full-refresh `table` (ADR-018, runbook del
+  Analytics Engineer) y se reconstruyen completos en cada corrida, toque las particiones
+  que toque. Sin ese costo marginal, reescribir todo es la opción robusta. Se conserva el
+  **mecanismo de escritura por partición** que eligió ADR-012 (escritura aislada e
+  idempotente); lo que cambia es el **alcance** del refresh automático: todas las
+  particiones, no solo la corregida.
 
 ### Por qué no guardar snapshots datados de Bronze
 
