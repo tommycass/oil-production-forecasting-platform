@@ -133,16 +133,16 @@ crudo íntegro es, para el DE, su seguro: le permite probar que el pipeline es f
 y reprocesar desde una base confiable en vez de depender de que la fuente todavía
 tenga el dato.
 
-### Decisión no funcional: la extracción programada corre con cadencia semanal
+### Decisión no funcional: la extracción programada corre con cadencia mensual
 
-La corrida automática de extracción se programa **semanal**, no diaria ni horaria
-(este runbook cubre los reprocesos urgentes entre corridas). La decisión responde
-a los incentivos del DE, que está expuesto por dos lados opuestos: si el dato queda
-viejo, los consumidores (analistas y la Persona B) se quejan y el DE es el
-responsable; pero si el job corre de más, son descargas de 144 MB desperdiciadas y
-más oportunidades de fallas transitorias que el DE tiene que ir a vigilar. Como la
-producción oficial se publica con ritmo aproximadamente mensual y las correcciones
-son esporádicas, una cadencia semanal acompaña el ritmo real de la fuente:
-minimiza a la vez las quejas por desactualización y el trabajo operativo de
-babysitting. Diaria sería puro overhead (el dato casi no cambia día a día) y
-mensual arriesgaría tardar demasiado en capturar una corrección.
+La corrida automática se programa **mensual** (cron `0 3 5 * *`), acompañando el ritmo de
+la fuente, que publica producción con cadencia aproximadamente mensual (ver ADR-018; este
+runbook cubre los reprocesos urgentes entre corridas). La decisión responde a los
+incentivos del DE, expuesto por dos lados opuestos: si el dato queda viejo, los consumidores
+(analistas y la Persona B) se quejan y el DE es el responsable; pero si el job corre de más,
+son descargas de 144 MB y reescrituras de todo Bronze (full reload, ADR-021) desperdiciadas,
+más oportunidades de fallas transitorias que el DE tiene que ir a vigilar. Como la fuente
+cambia ~mensualmente y el full reload de cada corrida ya captura correcciones de cualquier
+antigüedad, mensual cubre el caso normal sin overhead; las correcciones urgentes entre
+corridas se fuerzan con el reproceso dirigido de este runbook. Diaria o semanal serían puro
+babysitting: el dato casi no cambia en ese lapso.
