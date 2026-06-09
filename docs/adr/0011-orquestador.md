@@ -41,7 +41,7 @@ Usaremos **Dagster** como herramienta de orquestación, modelando el pipeline co
 - **Overhead acorde al equipo.** Airflow exige scheduler, webserver, base de metadatos y típicamente un worker: varios contenedores que sumar al `docker-compose` y mantener entre 3 personas en 2 semanas. Dagster corre con un único servicio y su UI, suficiente para nuestra escala.
 - **El lineage nativo de Airflow no compensa.** Su principal ventaja para nosotros sería la integración con DataHub, pero ese linaje también lo obtendremos por el plugin de Dagster y por la ingesta de metadata desde el propio DW que hará la Persona C. No justifica el costo operativo.
 
-El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upsert por `idpozo + anio + mes` para producción) se implementa sobre el modelo de particiones de Dagster y se justifica en el ADR-012.
+El tipo de carga por fuente (full refresh para el catálogo de pozos; full refresh materializado por partición `anio/mes` para producción, con la resolución de meses corregidos —merge/upsert por `idpozo + anio + mes`— diferida a Silver) se implementa sobre el modelo de particiones de Dagster y se justifica en el ADR-012.
 
 ## Consecuencias
 
