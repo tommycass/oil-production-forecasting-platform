@@ -73,6 +73,28 @@ dentro de cada archivo (varias filas por `(idpozo, anio, mes)` distinguidas por
 `fecha_data`); con full reload + dedup de Silver se aprovecha directamente esa historia,
 sin duplicar 144 MB por corrida.
 
+### Efecto sobre el particionado por mes (corrimiento de justificación)
+
+El full reload **corre el rol** del particionado `anio/mes` que fijaron ADR-012 y ADR-013.
+Su justificación original —reprocesar un mes puntual sin tocar el resto, de forma
+**automática**— deja de ejercerse en el camino del cron, que ahora reescribe todos los
+meses por igual. El particionado **se mantiene**, pero su valor pasa a apoyarse en:
+
+- **Backfill manual dirigido (break-glass):** re-materializar una sola partición en
+  segundos para forzar un mes corregido fuera de ciclo, sin correr el full reload entero
+  (ver runbook del Data Engineer). Es la justificación de peso que queda.
+- **Unidad de escritura del propio full reload:** el refresh está implementado como
+  "escribir cada partición, aislada e idempotente"; la partición es el grano de escritura,
+  no algo que el full reload esquive.
+- **Organización e inspección** en disco (`anio=YYYY/mes=MM/`) y **observabilidad** por mes
+  en el grafo de Dagster.
+
+No aporta *partition pruning* a Silver, porque Silver lee la tabla `bronze.produccion` de
+Postgres (cargada entera por `load_bronze.py`), no los parquet directamente; ese beneficio
+solo aplicaría a un consumidor que leyera Bronze en disco. Mantener el particionado es
+barato y habilita el break-glass, así que se conserva pese a que su argumento es más débil
+que bajo la ventana móvil.
+
 ## Consecuencias
 
 **Positivas:**
