@@ -36,9 +36,26 @@ jobs:
         env:
           API_KEY: abcdef12345
 
+  test-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pipeline dependencies
+        run: pip install -r data_pipeline/requirements-dev.txt
+
+      - name: Run pipeline tests
+        run: pytest data_pipeline/tests/ -v
+
   build:
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, test-pipeline]
     
     steps:
       - uses: actions/checkout@v4
