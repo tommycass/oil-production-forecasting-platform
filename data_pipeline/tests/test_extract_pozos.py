@@ -50,8 +50,9 @@ def test_descarta_bom_de_la_primera_columna(bronze_tmp):
 def test_guarda_todo_como_texto(bronze_tmp):
     archivo = mod.extract_pozos(ingesta=date(2026, 6, 1))
     df = pd.read_parquet(archivo)
-    # Bronze es crudo: ningún tipo se infiere, todo queda como object (texto).
-    assert set(df.dtypes.astype(str)) == {"object"}
+    # Bronze es crudo: ningún tipo se infiere, todo queda como texto.
+    # is_string_dtype acepta tanto 'object' (pandas clásico) como 'str'/'string[pyarrow]'.
+    assert all(pd.api.types.is_string_dtype(dt) for dt in df.dtypes)
 
 
 def test_ruta_versionada_por_fecha_de_ingesta(bronze_tmp):

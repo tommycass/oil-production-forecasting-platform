@@ -50,7 +50,8 @@ def test_descargar_landing_descarta_bom_y_conserva_crudo(entorno_tmp):
     # BOM descartado: primera columna "idempresa", no "﻿idempresa".
     assert df.columns[0] == "idempresa"
     # Crudo fiel: todo texto y se conservan las columnas que usa Silver.
-    assert set(df.dtypes.astype(str)) == {"object"}
+    # is_string_dtype acepta tanto 'object' (pandas clásico) como 'str'/'string[pyarrow]'.
+    assert all(pd.api.types.is_string_dtype(dt) for dt in df.dtypes)
     assert {"rectificado", "fecha_data"}.issubset(df.columns)
     assert len(df) == 3
 
