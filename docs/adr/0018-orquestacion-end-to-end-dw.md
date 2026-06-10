@@ -56,7 +56,7 @@ preservar ese bloqueo.
    intérprete del propio venv), en lugar de reimplementar la carga o escribir un IO manager: el
    puente parquet→Postgres ya existe, es env-driven y se mantiene en un solo lugar.
 3. **Disparo por cron del SO, headless.** Un script `run_pipeline.sh` (`dagster job execute` /
-   `asset materialize`) refresca los últimos meses de Bronze y corre la publicación (carga +
+   `asset materialize`) refresca todo Bronze (full reload, ADR-021) y corre la publicación (carga +
    dbt), invocado por un **cron mensual**, sin daemon ni webserver. La fuente es mensual, así
    que esa cadencia alcanza.
 4. **Env-driven (staging y prod).** Todo lee `POSTGRES_*` del `infra/.env` de cada EC2; el
@@ -101,7 +101,8 @@ una línea de crontab). Si la instancia se agranda, se puede volver al daemon + 
 
 - **Backfill histórico (una vez):** para poblar todo el histórico sin iterar ~150 particiones
   por la UI, se materializa el Bronze en una sola pasada (`extract_produccion_full`) y se corre
-  la publicación; el cron mensual usa el camino particionado para meses recientes.
+  la publicación; el cron mensual usa el camino particionado para todos los meses cerrados
+  (full reload, ADR-021).
 - **Particiones completas en el refresh:** `run_pipeline.sh` refresca solo meses **cerrados**
   (`MonthlyPartitionsDefinition` con `end_offset=0` no admite el mes en curso).
 - **Manifest fuera o dentro del repo:** se mantiene en `transform/target/` (gitignoreado), que
