@@ -108,11 +108,25 @@ gobierno hacia el RDS (mismo prerrequisito que BI; ver [ADR-020](0020-plataforma
 - La ingesta no es "en vivo": corre como job (manual o agendado) que lee los artefactos dbt; el catálogo refleja la última ingesta, no el estado en tiempo real.
 - El linaje de columna exige sumar `dbt docs generate` (genera `catalog.json`), paso que hoy el cron no corre.
 
-## Decisiones Técnicas Posteriores
+## Decisiones Técnicas Posteriores → Implementación (jun-2026)
 
-- **Host de DataHub:** definir el tipo/tamaño de la instancia dedicada y si es efímera
-  (solo para corrección) o permanente.
-- **Agendado de la ingesta:** decidir si la ingesta dbt→DataHub corre por cron, como
-  paso del pipeline, o on-demand antes del demo.
-- **Linaje de columna:** sumar `dbt docs generate` al flujo si se quiere `catalog.json`.
-- **Regla de SG** del host de gobierno hacia el RDS (coordinada con la de BI).
+**Host:** instancia dedicada `governance` — **`t3.large`** (8 GB RAM, $0.083/hr),
+Ubuntu 22.04, misma región y VPC que `api`. Se elige `t3.large` sobre `t2.large`:
+igual RAM, $0.01/hr más barato, red hasta 5 Gbps y créditos de CPU sin límite
+(t3 unlimited burst). No se reutiliza `api-dev` (staging) porque ese host tiene un
+ciclo de vida distinto: el CI/CD despliega ahí en cada push a `staging`, lo que
+podría interrumpir DataHub durante una demo o corrida de ingesta; además, mezclar
+responsabilidades de staging y gobierno en el mismo host elimina el aislamiento de
+fallos que justificó elegir una instancia dedicada.
+
+**Agendado de la ingesta:** se dispara manualmente desde la EC2 `api` tras cada
+`dbt build`, apuntando al GMS de `governance` vía `DATAHUB_GMS_HOST`. La
+automatización por cron queda como mejora futura una vez estabilizado el flujo.
+
+**Linaje de columna:** no activado en esta iteración; requiere `dbt docs generate`
+para producir `catalog.json`. Se puede habilitar descomentando `catalog_path` en
+`infra/datahub/dbt_recipe.yml`.
+
+**Regla de SG:** puerto 8080 (GMS) abierto desde el SG de `api` hacia el SG de
+`governance`. Puerto 9002 (frontend) abierto desde cualquier IP para acceso externo
+al catálogo.
