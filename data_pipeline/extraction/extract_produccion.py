@@ -22,6 +22,7 @@ import pandas as pd
 import requests
 
 from data_pipeline.config import BRONZE_DIR, LANDING_DIR, SOURCES
+from data_pipeline.extraction.validation import validar_columnas
 
 # La fuente es grande (~144 MB); damos más margen que en pozos.
 _HTTP_TIMEOUT = 300
