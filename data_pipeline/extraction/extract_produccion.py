@@ -47,6 +47,10 @@ def descargar_landing() -> Path:
     # Todo como texto; encoding="utf-8-sig" descarta el BOM inicial de la fuente.
     df = pd.read_csv(BytesIO(resp.content), dtype=str, encoding="utf-8-sig")
 
+    # Validar el contrato de schema (fail-fast): si faltan columnas esperadas,
+    # abortamos acá sin escribir el landing ni Bronze (ver ADR-022).
+    validar_columnas(df, "produccion")
+
     _LANDING_FILE.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(_LANDING_FILE, engine="pyarrow", index=False)
     print(f"[produccion] landing: {len(df)} filas → {_LANDING_FILE}")
