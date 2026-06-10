@@ -42,6 +42,11 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 | **Validity** | rangos y dominios (`expect_column_values_to_be_between` para producción ≥ 0; `anio`/`mes` en rango; `accepted_values` para tipo de recurso) | Silver producción |
 | **Freshness** | antigüedad de la última ingesta (`dbt source freshness` / check sobre `max(fecha_data)`) | Silver / source Bronze |
 
+> **Schema en dos capas (ADR-022):** además de este check en Silver, el schema se valida
+> **en la ingesta** (fail-fast): si la fuente cambia las columnas, la extracción aborta
+> antes de escribir Bronze. La ingesta es la primera red (presencia de columnas, en el
+> origen); Silver es la segunda (tipos y contenido, antes de Gold).
+
 ### Persistencia de resultados
 
 - `store_failures: true` en la config de tests → cada test fallido **persiste sus filas ofensoras** en tablas del esquema `dq` de Postgres (`dq.<nombre_test>`). No son asserts efímeros: quedan consultables después de la corrida.
