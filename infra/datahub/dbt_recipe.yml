@@ -1,0 +1,42 @@
+# DataHub ingestion recipe — fuente dbt (ADR-017)
+#
+# Ejecutar desde la raíz del repositorio, en la EC2 del pipeline,
+# DESPUÉS de cada `dbt build` exitoso:
+#
+#   export DATAHUB_GMS_HOST=<ip-del-ec2-de-gobierno>
+#   datahub ingest -c infra/datahub/dbt_recipe.yml
+#
+# Si usás DBT_TARGET_PATH en la EC2 (ver runbook del Analytics Engineer),
+# los artefactos no están en transform/target/ sino en ~/dbt-runtime/target/.
+# Sobrescribir las rutas en línea de comandos:
+#
+#   datahub ingest -c infra/datahub/dbt_recipe.yml \
+#     --set source.config.manifest_path=/home/ubuntu/dbt-runtime/target/manifest.json \
+#     --set source.config.run_results_path=/home/ubuntu/dbt-runtime/target/run_results.json
+#
+# Requiere: pip install 'acryl-datahub[datahub-rest]'
+# Versión validada: acryl-datahub>=0.12
+
+source:
+  type: dbt
+  config:
+    # Artefactos dbt generados por `dbt build`.
+    # Ruta relativa a la raíz del repositorio (default local/CI).
+    manifest_path: "transform/target/manifest.json"
+    run_results_path: "transform/target/run_results.json"
+
+    # Linaje a nivel columna: requiere `dbt docs generate --profiles-dir .`
+    # Descomentar cuando se quiera exponer el linaje columna-a-columna.
+    # catalog_path: "transform/target/catalog.json"
+
+    # Plataforma del DW subyacente. Aparece en el grafo de linaje de DataHub.
+    target_platform: postgres
+    env: PROD
+
+sink:
+  type: datahub-rest
+  config:
+    # Endpoint GMS del servidor DataHub (EC2 de gobierno).
+    # Setear DATAHUB_GMS_HOST antes de ejecutar. Ejemplo:
+    #   export DATAHUB_GMS_HOST=18.117.100.200
+    server: "http://${DATAHUB_GMS_HOST:-localhost}:8080"
