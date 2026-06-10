@@ -80,7 +80,8 @@ oil-production-forecasting-platform/
 │   ├── runbooks/                   # Runbooks por rol
 │   │   ├── data-engineer.md        # Reprocesar un mes corregido por la fuente
 │   │   ├── analytics-engineer.md   # Reconstruir Silver/Gold y resolver gate de calidad
-│   │   └── bi-user.md              # Explorar y analizar producción en Metabase
+│   │   ├── bi-user.md              # Explorar y analizar producción en Metabase
+│   │   └── governance-admin.md     # Desplegar DataHub y ejecutar la ingesta dbt
 │   └── adr/                        # Architecture Decision Records
 │       ├── 0001-framework-backend.md
 │       ├── 0002-docker-containerizacion.md
@@ -105,7 +106,9 @@ oil-production-forecasting-platform/
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
-│   └── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor
+│   ├── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor
+│   └── datahub/
+│       └── dbt_recipe.yml          # Receta de ingesta DataHub (linaje desde artefactos dbt)
 │
 ├── monitoring/
 │   ├── prometheus.yml              # Scraping de métricas
@@ -407,14 +410,19 @@ top 8 pozos por producción histórica total, y KPIs de frescura y calidad del p
 
 DataHub ingiere el manifiesto dbt (`transform/target/manifest.json`) generado en
 cada corrida del pipeline y expone el linaje Bronze→Silver→Gold a nivel tabla y
-columna. La ingesta corre como un job one-shot tras cada `dbt build`:
+columna. Corre en una **EC2 dedicada** (requiere ≥ 4 GB RAM). La ingesta es un job
+one-shot que se ejecuta desde la EC2 del pipeline tras cada `dbt build`:
 
 ```bash
+export DATAHUB_GMS_HOST=<ip-ec2-gobierno>
 datahub ingest -c infra/datahub/dbt_recipe.yml
 ```
 
-> **Estado:** en despliegue en instancia dedicada (requiere >4 GB RAM; ver
-> [ADR-017](docs/adr/0017-plataforma-gobierno-datos.md)).
+La UI de gobierno queda en `http://<ip-ec2-gobierno>:9002` (usuario `datahub`).
+El procedimiento completo de despliegue e ingesta está en el
+[runbook del administrador de gobierno](docs/runbooks/governance-admin.md).
+
+> **Estado:** en despliegue; ver [ADR-017](docs/adr/0017-plataforma-gobierno-datos.md).
 
 ---
 
