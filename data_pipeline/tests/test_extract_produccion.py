@@ -9,14 +9,22 @@ import pandas as pd
 import pytest
 
 from data_pipeline.extraction import extract_produccion as mod
+from data_pipeline.extraction.validation import SchemaContractError
 
-# CSV de prueba con BOM (﻿): 3 filas en dos meses (2020-01 con dos, 2020-02 con una).
-# Incluye rectificado y fecha_data (contrato con Silver).
+# CSV de prueba con BOM (﻿): 3 filas en dos meses (2020-01 con dos, 2020-02 con una),
+# con el schema COMPLETO de producción (todas las columnas que valida la ingesta,
+# ver config.EXPECTED_COLUMNS["produccion"]).
 _CSV_CON_BOM = (
-    "﻿idempresa,anio,mes,idpozo,prod_gas,rectificado,fecha_data\n"
-    "YPF,2020,1,100,50.5,f,2020-02-01\n"
-    "YPF,2020,1,101,10.0,f,2020-02-01\n"
-    "YSUR,2020,2,200,5.5,t,2020-03-01\n"
+    "﻿idempresa,empresa,anio,mes,idpozo,sigla,formacion,profundidad,idareayacimiento,"
+    "areayacimiento,cuenca,provincia,coordenadax,coordenaday,tipo_de_recurso,"
+    "clasificacion,prod_pet,prod_gas,prod_agua,iny_agua,iny_gas,iny_co2,iny_otro,tef,"
+    "fecha_data,rectificado\n"
+    "YPF,YPF SA,2020,1,100,SIG1,FM1,2500,AY1,AREA1,NEUQUINA,NEUQUEN,1.0,2.0,SHALE,"
+    "EXPLOTACION,0,50.5,0,0,0,0,0,1,2020-02-01,f\n"
+    "YPF,YPF SA,2020,1,101,SIG2,FM1,2500,AY1,AREA1,NEUQUINA,NEUQUEN,1.0,2.0,SHALE,"
+    "EXPLOTACION,0,10.0,0,0,0,0,0,1,2020-02-01,f\n"
+    "YSUR,YSUR SA,2020,2,200,SIG3,FM2,3000,AY2,AREA2,NEUQUINA,NEUQUEN,3.0,4.0,SHALE,"
+    "EXPLOTACION,0,5.5,0,0,0,0,0,1,2020-03-01,t\n"
 ).encode("utf-8")
 
 
@@ -72,3 +80,20 @@ def test_extract_produccion_full_idempotente(entorno_tmp):
     parquets = list((entorno_tmp / "bronze" / "produccion").rglob("produccion.parquet"))
     assert len(parquets) == 2
     assert sum(len(pd.read_parquet(p)) for p in parquets) == 3
+
+
+def test_descargar_landing_corta_si_la_fuente_cambia_el_schema(entorno_tmp, monkeypatch):
+    # Fuente a la que le faltan columnas requeridas → la ingesta aborta (fail-fast)
+    # y NO escribe el landing (ADR-022).
+    csv_incompleto = "﻿idempresa,anio,mes,idpozo\nYPF,2020,1,100\n".encode("utf-8")
+
+    class _RespRota:
+        content = csv_incompleto
+
+        def raise_for_status(self) -> None:
+            pass
+
+    monkeypatch.setattr(mod.requests, "get", lambda *a, **k: _RespRota())
+    with pytest.raises(SchemaContractError):
+        mod.descargar_landing()
+    assert not mod._LANDING_FILE.exists()
