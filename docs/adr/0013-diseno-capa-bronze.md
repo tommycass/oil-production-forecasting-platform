@@ -61,6 +61,13 @@ eso es decodificar bien, no transformar el dato.
 Se descarta usar un **único esquema para ambas**: no comparten naturaleza
 (una tiene grano temporal y necesita backfill; la otra es un catálogo de estado).
 
+> **Actualización (ADR-021):** la justificación del particionado de producción se refinó.
+> "Reprocesar un mes puntual sin tocar el resto" pasó a ser la vía del **backfill manual**
+> (el refresh automático hace full reload de todos los meses). Y "que Silver lea solo los
+> períodos que necesita" **no se ejerce** hoy: Silver lee la tabla `bronze.produccion` de
+> Postgres (cargada entera), no los parquet. El particionado se conserva por el backfill
+> manual, por ser la unidad de escritura del full reload y por organización. Ver ADR-021.
+
 ### Landing: una sola descarga, derivar las particiones
 
 Producción se baja primero completa a una zona de **landing** (`data/landing/`), y

@@ -42,6 +42,11 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 | **Validity** | rangos y dominios (`expect_column_values_to_be_between` para producción ≥ 0; `anio`/`mes` en rango; `accepted_values` para tipo de recurso) | Silver producción |
 | **Freshness** | antigüedad de la última ingesta (`dbt source freshness` / check sobre `max(fecha_data)`) | Silver / source Bronze |
 
+> **Schema en dos capas (ADR-022):** además de este check en Silver, el schema se valida
+> **en la ingesta** (fail-fast): si la fuente cambia las columnas, la extracción aborta
+> antes de escribir Bronze. La ingesta es la primera red (presencia de columnas, en el
+> origen); Silver es la segunda (tipos y contenido, antes de Gold).
+
 ### Persistencia de resultados
 
 - `store_failures: true` en la config de tests → cada test fallido **persiste sus filas ofensoras** en tablas del esquema `dq` de Postgres (`dq.<nombre_test>`). No son asserts efímeros: quedan consultables después de la corrida.
@@ -59,6 +64,8 @@ No todo fallo de validez debe frenar el pipeline. Distinguimos dos casos:
 
 - **Invariantes de integridad** (unicidad de `idpozo+anio+mes`, no-nulos de claves, integridad referencial fact→dim): si fallan, el problema es *nuestra* lógica, no la fuente → `severity: error`, **bloquean** la promoción a Gold.
 - **Suciedad física irreparable de la fuente** (producción/inyección negativa: físicamente imposible y NO marcada como `rectificado`): la fuente pública la trae así y A no puede corregirla (Bronze es crudo inmutable). Bloquear para siempre dejaría el DW sin actualizarse. Para estos casos aplicamos el **patrón de cuarentena (quarantine/dead-letter)**: las filas inválidas se **desvían** del Silver limpio a la tabla `dq.silver_produccion_rechazos` con su `motivo_rechazo`, en vez de dropearlas en silencio. Así: (a) Silver queda limpio y Gold suma bien; (b) las filas excluidas quedan auditables y se reconcilia `bronze = silver + rechazos`; (c) el check `expect_column_values_to_be_between ≥ 0` sobre Silver pasa a ser un **invariante post-limpieza** (si alguna vez fallara, significaría que la cuarentena se rompió → ahí sí bloquea, legítimamente).
+
+> La **decisión formal con comparación de alternativas** (bloqueo duro vs clamp a 0 vs exclusión silenciosa vs `warn` vs cuarentena) está en el **[ADR-019](0019-tratamiento-registros-invalidos.md)**.
 
 ## Consecuencias
 

@@ -43,3 +43,23 @@ SOURCES = {
         ),
     },
 }
+
+# Contrato de schema: columnas que cada fuente DEBE traer en el CSV. La ingesta valida
+# este contrato apenas descarga (fail-fast): si falta una columna esperada, aborta y no
+# escribe Bronze; si aparecen columnas de más, solo avisa (cambio aditivo). La lista es
+# lo que consumen los modelos Silver (transform/models/silver/); `fecha_ingesta` no está
+# acá porque no viene de la fuente, se agrega al cargar a Postgres. Ver ADR-022.
+EXPECTED_COLUMNS = {
+    "produccion": {
+        "idpozo", "anio", "mes", "idempresa", "empresa", "sigla", "formacion",
+        "profundidad", "idareayacimiento", "areayacimiento", "cuenca", "provincia",
+        "coordenadax", "coordenaday", "tipo_de_recurso", "clasificacion",
+        "prod_pet", "prod_gas", "prod_agua", "iny_agua", "iny_gas", "iny_co2",
+        "iny_otro", "tef", "fecha_data", "rectificado",
+    },
+    "pozos": {
+        "idpozo", "sigla", "formprod", "idempresa", "idareayacimiento",
+        "areayacimiento", "cuenca", "provincia", "profundidad", "coordenadax",
+        "coordenaday", "clasificacion", "tipo_reservorio",
+    },
+}

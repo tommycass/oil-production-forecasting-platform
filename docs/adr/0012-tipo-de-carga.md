@@ -61,6 +61,13 @@ Se evaluaron dos formas de materializar ese full refresh:
   partición de Dagster (ver ADR-011 y ADR-013). La escritura por partición es
   idempotente.
 
+> **Actualización (ADR-021):** el *alcance del refresh automático* se revisó. El cron
+> reescribe **todas** las particiones en cada corrida (full reload), no solo la
+> corregida. El argumento que acá descartó el "rewrite global" —"re-disparar el reproceso
+> aguas abajo"— dejó de aplicar al volverse Silver/Gold full-refresh (ADR-018): se
+> reconstruyen enteros igual. Se **conserva** el mecanismo de escritura por partición
+> (elegido acá); cambia solo cuántas particiones toca el refresh automático. Ver ADR-021.
+
 ### El merge/upsert se difiere a Silver, no se hace en Bronze
 
 La resolución de los meses corregidos —quedarse con un único registro vigente por

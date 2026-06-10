@@ -12,8 +12,14 @@ import pytest
 
 from data_pipeline.extraction import extract_pozos as mod
 
-# CSV de prueba: arranca con un BOM (﻿) a propósito, como la fuente real.
-_CSV_CON_BOM = "﻿idpozo,sigla\n144081,315\n144082,316\n".encode("utf-8")
+# CSV de prueba con BOM (﻿) y el schema COMPLETO de pozos (todas las columnas que
+# valida la ingesta, ver config.EXPECTED_COLUMNS["pozos"]).
+_CSV_CON_BOM = (
+    "﻿idpozo,sigla,formprod,idempresa,idareayacimiento,areayacimiento,cuenca,"
+    "provincia,profundidad,coordenadax,coordenaday,clasificacion,tipo_reservorio\n"
+    "144081,315,FM1,EMP1,AY1,AREA1,NEUQUINA,NEUQUEN,2500,1.0,2.0,EXPLOTACION,SHALE\n"
+    "144082,316,FM1,EMP1,AY1,AREA1,NEUQUINA,NEUQUEN,2600,1.5,2.5,EXPLOTACION,SHALE\n"
+).encode("utf-8")
 
 
 class _FakeResponse:
@@ -36,16 +42,17 @@ def bronze_tmp(tmp_path, monkeypatch):
 def test_descarta_bom_de_la_primera_columna(bronze_tmp):
     archivo = mod.extract_pozos(ingesta=date(2026, 6, 1))
     df = pd.read_parquet(archivo)
-    # La columna debe ser "idpozo", no "﻿idpozo".
-    assert list(df.columns) == ["idpozo", "sigla"]
+    # La primera columna debe ser "idpozo", no "﻿idpozo" (BOM descartado).
+    assert df.columns[0] == "idpozo"
     assert df["idpozo"].tolist() == ["144081", "144082"]
 
 
 def test_guarda_todo_como_texto(bronze_tmp):
     archivo = mod.extract_pozos(ingesta=date(2026, 6, 1))
     df = pd.read_parquet(archivo)
-    # Bronze es crudo: ningún tipo se infiere, todo queda como object (texto).
-    assert set(df.dtypes.astype(str)) == {"object"}
+    # Bronze es crudo: ningún tipo se infiere, todo queda como texto.
+    # is_string_dtype acepta tanto 'object' (pandas clásico) como 'str'/'string[pyarrow]'.
+    assert all(pd.api.types.is_string_dtype(dt) for dt in df.dtypes)
 
 
 def test_ruta_versionada_por_fecha_de_ingesta(bronze_tmp):

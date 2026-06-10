@@ -41,7 +41,7 @@ Usaremos **Dagster** como herramienta de orquestación, modelando el pipeline co
 - **Overhead acorde al equipo.** Airflow exige scheduler, webserver, base de metadatos y típicamente un worker: varios contenedores que sumar al `docker-compose` y mantener entre 3 personas en 2 semanas. Dagster corre con un único servicio y su UI, suficiente para nuestra escala.
 - **El lineage nativo de Airflow no compensa.** Su principal ventaja para nosotros sería la integración con DataHub, pero ese linaje también lo obtendremos por el plugin de Dagster y por la ingesta de metadata desde el propio DW que hará la Persona C. No justifica el costo operativo.
 
-El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upsert por `idpozo + anio + mes` para producción) se implementa sobre el modelo de particiones de Dagster y se justifica en el ADR-012.
+El tipo de carga por fuente (full refresh para el catálogo de pozos; full refresh materializado por partición `anio/mes` para producción, con la resolución de meses corregidos —merge/upsert por `idpozo + anio + mes`— diferida a Silver) se implementa sobre el modelo de particiones de Dagster y se justifica en el ADR-012.
 
 ## Consecuencias
 
@@ -59,7 +59,7 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos, merge/upse
 ## Decisiones Técnicas Posteriores
 
 - **Coordinación con gobierno:** confirmar la ruta de emisión de linaje a DataHub (plugin de Dagster o ingesta desde el DW). Es la única pata de esta decisión que no es exclusiva del Data Engineer.
-- **Particionado:** producción se modela en **dos assets** para aprovechar el backfill nativo por mes sin pagar la descarga completa por partición. Como la fuente publica un único archivo (no permite bajar un mes puntual), un primer asset `produccion_raw` descarga el CSV completo **una vez** a una zona de landing; un segundo asset `bronze_produccion`, **particionado por mes** (`MonthlyPartitionsDefinition`), lee de ese landing y escribe solo la partición de su mes. Así, reprocesar un mes corregido es materializar esa partición desde la UI de Dagster: reescribe únicamente ese mes, sin re-descargar ni tocar el resto (ver ADR-012 y ADR-013).
+- **Particionado:** producción se modela en **dos assets** para aprovechar el backfill nativo por mes sin pagar la descarga completa por partición. Como la fuente publica un único archivo (no permite bajar un mes puntual), un primer asset `produccion_raw` descarga el CSV completo **una vez** a una zona de landing; un segundo asset `bronze_produccion`, **particionado por mes** (`MonthlyPartitionsDefinition`), lee de ese landing y escribe solo la partición de su mes. Así, reprocesar un mes corregido **de forma dirigida** es materializar esa partición desde la UI de Dagster: reescribe únicamente ese mes, sin re-descargar ni tocar el resto (el refresh automático hace full reload de todas las particiones; ver ADR-012, ADR-013 y ADR-021).
 - **Persistencia:** IO manager hacia el data warehouse (cuya elección corresponde al Analytics Engineer, ver su ADR) y archivos parquet en la capa Bronze (`data/bronze/`, ya versionada como estructura y con los datos gitignoreados).
 - **Despliegue:** Dagster se suma como servicio en el `docker-compose` existente, coordinando con Infraestructura.
 
@@ -90,3 +90,7 @@ mismo código corre contra `oil_dw_staging` y `oil_dw_prod` cambiando solo esa v
 
 Procedimiento operativo (setup del venv, swap/instancia, backfill histórico, cron, rollout
 a prod): ver el runbook del Analytics Engineer.
+
+La **decisión formal con comparación de alternativas** de esta extensión (integración de dbt
+vía `dagster-dbt` vs asset-subprocess; disparo por cron headless vs daemon) está en el
+**[ADR-018](0018-orquestacion-end-to-end-dw.md)**.

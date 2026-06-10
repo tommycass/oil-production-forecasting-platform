@@ -14,6 +14,7 @@ import pandas as pd
 import requests
 
 from data_pipeline.config import BRONZE_DIR, SOURCES
+from data_pipeline.extraction.validation import validar_columnas
 
 # Tiempo máximo de espera de la descarga (segundos) antes de abortar.
 _HTTP_TIMEOUT = 60
@@ -41,6 +42,10 @@ def extract_pozos(ingesta: date | None = None) -> Path:
     #    encoding="utf-8-sig" descarta el BOM inicial del CSV de la fuente
     #    (si no, quedaría pegado al nombre de la primera columna).
     df = pd.read_csv(BytesIO(resp.content), dtype=str, encoding="utf-8-sig")
+
+    # 2b. Validar el contrato de schema (fail-fast): si la fuente cambió y faltan
+    #     columnas esperadas, abortamos acá sin escribir Bronze (ver ADR-022).
+    validar_columnas(df, "pozos")
 
     # 3. Escribir parquet versionado por fecha de ingesta. Re-correr el mismo día
     #    sobrescribe el archivo del día (idempotente), no acumula duplicados.
