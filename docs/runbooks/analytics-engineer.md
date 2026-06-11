@@ -100,7 +100,7 @@ automatizado**: un grafo de Dagster (`data_pipeline/orchestration/`) materializa
 (`oil_dw_prod`); lo único que cambia es el `infra/.env` de cada EC2.
 
 > El grafo extiende la zona de orquestación de A — ver "Actualización (jun-2026)" en
-> ADR-011 (pendiente de su review).
+> ADR-011 (revisada y aceptada por el Data Engineer; decisión formal en ADR-018).
 
 ### a) Setup (una vez por EC2)
 

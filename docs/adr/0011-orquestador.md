@@ -65,8 +65,13 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos; full refre
 
 ## Actualización (jun-2026) — el grafo se extiende al DW y corre en AWS
 
-> Propuesta del Analytics Engineer (Persona B), **pendiente de review del Data Engineer**
-> (dueño de este ADR). Toca la zona de orquestación, por eso se documenta acá.
+> Propuesta del Analytics Engineer (Persona B), **revisada y aceptada por el Data Engineer**
+> (dueño de este ADR) el 11-jun-2026. Toca la zona de orquestación, por eso se documenta acá.
+> La extensión es coherente con la decisión original: reusa los assets de Bronze como upstream,
+> conserva el modelo de particiones por mes y el backfill nativo, y no altera la elección de
+> Dagster ni el contrato de la capa Bronze. La decisión formal con comparación de alternativas
+> (dbt vía `dagster-dbt` vs asset-subprocess; cron headless vs daemon persistente) vive en el
+> [ADR-018](0018-orquestacion-end-to-end-dw.md).
 
 Para dejar el flujo Medallion andando end-to-end en AWS (objetivo: que BI/gobierno
 consuman Gold sin pasos manuales), el grafo de assets **se extiende más allá de Bronze**:
