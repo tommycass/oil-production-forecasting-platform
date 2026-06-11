@@ -367,8 +367,14 @@ El pipeline corre mensualmente por cron (`0 3 5 * *`) en cada EC2. Los datos en
 manual se dispara con:
 
 ```bash
-REFRESH_MONTHS=3 bash data_pipeline/orchestration/run_pipeline.sh
+bash data_pipeline/orchestration/run_pipeline.sh
 ```
+
+Cada corrida hace **full reload** de todo Bronze (todas las particiones mensuales),
+para capturar correcciones de la fuente de cualquier antigüedad (ver
+[ADR-021](docs/adr/0021-refresh-bronze-full-reload.md)). Para forzar un mes puntual
+fuera de ciclo sin recargar todo, usar el backfill por partición (ver *Backfill* arriba
+y el [runbook del Data Engineer](docs/runbooks/data-engineer.md)).
 
 ---
 
