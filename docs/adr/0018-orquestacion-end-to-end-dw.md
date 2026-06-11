@@ -111,3 +111,36 @@ una línea de crontab). Si la instancia se agranda, se puede volver al daemon + 
   PR con su review. La nota correspondiente en ADR-011 referencia este ADR.
 - **Coordinación con C:** la ingesta del manifest de dbt a DataHub (lineage) queda de su lado
   (ADR-017); este ADR garantiza que el manifest se produce en cada corrida.
+
+## Actualización (jun-2026) — UI de Dagster vía docker-compose
+
+La decisión original dejó explícito que *"si la instancia se agranda, se puede volver al
+daemon + schedule nativo sin tocar los assets"* y listó como negativa la falta de UI,
+*"mitigable activando el daemon si se agranda la instancia"*. Con la capacidad ya
+disponible (la EC2 de gobierno es `t3.large`, 8 GB; ver ADR-017), se ejecuta esa
+mitigación: se suma un servicio **`dagster`** al `infra/docker-compose.yml`
+(`infra/Dockerfile.dagster`) que corre `dagster dev` (webserver + daemon) cargando el
+mismo grafo de assets `data_pipeline.orchestration.definitions`.
+
+**Qué cambia y qué no:**
+- **No se tocan los assets ni el código de orquestación** — exactamente lo que el ADR
+  anticipó. El servicio reusa el módulo de definitions tal cual.
+- **El cron headless sigue siendo el disparador de producción.** La UI es para
+  **observabilidad** (grafo de assets, logs, status, materialización on-demand), no
+  reemplaza al cron mensual del ADR original.
+- **Footprint controlado por perfil.** El servicio va en el perfil `orchestration` del
+  compose: no arranca con un `up` por defecto ni entra en el build de CI (que solo
+  construye la imagen de la API). Se levanta deliberadamente donde haya capacidad
+  (`--profile orchestration`), evitando cargar la EC2 chica de `api` por accidente.
+- **Puerto 3070** en el host (3000 lo usa Grafana). `DAGSTER_HOME` persistido en un
+  volumen para conservar el historial de runs.
+
+**Por qué `dagster dev` y no webserver + daemon como servicios separados:** a la escala
+actual `dagster dev` (que corre ambos en un proceso) da la UI y los schedules con una
+sola definición de servicio y regenera el manifest de dbt al arrancar
+(`prepare_if_dev → dbt parse`), sin pasos manuales. Si en el futuro se quisiera correr
+schedules de Dagster en serio (en vez del cron del SO), se separan en
+`dagster-webserver` + `dagster-daemon` con una `dagster.yaml` de storage persistente.
+
+**Consecuencia:** la negativa "sin UI de Dagster" del ADR original queda resuelta para
+los entornos con capacidad; el flujo de producción (cron headless) permanece intacto.
