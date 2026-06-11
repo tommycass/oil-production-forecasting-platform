@@ -42,7 +42,8 @@ calidad del pipeline. Se ejecuta cuando:
     Elasticsearch, MySQL, schema-registry, datahub-upgrade).
   - Puerto 8080 (GMS) y 9002 (frontend) publicados en el SG de entrada.
 - **Prerrequisitos de la EC2 del pipeline (`api`):**
-  - `datahub` CLI instalado: `pip install 'acryl-datahub[datahub-rest]'`.
+  - `datahub` CLI instalado: `pip install 'acryl-datahub[dbt,datahub-rest]'`
+    (el extra `[dbt]` es el que habilita la fuente de ingesta).
   - El pipeline de dbt corrió al menos una vez: existe `manifest.json`.
 
 ---
@@ -84,44 +85,62 @@ datahub docker check
 
 ### 3.2 Ejecutar la ingesta dbt→DataHub
 
-La ingesta lee los artefactos dbt (`manifest.json`, `run_results.json`) que B genera
-en la EC2 del pipeline (`api`) y los envía al GMS de la EC2 de gobierno.
+La ingesta lee **tres** artefactos dbt y los envía al GMS de la EC2 de gobierno
+**sin tocar el DW**:
 
-Conectarse a la EC2 del pipeline:
+- `manifest.json` — grafo de modelos (linaje tabla). **Obligatorio.**
+- `catalog.json` — tipos y descripciones de columna (linaje de columna). **Obligatorio.**
+- `run_results.json` — resultado de los 31 tests de calidad (assertions). Opcional.
+
+Como el linaje y el esquema se derivan de las **definiciones** de los modelos (no de
+los datos), los artefactos pueden generarse contra cualquier base con el modelo
+construido. Hay dos caminos:
+
+**Camino A — desde la EC2 `api` (datos de producción).** Es el flujo recurrente: tras
+cada `dbt build` del pipeline, ingestar contra el manifest de prod.
 
 ```bash
 aws ssm start-session --target <instance-id-api> --region us-east-2
 sudo -i -u ubuntu
 cd /home/ubuntu/oil-production-forecasting-platform
-```
 
-Si `datahub` CLI no está instalado en esta EC2:
+# CLI de DataHub con el extra [dbt] (trae el plugin de la fuente) + [datahub-rest] (sink):
+pip install 'acryl-datahub[dbt,datahub-rest]'
 
-```bash
-pip install 'acryl-datahub[datahub-rest]'
-```
+# El cron del pipeline genera manifest.json + run_results.json en el dbt build.
+# Para el linaje de columna hace falta además catalog.json (un paso extra):
+set -a; source infra/.env; set +a
+cd transform && dbt docs generate --profiles-dir . && cd ..
 
-Configurar el endpoint del GMS y ejecutar la ingesta:
-
-```bash
 export DATAHUB_GMS_HOST=<ip-ec2-governance>
-
-# Ubicación real de los artefactos dbt en EC2 (si B usa DBT_TARGET_PATH):
-MANIFEST=/home/ubuntu/dbt-runtime/target/manifest.json
-RUN_RESULTS=/home/ubuntu/dbt-runtime/target/run_results.json
-
+# Rutas reales si B usa DBT_TARGET_PATH (~/dbt-runtime/target/); si no, transform/target/:
+T=/home/ubuntu/dbt-runtime/target
 datahub ingest -c infra/datahub/dbt_recipe.yml \
-  --set source.config.manifest_path="$MANIFEST" \
-  --set source.config.run_results_path="$RUN_RESULTS"
+  --set source.config.manifest_path="$T/manifest.json" \
+  --set source.config.catalog_path="$T/catalog.json" \
+  --set source.config.run_results_paths[0]="$T/run_results.json"
 ```
 
-Una ingesta exitosa imprime algo similar a:
+**Camino B — bootstrap desde una máquina con el repo (muestra local).** Útil para la
+carga inicial / demo sin depender del cron de prod. El puerto 8080 del GMS está
+abierto, así que la ingesta puede correr desde cualquier host:
 
+```bash
+# 1. Postgres local de muestra (perfil local-db del compose, o un postgres suelto)
+# 2. Sembrar Bronze de muestra y construir el modelo:
+python transform/scripts/seed_sample_bronze.py --rows 2000
+cd transform && dbt deps && dbt build --profiles-dir . && dbt docs generate --profiles-dir . && cd ..
+# 3. Ingestar al GMS remoto:
+export DATAHUB_GMS_HOST=<ip-ec2-governance>
+datahub ingest -c infra/datahub/dbt_recipe.yml
 ```
-✅  Ingestion completed with warnings: 0, errors: 0
-Source report: ... entities ingested: ...
-Sink report: ... records written: ...
-```
+
+> **Gotcha de rutas:** si el path a `transform/target/` contiene acentos u otros
+> caracteres no-ASCII, el parser de la fuente dbt falla al abrir el archivo
+> (`FileNotFoundError`). Copiar `target/` a una ruta ASCII y apuntar ahí con `--set`.
+
+Una ingesta exitosa termina con `failures: []` en el reporte del sink y un conteo de
+records escritos (`total_records_written`), reportando la `gms_version` del servidor.
 
 ### 3.3 Navegar el catálogo y el linaje
 
@@ -160,7 +179,8 @@ La ingesta y el catálogo están correctos cuando:
 | `datahub docker check` muestra contenedores `unhealthy` | RAM insuficiente o Elasticsearch tardó en arrancar | Esperar 2 min más; si persiste: `datahub docker quickstart --stop && datahub docker quickstart` |
 | `Connection refused` al GMS durante la ingesta | El SG de la EC2 de gobierno no tiene el puerto 8080 abierto | Agregar regla de entrada TCP 8080 desde la IP de la EC2 del pipeline (o `0.0.0.0/0` temporalmente para el demo) |
 | `FileNotFoundError: manifest.json not found` | dbt no corrió o la ruta es distinta | Verificar que B ejecutó `dbt build` y confirmar la ruta real del artefacto en la EC2 del pipeline |
-| Ingesta con errores en la fuente dbt | Versión de datahub CLI incompatible con el schema del manifest | `pip install --upgrade 'acryl-datahub[datahub-rest]'` y reintentar |
+| `Failed to find a registered source for type dbt` | Falta el extra `[dbt]` del CLI | `pip install 'acryl-datahub[dbt,datahub-rest]'` y reintentar |
+| Ingesta con errores en la fuente dbt | Versión de datahub CLI incompatible con el schema del manifest | `pip install --upgrade 'acryl-datahub[dbt,datahub-rest]'` y reintentar |
 | UI muestra datos de una corrida anterior | La ingesta no se ejecutó tras el último `dbt build` | Ejecutar el paso 3.2 manualmente; a futuro, agregar `datahub ingest ...` al script de cron del pipeline |
 | DataHub requiere más de 4 GB y la instancia se queda sin RAM | El quickstart levanta ~8 contenedores pesados | Detener contenedores no usados en esa EC2, ampliar swap, o migrar a instancia `t3.large` |
 

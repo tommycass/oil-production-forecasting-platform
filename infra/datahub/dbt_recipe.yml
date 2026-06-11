@@ -1,33 +1,44 @@
 # DataHub ingestion recipe — fuente dbt (ADR-017)
 #
-# Ejecutar desde la raíz del repositorio, en la EC2 del pipeline,
-# DESPUÉS de cada `dbt build` exitoso:
+# Carga el linaje Bronze→Silver→Gold, el esquema de columnas y las señales de
+# calidad (tests dbt) al catálogo de gobierno, leyendo los artefactos que dbt
+# genera. NO consulta el DW: todo sale de transform/target/.
 #
+# Requisitos (CLI):
+#   pip install 'acryl-datahub[dbt,datahub-rest]'
+#   # el extra [dbt] trae el plugin de la fuente; [datahub-rest] trae el sink.
+#
+# Artefactos necesarios (los tres) — generarlos antes de ingestar:
+#   cd transform
+#   dbt build --profiles-dir .          # -> manifest.json + run_results.json
+#   dbt docs generate --profiles-dir .  # -> catalog.json (tipos/descripciones de columna)
+#
+# Ejecutar desde la raíz del repositorio, apuntando al GMS de la EC2 de gobierno:
 #   export DATAHUB_GMS_HOST=<ip-del-ec2-de-gobierno>
 #   datahub ingest -c infra/datahub/dbt_recipe.yml
 #
-# Si usás DBT_TARGET_PATH en la EC2 (ver runbook del Analytics Engineer),
-# los artefactos no están en transform/target/ sino en ~/dbt-runtime/target/.
-# Sobrescribir las rutas en línea de comandos:
-#
+# Si usás DBT_TARGET_PATH en la EC2 (ver runbook del Analytics Engineer), los
+# artefactos viven en ~/dbt-runtime/target/. Sobrescribir las rutas en línea:
 #   datahub ingest -c infra/datahub/dbt_recipe.yml \
 #     --set source.config.manifest_path=/home/ubuntu/dbt-runtime/target/manifest.json \
-#     --set source.config.run_results_path=/home/ubuntu/dbt-runtime/target/run_results.json
+#     --set source.config.catalog_path=/home/ubuntu/dbt-runtime/target/catalog.json
 #
-# Requiere: pip install 'acryl-datahub[datahub-rest]'
-# Versión validada: acryl-datahub>=0.12
+# Nota: si la ruta a los artefactos contiene caracteres no-ASCII (acentos), el
+# parser puede fallar al abrir el archivo; copiar target/ a una ruta ASCII.
+#
+# Validado: acryl-datahub 1.6.x contra DataHub GMS v1.5.x.
 
 source:
   type: dbt
   config:
-    # Artefactos dbt generados por `dbt build`.
-    # Ruta relativa a la raíz del repositorio (default local/CI).
+    # Artefactos dbt. Rutas relativas a la raíz del repo (default local/CI).
+    # manifest_path y catalog_path son OBLIGATORIOS para la fuente dbt.
     manifest_path: "transform/target/manifest.json"
-    run_results_path: "transform/target/run_results.json"
-
-    # Linaje a nivel columna: requiere `dbt docs generate --profiles-dir .`
-    # Descomentar cuando se quiera exponer el linaje columna-a-columna.
-    # catalog_path: "transform/target/catalog.json"
+    catalog_path: "transform/target/catalog.json"
+    # run_results_paths es una LISTA (opcional): expone el resultado de los tests
+    # de Data Quality (ADR-016) como assertions sobre cada dataset.
+    run_results_paths:
+      - "transform/target/run_results.json"
 
     # Plataforma del DW subyacente. Aparece en el grafo de linaje de DataHub.
     target_platform: postgres
@@ -38,5 +49,5 @@ sink:
   config:
     # Endpoint GMS del servidor DataHub (EC2 de gobierno).
     # Setear DATAHUB_GMS_HOST antes de ejecutar. Ejemplo:
-    #   export DATAHUB_GMS_HOST=18.117.100.200
+    #   export DATAHUB_GMS_HOST=3.138.202.100
     server: "http://${DATAHUB_GMS_HOST:-localhost}:8080"
