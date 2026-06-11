@@ -189,7 +189,7 @@ La ingesta y el catálogo están correctos cuando:
 | `FileNotFoundError: manifest.json not found` | dbt no corrió o la ruta es distinta | Verificar que B ejecutó `dbt build` y confirmar la ruta real del artefacto en la EC2 del pipeline |
 | `Failed to find a registered source for type dbt` | Falta el extra `[dbt]` del CLI | `pip install 'acryl-datahub[dbt,datahub-rest]'` y reintentar |
 | Ingesta con errores en la fuente dbt | Versión de datahub CLI incompatible con el schema del manifest | `pip install --upgrade 'acryl-datahub[dbt,datahub-rest]'` y reintentar |
-| UI muestra datos de una corrida anterior | La ingesta no se ejecutó tras el último `dbt build` | Ejecutar el paso 3.2 manualmente; a futuro, agregar `datahub ingest ...` al script de cron del pipeline |
+| UI muestra datos de una corrida anterior | El paso de ingesta de `run_pipeline.sh` no corrió (o `DATAHUB_GMS_HOST` no está seteado) | Confirmar que `DATAHUB_GMS_HOST` está en `infra/.env` y el CLI instalado; si no, ejecutar el paso 3.2 manualmente |
 | DataHub requiere más de 4 GB y la instancia se queda sin RAM | El quickstart levanta ~8 contenedores pesados | Detener contenedores no usados en esa EC2, ampliar swap, o migrar a instancia `t3.large` |
 
 ---

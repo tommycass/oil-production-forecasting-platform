@@ -84,9 +84,14 @@ columna, agregando un `dbt docs generate`).
   cada capa y sus dependencias quedan navegables a nivel tabla (y columna con catalog).
 - **"Datos del DW" y "última actualización":** la ingesta dbt + (opcional) un conector
   Postgres reflejan las tablas de `gold.*`/`dq.*` y sus timestamps de corrida.
-- **Workflows de extracción visibles:** se exponen vía el grafo dbt/manifest; si más
-  adelante se levanta el daemon de Dagster, queda disponible el `datahub-dagster-plugin`
-  para reflejar el grafo de assets directamente.
+- **Workflows de extracción visibles:** se cubren en dos niveles complementarios. En
+  DataHub, las dbt sources `bronze.produccion`/`bronze.pozos` representan la **salida**
+  de la extracción y quedan ligadas como upstream del linaje (Bronze→Silver→Gold). El
+  **grafo de extracción en sí** (assets `produccion_raw`, `bronze_pozos`,
+  `bronze_produccion` y la carga a Postgres) con sus logs y status se observa en la **UI
+  de Dagster** ([ADR-023](0023-ui-dagster-containerizada.md)), ahora disponible. Si se
+  quisiera unificar todo en DataHub, el `datahub-dagster-plugin` puede emitir el grafo de
+  assets directamente — queda como evolución, no necesario para cumplir el requisito.
 
 ### Capacidad
 
