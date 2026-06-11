@@ -16,16 +16,19 @@ def mock_api_key():
 
 
 def test_wells_success():
-    response = client.get(
-        "/api/v1/wells",
-        params={"date_query": "2024-01-01"},
-        headers=HEADERS,
-    )
+    # El DW se mockea: el test verifica el contrato del endpoint, no la base real.
+    fake_rows = [{"id_well": "4815"}, {"id_well": "4816"}]
+    with patch("app.services.wells.fetch_all", return_value=fake_rows):
+        response = client.get(
+            "/api/v1/wells",
+            params={"date_query": "2024-01-01"},
+            headers=HEADERS,
+        )
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) > 0
-    assert "id_well" in data[0]
+    assert len(data) == 2
+    assert data[0]["id_well"] == "4815"
 
 
 def test_wells_future_date():

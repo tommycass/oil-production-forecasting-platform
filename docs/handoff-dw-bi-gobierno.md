@@ -156,14 +156,14 @@ para el lineage tabla-a-tabla y columna-a-columna en DataHub.
 ## 6. Cómo se refresca el DW (orquestación)
 
 - **Automático:** `cron` mensual en cada EC2 (`0 3 5 * *`) corre
-  `data_pipeline/orchestration/run_pipeline.sh`, que refresca los últimos meses de Bronze, los
+  `data_pipeline/orchestration/run_pipeline.sh`, que recarga todo Bronze (full reload, ADR-021), lo
   carga a Postgres y corre `dbt build` (Silver/Gold/DQ). Log en `~/dagster-runtime/cron.log`.
 - **Determinismo:** Silver/Gold son `table` full-refresh → cada corrida reconstruye el mismo Gold
   (idempotente). BI siempre lee el último Gold materializado.
 - **Refresh manual** (si necesitás datos frescos fuera de ciclo), desde la EC2:
   ```bash
   cd /home/ubuntu/oil-production-forecasting-platform
-  REFRESH_MONTHS=3 bash data_pipeline/orchestration/run_pipeline.sh
+  bash data_pipeline/orchestration/run_pipeline.sh
   ```
 - **Si un check `error` falla**, el run aborta y **Gold no se actualiza** (queda servido el Gold
   anterior, intacto): BI nunca consume datos rotos. El detalle del fallo queda en `dq.dq_results`

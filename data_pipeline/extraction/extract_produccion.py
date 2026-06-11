@@ -22,6 +22,7 @@ import pandas as pd
 import requests
 
 from data_pipeline.config import BRONZE_DIR, LANDING_DIR, SOURCES
+from data_pipeline.extraction.validation import validar_columnas
 
 # La fuente es grande (~144 MB); damos más margen que en pozos.
 _HTTP_TIMEOUT = 300
@@ -45,6 +46,10 @@ def descargar_landing() -> Path:
 
     # Todo como texto; encoding="utf-8-sig" descarta el BOM inicial de la fuente.
     df = pd.read_csv(BytesIO(resp.content), dtype=str, encoding="utf-8-sig")
+
+    # Validar el contrato de schema (fail-fast): si faltan columnas esperadas,
+    # abortamos acá sin escribir el landing ni Bronze (ver ADR-022).
+    validar_columnas(df, "produccion")
 
     _LANDING_FILE.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(_LANDING_FILE, engine="pyarrow", index=False)
