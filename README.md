@@ -102,7 +102,10 @@ oil-production-forecasting-platform/
 │       ├── 0017-plataforma-gobierno-datos.md
 │       ├── 0018-orquestacion-end-to-end-dw.md
 │       ├── 0019-tratamiento-registros-invalidos.md
-│       └── 0020-plataforma-bi.md
+│       ├── 0020-plataforma-bi.md
+│       ├── 0021-refresh-bronze-full-reload.md
+│       ├── 0022-validacion-schema-ingesta.md
+│       └── 0023-ui-dagster-containerizada.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
@@ -534,3 +537,6 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [018](docs/adr/0018-orquestacion-end-to-end-dw.md) | Orquestación end-to-end del DW | dagster-dbt + cron headless; flujo Bronze→Postgres→Silver/Gold/DQ automatizado |
 | [019](docs/adr/0019-tratamiento-registros-invalidos.md) | Tratamiento de registros inválidos | Cuarentena vs rechazo vs corrección; filas que violan validaciones duras |
 | [020](docs/adr/0020-plataforma-bi.md) | Plataforma de BI | Metabase vs Superset vs Redash; por qué Metabase para usuarios no técnicos |
+| [021](docs/adr/0021-refresh-bronze-full-reload.md) | Estrategia de refresh de Bronze | Full reload vs ventana incremental en el refresh recurrente de Bronze |
+| [022](docs/adr/0022-validacion-schema-ingesta.md) | Validación de schema en la ingesta | Contrato de columnas por fuente; fail-fast ante cambios de schema |
+| [023](docs/adr/0023-ui-dagster-containerizada.md) | UI de Dagster containerizada | Complementa ADR-018: UI vía perfil de compose; `dagster dev` y por qué no toca el cron de prod |
