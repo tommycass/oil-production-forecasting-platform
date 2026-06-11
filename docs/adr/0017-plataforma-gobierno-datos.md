@@ -111,7 +111,7 @@ gobierno hacia el RDS (mismo prerrequisito que BI; ver [ADR-020](0020-plataforma
 ## Decisiones Técnicas Posteriores → Implementación (jun-2026)
 
 **Host:** instancia dedicada `governance` — **`t3.large`** (8 GB RAM, $0.083/hr),
-Ubuntu 22.04, misma región y VPC que `api`. Se elige `t3.large` sobre `t2.large`:
+Ubuntu 24.04, misma región y VPC que `api`. Se elige `t3.large` sobre `t2.large`:
 igual RAM, $0.01/hr más barato, red hasta 5 Gbps y créditos de CPU sin límite
 (t3 unlimited burst). No se reutiliza `api-dev` (staging) porque ese host tiene un
 ciclo de vida distinto: el CI/CD despliega ahí en cada push a `staging`, lo que
@@ -119,14 +119,27 @@ podría interrumpir DataHub durante una demo o corrida de ingesta; además, mezc
 responsabilidades de staging y gobierno en el mismo host elimina el aislamiento de
 fallos que justificó elegir una instancia dedicada.
 
-**Agendado de la ingesta:** se dispara manualmente desde la EC2 `api` tras cada
-`dbt build`, apuntando al GMS de `governance` vía `DATAHUB_GMS_HOST`. La
-automatización por cron queda como mejora futura una vez estabilizado el flujo.
+**Despliegue:** vía `datahub docker quickstart` (compose oficial de DataHub, ~8
+contenedores: GMS, frontend, OpenSearch, Kafka, MySQL, etc.). Se eligió el quickstart
+gestionado por el CLI sobre un compose propio para no mantener sincronizadas las
+versiones de cada contenedor; el setup queda en dos comandos (`pip install` +
+`datahub docker quickstart`). Detalle operativo en el runbook
+[governance-admin](../runbooks/governance-admin.md).
 
-**Linaje de columna:** no activado en esta iteración; requiere `dbt docs generate`
-para producir `catalog.json`. Se puede habilitar descomentando `catalog_path` en
-`infra/datahub/dbt_recipe.yml`.
+**Linaje de columna: habilitado.** La fuente dbt de DataHub exige `manifest_path` y
+`catalog_path`; ambos se proveen. `catalog.json` se genera con `dbt docs generate` y
+aporta tipos y descripciones de columna. `run_results.json` se suma como assertions
+de los 31 tests de calidad (ADR-016). El recipe quedó en `infra/datahub/dbt_recipe.yml`.
 
-**Regla de SG:** puerto 8080 (GMS) abierto desde el SG de `api` hacia el SG de
-`governance`. Puerto 9002 (frontend) abierto desde cualquier IP para acceso externo
-al catálogo.
+**Carga inicial (bootstrap):** la primera ingesta se corrió desde una build local con
+datos de muestra (`seed_sample_bronze.py`), apuntando al GMS remoto. Es legítimo
+porque el **linaje y el esquema se derivan de las definiciones de los modelos**, no de
+los datos: el grafo Bronze→Silver→Gold resultante es idéntico al de producción. El
+flujo recurrente (ingesta desde `api` tras cada `dbt build`) queda documentado en el
+runbook; su automatización por cron es mejora futura.
+
+**Regla de SG:** SG dedicado `governance-sg`. Puerto 9002 (frontend) y 8080 (GMS)
+abiertos a `0.0.0.0/0` para acceso externo al catálogo y para permitir la ingesta de
+bootstrap desde fuera de la VPC; SSH (22) restringido a la IP del administrador. En un
+despliegue productivo el 8080 debería restringirse al SG de `api` y el 9002 ir detrás
+de TLS.
