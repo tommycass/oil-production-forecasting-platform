@@ -96,8 +96,16 @@ Como el linaje y el esquema se derivan de las **definiciones** de los modelos (n
 los datos), los artefactos pueden generarse contra cualquier base con el modelo
 construido. Hay dos caminos:
 
-**Camino A — desde la EC2 `api` (datos de producción).** Es el flujo recurrente: tras
-cada `dbt build` del pipeline, ingestar contra el manifest de prod.
+> **Nota — ingesta recurrente automatizada.** En régimen, **no hace falta correr la
+> ingesta a mano**: `run_pipeline.sh` (el cron mensual del ADR-018) la ejecuta tras
+> cada `dw_publish` como paso best-effort. Para activarla en una EC2: instalar el CLI
+> en el venv del pipeline (`pip install 'acryl-datahub[dbt,datahub-rest]'`) y setear
+> `DATAHUB_GMS_HOST` en `infra/.env`. Si DataHub está caído, el paso avisa y no frena
+> el pipeline. Los caminos manuales de abajo sirven para el **bootstrap inicial** o una
+> **re-ingesta puntual** fuera de ciclo.
+
+**Camino A — desde la EC2 `api` (datos de producción).** Ingesta manual contra el
+manifest de prod (equivale a lo que hace el paso automatizado de `run_pipeline.sh`).
 
 ```bash
 aws ssm start-session --target <instance-id-api> --region us-east-2

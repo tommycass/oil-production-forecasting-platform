@@ -134,9 +134,16 @@ de los 31 tests de calidad (ADR-016). El recipe quedó en `infra/datahub/dbt_rec
 **Carga inicial (bootstrap):** la primera ingesta se corrió desde una build local con
 datos de muestra (`seed_sample_bronze.py`), apuntando al GMS remoto. Es legítimo
 porque el **linaje y el esquema se derivan de las definiciones de los modelos**, no de
-los datos: el grafo Bronze→Silver→Gold resultante es idéntico al de producción. El
-flujo recurrente (ingesta desde `api` tras cada `dbt build`) queda documentado en el
-runbook; su automatización por cron es mejora futura.
+los datos: el grafo Bronze→Silver→Gold resultante es idéntico al de producción.
+
+**Ingesta recurrente: automatizada.** Se cierra el loop "cada corrida del pipeline
+refresca el catálogo": `run_pipeline.sh` (el cron mensual del [ADR-018](0018-orquestacion-end-to-end-dw.md))
+ejecuta, tras el `dw_publish`, un paso **best-effort** que corre `dbt docs generate` +
+`datahub ingest`. Es **best-effort a propósito**: una caída de DataHub no debe frenar el
+refresh del DW (gobierno es auxiliar al pipeline), así que el paso solo avisa ante
+fallos y no aborta. Está **env-gated**: corre únicamente si `DATAHUB_GMS_HOST` está en
+el `infra/.env` y el CLI `acryl-datahub[dbt,datahub-rest]` está en el venv; si no, se
+omite. Así, los entornos que aún no lo configuraron no se ven afectados.
 
 **Regla de SG:** SG dedicado `governance-sg`. Puerto 9002 (frontend) y 8080 (GMS)
 abiertos a `0.0.0.0/0` para acceso externo al catálogo y para permitir la ingesta de
