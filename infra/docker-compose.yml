@@ -218,6 +218,35 @@ services:
         max-size: "20m"
         max-file: "2"
 
+  # Dagster UI (orquestación, ADR-018 actualización jun-2026): webserver + daemon
+  # con el grafo de assets Bronze→Silver→Gold. Perfil "orchestration" (no arranca
+  # por defecto). En local, combinar con --profile local-db para tener el DW al lado:
+  #   docker compose -f infra/docker-compose.yml --profile orchestration --profile local-db up
+  dagster:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.dagster
+    container_name: oil-dagster
+    profiles: ["orchestration"]
+    ports:
+      - "3070:3000"   # 3000 lo usa Grafana
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - POSTGRES_USER=${POSTGRES_USER:-oil}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-oil}
+      - POSTGRES_DB=${POSTGRES_DB:-oil_dw}
+    volumes:
+      - ../data:/opt/dagster/app/data    # Bronze parquet (compartido con el host)
+      - dagster_home:/opt/dagster/home   # historial de runs y logs
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
 volumes:
   grafana_dashboards:
   postgres_data:
+  dagster_home:

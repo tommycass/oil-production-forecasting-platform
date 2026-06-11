@@ -74,8 +74,14 @@ oil-production-forecasting-platform/
 ├── docs/
 │   ├── consigna-fase1.md
 │   ├── consigna-fase2.md
+│   ├── adenda_tecnica_fase2.md
+│   ├── data-model.md               # Contrato Gold: grano, dims, surrogate keys, SCD
+│   ├── handoff-dw-bi-gobierno.md   # Traspaso del DW de B a C (BI + gobierno)
 │   ├── runbooks/                   # Runbooks por rol
-│   │   └── data-engineer.md        # Reprocesar un mes corregido por la fuente
+│   │   ├── data-engineer.md        # Reprocesar un mes corregido por la fuente
+│   │   ├── analytics-engineer.md   # Reconstruir Silver/Gold y resolver gate de calidad
+│   │   ├── bi-user.md              # Explorar y analizar producción en Metabase
+│   │   └── governance-admin.md     # Desplegar DataHub y ejecutar la ingesta dbt
 │   └── adr/                        # Architecture Decision Records
 │       ├── 0001-framework-backend.md
 │       ├── 0002-docker-containerizacion.md
@@ -89,11 +95,24 @@ oil-production-forecasting-platform/
 │       ├── 0010-api-key-validation-strategy.md
 │       ├── 0011-orquestador.md
 │       ├── 0012-tipo-de-carga.md
-│       └── 0013-diseno-capa-bronze.md
+│       ├── 0013-diseno-capa-bronze.md
+│       ├── 0014-arquitectura-medallion.md
+│       ├── 0015-modelo-dimensional-estrella.md
+│       ├── 0016-estrategia-data-quality.md
+│       ├── 0017-plataforma-gobierno-datos.md
+│       ├── 0018-orquestacion-end-to-end-dw.md
+│       ├── 0019-tratamiento-registros-invalidos.md
+│       ├── 0020-plataforma-bi.md
+│       ├── 0021-refresh-bronze-full-reload.md
+│       ├── 0022-validacion-schema-ingesta.md
+│       └── 0023-ui-dagster-containerizada.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
-│   └── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor
+│   ├── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor (+ perfiles bi/orchestration)
+│   ├── Dockerfile.dagster          # Imagen de la UI de Dagster (perfil orchestration)
+│   └── datahub/
+│       └── dbt_recipe.yml          # Receta de ingesta DataHub (linaje desde artefactos dbt)
 │
 ├── monitoring/
 │   ├── prometheus.yml              # Scraping de métricas
@@ -152,6 +171,18 @@ Servicios expuestos en el host:
 | Prometheus | 9090 | `/` |
 | Alertmanager | 9093 | `/` |
 | cAdvisor | 8080 | `/` |
+| Metabase (BI) | 3001 | `/` — perfil `bi`, ver abajo |
+| Dagster UI | 3070 | `/` — perfil `orchestration`, ver abajo |
+
+Metabase requiere el perfil `bi` y que exista la base `metabase_app` en el DW. Para
+levantarlo en local (apuntando al Postgres del perfil `local-db`):
+
+```bash
+docker compose -f infra/docker-compose.yml --profile bi --profile local-db up
+```
+
+En staging/producción ya corre en el host; acceder en el puerto 3001 (ver sección
+[Acceso a BI y gobierno de datos](#acceso-a-bi-y-gobierno-de-datos)).
 
 ### Acceso a Grafana
 
@@ -218,12 +249,27 @@ pip install -r data_pipeline/requirements.txt
 
 ### Levantar Dagster (UI con logs y status)
 
+**Opción A — con el venv local (desarrollo):**
+
 ```bash
 dagster dev -m data_pipeline.orchestration.definitions
 ```
 
 La UI queda en **http://localhost:3000**: muestra el grafo de assets, los logs y
 el status de cada corrida, y permite materializar desde el navegador.
+
+**Opción B — containerizada (perfil `orchestration`):** el compose trae un servicio
+`dagster` (webserver + daemon) con todo preinstalado. Combinar con `local-db` para
+tener el DW al lado:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile orchestration --profile local-db up
+```
+
+La UI queda en **http://localhost:3070** (3000 lo usa Grafana). El servicio no arranca
+con un `up` por defecto ni entra en el build de CI. En producción, el disparador sigue
+siendo el cron mensual headless (ver [ADR-018](docs/adr/0018-orquestacion-end-to-end-dw.md));
+esta UI es para observabilidad y materializaciones on-demand.
 
 ### Correr la ingesta completa
 
@@ -285,6 +331,47 @@ pytest data_pipeline/tests/
 
 ---
 
+## Arquitectura de datos
+
+El sistema implementa una **arquitectura Medallion** de tres capas sobre PostgreSQL 16
+(Amazon RDS), orquestada por Dagster y transformada con dbt. Los datos provienen de
+dos fuentes del Ministerio de Energía de Argentina (datos.gob.ar).
+
+```
+datos.gob.ar  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* + dq.*
+                  Data Engineer (A)        Analytics Engineer (B) — cron mensual en EC2
+```
+
+| Capa | Esquema | Descripción | Inmutable |
+|---|---|---|---|
+| **Bronze** | `data/bronze/` (parquet) + `bronze.*` | Crudo de la fuente tal como llega: todo como texto, sin transformar. Particionado por `anio/mes` para producción. | Sí |
+| **Silver** | `silver.*` | Limpio y tipado. Filas con errores duros van a cuarentena (`dq.silver_produccion_rechazos`), no se descartan en silencio. | No (full refresh) |
+| **Gold** | `gold.*` | Modelo estrella listo para BI y la API. Grano `(pozo, mes)`. Surrogate keys `sk_*` en todas las dimensiones. | No (full refresh) |
+| **Data Quality** | `dq.*` | Resultados de los 31 checks dbt por corrida (`dq_results`), cuarentena y `store_failures`. Un check `severity: error` bloquea la promoción a Gold. | Acumulativo |
+
+### Modelo estrella (Gold)
+
+La fact table `gold.fact_produccion_mensual` tiene grano `(idpozo, anio, mes)` y
+cuatro dimensiones conformadas: `dim_pozo`, `dim_operadora`, `dim_yacimiento` y
+`dim_fecha`. Surrogate keys enteras `sk_*` en todas las dimensiones. SCD Type 1 en
+`dim_pozo` y `dim_operadora` (la historia de la relación pozo↔operadora queda en la
+fact, no en la dimensión). Detalle completo en [docs/data-model.md](docs/data-model.md).
+
+Medidas aditivas: `prod_pet`, `prod_gas`, `prod_agua`, `iny_*`. `tef` (tiempo efectivo
+de producción) es semi-aditiva: se promedia, no se suma.
+
+### Frescura
+
+El pipeline corre mensualmente por cron (`0 3 5 * *`) en cada EC2. Los datos en
+`gold.*` tienen una **latencia máxima de ~1 mes** respecto de la fuente. Un refresh
+manual se dispara con:
+
+```bash
+REFRESH_MONTHS=3 bash data_pipeline/orchestration/run_pipeline.sh
+```
+
+---
+
 ## Endpoints principales
 
 | Método | Endpoint | Descripción | Auth |
@@ -315,6 +402,47 @@ curl -H "X-API-Key: <API_KEY>" \
 ```
 
 Si el header está ausente o no coincide con el valor configurado, la API responde **HTTP 403 Forbidden**.
+
+---
+
+## Acceso a BI y gobierno de datos
+
+### Metabase (plataforma de BI)
+
+Metabase lee del esquema `gold.*` del DW y está desplegado en la EC2 de producción.
+
+| Ambiente | URL |
+|---|---|
+| Producción | http://18.117.126.59:3001 |
+
+Solicitar credenciales de Viewer al administrador del sistema. El procedimiento de
+exploración de dashboards está en el [runbook de usuario de BI](docs/runbooks/bi-user.md).
+
+**Dashboards disponibles:** Producción No Convencional — producción mensual por
+yacimiento (top 5 + otros desde 2015), tendencia de petróleo y gas (gráfico combo),
+top 8 pozos por producción histórica total, y KPIs de frescura y calidad del pipeline.
+
+**Cuidados al construir preguntas propias:** las medidas aditivas son `prod_pet`,
+`prod_gas`, `prod_agua`, `iny_*`; `tef` se promedia, no se suma. El eje temporal es
+`dim_fecha.periodo` (`AAAA-MM`). Los joins van por surrogate keys `sk_*`.
+
+### DataHub (gobierno de datos)
+
+DataHub ingiere el manifiesto dbt (`transform/target/manifest.json`) generado en
+cada corrida del pipeline y expone el linaje Bronze→Silver→Gold a nivel tabla y
+columna. Corre en una **EC2 dedicada** (requiere ≥ 4 GB RAM). La ingesta es un job
+one-shot que se ejecuta desde la EC2 del pipeline tras cada `dbt build`:
+
+```bash
+export DATAHUB_GMS_HOST=<ip-ec2-gobierno>
+datahub ingest -c infra/datahub/dbt_recipe.yml
+```
+
+La UI de gobierno queda en `http://<ip-ec2-gobierno>:9002` (usuario `datahub`).
+El procedimiento completo de despliegue e ingesta está en el
+[runbook del administrador de gobierno](docs/runbooks/governance-admin.md).
+
+> **Estado:** en despliegue; ver [ADR-017](docs/adr/0017-plataforma-gobierno-datos.md).
 
 ---
 
@@ -402,3 +530,13 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [011](docs/adr/0011-orquestador.md) | Elección de la herramienta de orquestación | Airflow vs Prefect vs Dagster — por qué Dagster para la ingesta de datos |
 | [012](docs/adr/0012-tipo-de-carga.md) | Tipo de carga a la capa Bronze | Full refresh vs incremental vs merge — justificado por dataset |
 | [013](docs/adr/0013-diseno-capa-bronze.md) | Diseño de la capa Bronze | Formato parquet, todo como texto, particionado por anio/mes y landing |
+| [014](docs/adr/0014-arquitectura-medallion.md) | Arquitectura Medallion del DW | Bronze → Silver → Gold: separación de responsabilidades y contratos entre capas |
+| [015](docs/adr/0015-modelo-dimensional-estrella.md) | Modelo dimensional del DW (estrella) | Estrella vs snowflake vs OBT; grano de la fact, dims conformadas y decisión de SCD |
+| [016](docs/adr/0016-estrategia-data-quality.md) | Estrategia de Data Quality | Gate de calidad entre Silver y Gold; 31 checks con 5 dimensiones y cuarentena |
+| [017](docs/adr/0017-plataforma-gobierno-datos.md) | Plataforma de gobierno de datos | DataHub vs OpenMetadata/Amundsen/Marquez; linaje tabla/columna desde artefactos dbt |
+| [018](docs/adr/0018-orquestacion-end-to-end-dw.md) | Orquestación end-to-end del DW | dagster-dbt + cron headless; flujo Bronze→Postgres→Silver/Gold/DQ automatizado |
+| [019](docs/adr/0019-tratamiento-registros-invalidos.md) | Tratamiento de registros inválidos | Cuarentena vs rechazo vs corrección; filas que violan validaciones duras |
+| [020](docs/adr/0020-plataforma-bi.md) | Plataforma de BI | Metabase vs Superset vs Redash; por qué Metabase para usuarios no técnicos |
+| [021](docs/adr/0021-refresh-bronze-full-reload.md) | Estrategia de refresh de Bronze | Full reload vs ventana incremental en el refresh recurrente de Bronze |
+| [022](docs/adr/0022-validacion-schema-ingesta.md) | Validación de schema en la ingesta | Contrato de columnas por fuente; fail-fast ante cambios de schema |
+| [023](docs/adr/0023-ui-dagster-containerizada.md) | UI de Dagster containerizada | Complementa ADR-018: UI vía perfil de compose; `dagster dev` y por qué no toca el cron de prod |

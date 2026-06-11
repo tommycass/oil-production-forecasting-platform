@@ -112,3 +112,12 @@ una línea de crontab). Si la instancia se agranda, se puede volver al daemon + 
   PR con su review. La nota correspondiente en ADR-011 referencia este ADR.
 - **Coordinación con C:** la ingesta del manifest de dbt a DataHub (lineage) queda de su lado
   (ADR-017); este ADR garantiza que el manifest se produce en cada corrida.
+
+## Actualización (jun-2026)
+
+La negativa "sin UI de Dagster" que este ADR aceptó (mitigable "si se agranda la
+instancia") se resolvió al haber capacidad disponible. La adición de la UI introduce
+decisiones técnicas propias (servicio de compose, `dagster dev` vs servicios separados,
+perfil, puerto), por lo que se documenta en un **ADR aparte que complementa a este**,
+sin revertir su decisión central (el cron headless sigue siendo el disparador de
+producción): ver [ADR-023](0023-ui-dagster-containerizada.md).

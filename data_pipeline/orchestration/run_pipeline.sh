@@ -68,4 +68,25 @@ done
 #    Data Quality hace fallar el job (frena la promoción a Gold).
 dagster job execute -m "$MOD" -j dw_publish
 
+# 4) (Opcional) Refrescar el catálogo de gobierno en DataHub con el linaje de esta
+#    corrida (ADR-017). Best-effort: una caída de DataHub NO debe frenar el refresh
+#    del DW, así que los fallos de este paso solo avisan, no abortan. Solo corre si
+#    DATAHUB_GMS_HOST está seteado (infra/.env) y el CLI con extra [dbt] está en el
+#    venv (pip install 'acryl-datahub[dbt,datahub-rest]'); si no, se omite.
+if [ -n "${DATAHUB_GMS_HOST:-}" ] && command -v datahub >/dev/null 2>&1; then
+  echo "[run_pipeline] DataHub: ingesta de linaje → $DATAHUB_GMS_HOST"
+  TARGET="${DBT_TARGET_PATH:-$REPO/transform/target}"
+  # dw_publish ya dejó manifest.json + run_results.json; catalog.json (linaje de
+  # columna) requiere docs generate, que introspecciona el DW recién construido.
+  ( cd "$REPO/transform" && dbt docs generate --profiles-dir . ) \
+    || echo "[run_pipeline] WARN: dbt docs generate falló; ingesto sin catalog"
+  datahub ingest -c "$REPO/infra/datahub/dbt_recipe.yml" \
+    --set "source.config.manifest_path=$TARGET/manifest.json" \
+    --set "source.config.catalog_path=$TARGET/catalog.json" \
+    --set "source.config.run_results_paths[0]=$TARGET/run_results.json" \
+    || echo "[run_pipeline] WARN: ingesta a DataHub falló (no bloquea el pipeline)"
+else
+  echo "[run_pipeline] DataHub: omitido (DATAHUB_GMS_HOST no seteado o CLI ausente)"
+fi
+
 echo "[run_pipeline] $(date -Is) OK"
