@@ -106,7 +106,8 @@ oil-production-forecasting-platform/
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
-│   ├── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor
+│   ├── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor (+ perfiles bi/orchestration)
+│   ├── Dockerfile.dagster          # Imagen de la UI de Dagster (perfil orchestration)
 │   └── datahub/
 │       └── dbt_recipe.yml          # Receta de ingesta DataHub (linaje desde artefactos dbt)
 │
@@ -168,6 +169,7 @@ Servicios expuestos en el host:
 | Alertmanager | 9093 | `/` |
 | cAdvisor | 8080 | `/` |
 | Metabase (BI) | 3001 | `/` — perfil `bi`, ver abajo |
+| Dagster UI | 3070 | `/` — perfil `orchestration`, ver abajo |
 
 Metabase requiere el perfil `bi` y que exista la base `metabase_app` en el DW. Para
 levantarlo en local (apuntando al Postgres del perfil `local-db`):
@@ -244,12 +246,27 @@ pip install -r data_pipeline/requirements.txt
 
 ### Levantar Dagster (UI con logs y status)
 
+**Opción A — con el venv local (desarrollo):**
+
 ```bash
 dagster dev -m data_pipeline.orchestration.definitions
 ```
 
 La UI queda en **http://localhost:3000**: muestra el grafo de assets, los logs y
 el status de cada corrida, y permite materializar desde el navegador.
+
+**Opción B — containerizada (perfil `orchestration`):** el compose trae un servicio
+`dagster` (webserver + daemon) con todo preinstalado. Combinar con `local-db` para
+tener el DW al lado:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile orchestration --profile local-db up
+```
+
+La UI queda en **http://localhost:3070** (3000 lo usa Grafana). El servicio no arranca
+con un `up` por defecto ni entra en el build de CI. En producción, el disparador sigue
+siendo el cron mensual headless (ver [ADR-018](docs/adr/0018-orquestacion-end-to-end-dw.md));
+esta UI es para observabilidad y materializaciones on-demand.
 
 ### Correr la ingesta completa
 
