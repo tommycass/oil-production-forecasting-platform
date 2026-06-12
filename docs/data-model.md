@@ -37,10 +37,10 @@ erDiagram
     dim_fecha       ||--o{ fact_produccion_mensual : "sk_fecha"
 
     fact_produccion_mensual {
-        bigint  sk_pozo FK
-        bigint  sk_operadora FK
-        bigint  sk_yacimiento FK
-        bigint  sk_fecha FK
+        text    sk_pozo FK
+        text    sk_operadora FK
+        text    sk_yacimiento FK
+        text    sk_fecha FK
         int     idpozo "degenerate / trazabilidad"
         numeric prod_pet
         numeric prod_gas
@@ -52,7 +52,7 @@ erDiagram
         numeric tef
     }
     dim_pozo {
-        bigint  sk_pozo PK
+        text    sk_pozo PK
         int     idpozo "natural key"
         text    sigla
         text    formacion
@@ -63,19 +63,19 @@ erDiagram
         numeric coordenada_y
     }
     dim_operadora {
-        bigint  sk_operadora PK
+        text    sk_operadora PK
         text    idempresa "natural key"
         text    operadora
     }
     dim_yacimiento {
-        bigint  sk_yacimiento PK
+        text    sk_yacimiento PK
         text    idareayacimiento "natural key"
         text    yacimiento
         text    cuenca
         text    provincia
     }
     dim_fecha {
-        bigint  sk_fecha PK
+        text    sk_fecha PK
         int     anio
         int     mes
         int     trimestre
@@ -90,7 +90,7 @@ erDiagram
 - **Grano:** una fila por **`(pozo, mes)`** → clave de negocio `idpozo + anio + mes`.
   Es el grano nativo de la fuente de producción (no hay grano diario).
 - **Tipo de fact:** transaccional periódica (snapshot mensual de producción/inyección).
-- **Fuente:** `silver.produccion` (derivada de Bronze producción no convencional).
+- **Fuente:** `silver.silver_produccion` (derivada de Bronze producción no convencional).
 
 ### Claves foráneas (a las dimensiones)
 
@@ -127,7 +127,7 @@ yacimiento, tiempo). `tef` no se suma entre meses: se promedia o se usa como con
 ### 4.1 `gold.dim_pozo` — **SCD Type 1**
 
 - **Clave natural:** `idpozo` · **Surrogate key:** `sk_pozo`
-- **Fuente:** `silver.pozos` (catálogo) enriquecido con atributos de producción cuando falten.
+- **Fuente:** `silver.silver_pozos` (catálogo) enriquecido con atributos de producción cuando falten.
 
 | Atributo | Origen | Notas |
 |---|---|---|
@@ -141,7 +141,7 @@ yacimiento, tiempo). `tef` no se suma entre meses: se promedia o se usa como con
 ### 4.2 `gold.dim_operadora` — **SCD Type 1**
 
 - **Clave natural:** `idempresa` · **Surrogate key:** `sk_operadora`
-- **Fuente:** distinct de `(idempresa, empresa)` en `silver.produccion` / `silver.pozos`.
+- **Fuente:** distinct de `(idempresa, empresa)` en `silver.silver_produccion` / `silver.silver_pozos`.
 
 | Atributo | Origen | Notas |
 |---|---|---|
@@ -173,8 +173,8 @@ yacimiento, tiempo). `tef` no se suma entre meses: se promedia o se usa como con
 
 ## 5. Surrogate keys
 
-- Toda dimensión usa una **surrogate key entera** (`sk_*`), no la clave natural de la fuente.
-  Se genera con `dbt_utils.generate_surrogate_key(<clave natural>)` en Gold.
+- Toda dimensión usa una **surrogate key de texto** (`sk_*`, hash MD5), no la clave natural de la fuente.
+  Se genera con `dbt_utils.generate_surrogate_key(<clave natural>)` en Gold (devuelve un hash MD5, no un entero).
 - **Por qué:** desacopla la fact de cambios/inconsistencias en los IDs de origen, acelera los
   joins y habilita la mecánica de SCD.
 - **Miembro "desconocido":** cada dimensión incluye una fila técnica con `sk = -1` para
@@ -218,7 +218,7 @@ Bronze retiene la historia cruda para auditoría/backfill, así que no se pierde
 ```
 data.gob.ar (2 CSV)
   └─ Bronze parquet (data/bronze/, particionado anio/mes)
-       └─ silver.produccion / silver.pozos   ── checks de calidad (esquema dq) ──┐
+       └─ silver.silver_produccion / silver.silver_pozos   ── checks de calidad (esquema dq) ──┐
             └─ gold.fact_produccion_mensual                                       │ (gate: error bloquea Gold)
             └─ gold.dim_pozo / dim_operadora / dim_yacimiento / dim_fecha  ◄──────┘
                  └─ Metabase (BI) · DataHub (gobierno/lineage) · API

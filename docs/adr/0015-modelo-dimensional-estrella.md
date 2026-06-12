@@ -34,7 +34,7 @@ Modelamos Gold como **esquema estrella** con una fact y cuatro dimensiones confo
 - **`dim_yacimiento`** — un registro por área/yacimiento: yacimiento, cuenca, provincia.
 - **`dim_fecha`** — un registro por mes calendario: `anio`, `mes`, trimestre, etiqueta.
 
-Todas las dimensiones usan **surrogate keys** enteras (`sk_*`) generadas en Gold (hash/secuencia sobre la clave de negocio), no las claves naturales de la fuente. Esto desacopla la fact de cambios en los identificadores de origen, habilita SCD y acelera los joins.
+Todas las dimensiones usan **surrogate keys de texto** (`sk_*`), generadas en Gold como **hash MD5** de la clave de negocio (`dbt_utils.generate_surrogate_key`), no las claves naturales de la fuente. Esto desacopla la fact de cambios en los identificadores de origen, habilita SCD y simplifica los joins a una sola columna.
 
 ### Decisión de SCD: Type 1 en `dim_pozo` y `dim_operadora`
 
