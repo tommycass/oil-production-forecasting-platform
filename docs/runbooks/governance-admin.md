@@ -3,7 +3,7 @@
 **Procedimiento:** Desplegar DataHub en la EC2 de gobierno, ejecutar la ingesta del
 linaje dbt y mantener el catálogo de datos actualizado.
 
-Rol de perfil técnico (Persona C). Complementa
+Rol de perfil técnico (administrador de gobierno y BI). Complementa
 [ADR-017](../adr/0017-plataforma-gobierno-datos.md) (elección de DataHub),
 [ADR-018](../adr/0018-orquestacion-end-to-end-dw.md) (orquestación end-to-end) y
 el [runbook del Analytics Engineer](analytics-engineer.md) (quién genera los artefactos
@@ -17,10 +17,10 @@ Mantener el catálogo de gobierno de datos (DataHub) actualizado con el linaje y
 calidad del pipeline. Se ejecuta cuando:
 
 - **Despliegue inicial:** levantar DataHub por primera vez en la EC2 de gobierno.
-- **Actualización del catálogo:** después de cada `dbt build` exitoso (B corrió el
-  pipeline y generó un `manifest.json` nuevo); ejecutar la ingesta para que el grafo
+- **Actualización del catálogo:** después de cada `dbt build` exitoso (el Analytics
+  Engineer corrió el pipeline y generó un `manifest.json` nuevo); ejecutar la ingesta para que el grafo
   de linaje refleje el estado actual.
-- **Cambio de modelo dbt:** B agregó una tabla nueva, renombró un modelo o modificó
+- **Cambio de modelo dbt:** el Analytics Engineer agregó una tabla nueva, renombró un modelo o modificó
   los tests; actualizar el catálogo para que los usuarios vean el esquema correcto.
 - **Incidente de DataHub:** el servidor no responde o la UI muestra datos de una
   corrida anterior.
@@ -29,7 +29,7 @@ calidad del pipeline. Se ejecuta cuando:
 
 ## 2. Rol / dueño y prerrequisitos
 
-- **Dueño:** administrador de infraestructura / Persona C.
+- **Dueño:** administrador de infraestructura / gobierno.
 - **Accesos requeridos:**
   - Acceso SSH o Session Manager a la EC2 de gobierno (instancia `governance` en AWS).
   - Acceso SSH o Session Manager a la EC2 del pipeline (`api`) donde viven los

@@ -224,5 +224,5 @@ data.gob.ar (2 CSV)
                  └─ Metabase (BI) · DataHub (gobierno/lineage) · API
 ```
 
-El linaje a nivel tabla es navegable en DataHub (Persona C) y en el grafo de assets de
-Dagster (Persona A); los nodos de tests de dbt aparecen en el mismo grafo (ADR-016).
+El linaje a nivel tabla es navegable en DataHub (gobierno) y en el grafo de assets de
+Dagster (Data Engineer); los nodos de tests de dbt aparecen en el mismo grafo (ADR-016).

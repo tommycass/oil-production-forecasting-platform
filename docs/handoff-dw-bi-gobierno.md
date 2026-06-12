@@ -1,6 +1,6 @@
-# Hands-off — Data Warehouse para BI y Gobierno (Persona C)
+# Hands-off — Data Warehouse para BI y Gobierno
 
-Documento de traspaso del **Analytics Engineer (Persona B)** a **Persona C** (BI + gobierno).
+Documento de traspaso del **Analytics Engineer** al **administrador de BI y gobierno**.
 Cubre qué quedó construido, cómo conectarse, dónde están los datos, los contratos de cada
 capa, cómo se refresca y qué falta de tu lado para continuar (Metabase + DataHub).
 
@@ -15,7 +15,7 @@ El flujo Medallion corre **end-to-end, automatizado y reproducible en staging y 
 
 ```
 data.gob.ar (2 CSV)  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* (estrella) + dq.*
-        Data Engineer (A)                         Analytics Engineer (B) — orquestado en Dagster (cron mensual)
+        Data Engineer                             Analytics Engineer — orquestado en Dagster (cron mensual)
 ```
 
 - Orquestado con **Dagster** (grafo de assets Bronze→Postgres→Silver/Gold/DQ), disparado por
@@ -193,7 +193,7 @@ Mismo esquema y mismos contratos en ambas. Apuntá producción a `oil_dw_prod`.
 
 ---
 
-## 9. Lo que queda de tu lado (asks para C)
+## 9. Lo que queda de tu lado (asks para el administrador de BI y gobierno)
 
 1. **Regla de SG para BI/gobierno:** habilitar que el host de Metabase/DataHub llegue al RDS
    (agregar el SG de ese host al security group del RDS). Sin esto, las herramientas no conectan.

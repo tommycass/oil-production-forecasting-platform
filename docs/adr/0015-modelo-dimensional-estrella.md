@@ -6,7 +6,7 @@
 
 La adenda exige que el Data Warehouse use **modelo estrella** y que documentemos grano de la fact, dimensiones, surrogate keys y decisión de SCD. Este ADR justifica la elección del estilo de modelado dimensional y la estrategia de SCD; el detalle campo por campo vive en `docs/data-model.md`.
 
-El consumo de la capa Gold es analítico y de BI: Persona C arma dashboards en Metabase (producción mensual por yacimiento, top pozos, frescura) y DataHub navega el linaje a nivel tabla. Los datos llegan desde Silver con grano fila-por-registro: producción a grano `idpozo + anio + mes` y un catálogo de pozos a grano `idpozo`. El volumen es moderado (producción no convencional, **~406 mil filas históricas** verificadas contra el dataset real completo, ver ADR-019; catálogo ~84k pozos).
+El consumo de la capa Gold es analítico y de BI: **BI (Metabase)** arma dashboards (producción mensual por yacimiento, top pozos, frescura) y **gobierno (DataHub)** navega el linaje a nivel tabla. Los datos llegan desde Silver con grano fila-por-registro: producción a grano `idpozo + anio + mes` y un catálogo de pozos a grano `idpozo`. El volumen es moderado (producción no convencional, **~406 mil filas históricas** verificadas contra el dataset real completo, ver ADR-019; catálogo ~84k pozos).
 
 Las fuentes vienen **denormalizadas**: la tabla de producción ya trae `empresa`, `sigla`, `areayacimiento`, `cuenca`, `provincia` y `tipo_de_recurso` en cada fila. Eso nos da libertad para elegir el estilo de modelado en Gold sin estar atados a la forma del origen.
 

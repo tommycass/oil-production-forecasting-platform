@@ -15,18 +15,18 @@ y el [modelo de datos](../data-model.md).
 Materializar Silver y Gold a partir de Bronze y dejar el modelo estrella listo y
 **confiable** para BI (Metabase), gobierno (DataHub) y la API. Se ejecuta cuando:
 
-- **Backfill / nueva ingesta de A:** el Data Engineer reprocesó un mes (corrección
+- **Backfill / nueva ingesta de Bronze:** el Data Engineer reprocesó un mes (corrección
   vía `rectificado`) o cargó datos nuevos en Bronze. Hay que propagar a Gold.
 - **Cambio de modelo:** se modificó un modelo dbt (nueva dimensión, métrica, regla
   de limpieza) y hay que publicarlo.
 - **Incidente de calidad:** un check `severity: error` falló y **bloqueó la promoción a
   Gold** — la corrida del cron termina en error (visible en `cron.log` y en `dq.dq_results`)
-  o lo reporta Persona C porque un dashboard quedó sin datos frescos. (La alerta push a Slack
+  o lo reporta el administrador de BI/gobierno porque un dashboard quedó sin datos frescos. (La alerta push a Slack
   ante el fallo es evolución pendiente, ver ADR-016.)
 
 ## 2. Rol / dueño y prerrequisitos
 
-- **Dueño:** Analytics Engineer (Persona B).
+- **Dueño:** Analytics Engineer.
 - **Accesos:** credenciales del DW Postgres (`POSTGRES_*`), repo, y permiso de
   ejecución del proyecto `transform/`.
 - **Herramientas:** Python 3.11, dbt-core + dbt-postgres, paquetes dbt
@@ -79,7 +79,7 @@ export DBT_TARGET_PATH="$HOME/dbt-runtime/target"
 # 2. Asegurar paquetes dbt
 dbt deps
 
-# 3. Confirmar que Bronze tiene los datos esperados (sanity del insumo de A)
+# 3. Confirmar que Bronze tiene los datos esperados (sanity del insumo del Data Engineer)
 dbt source freshness --profiles-dir .
 
 # 4. Construir Silver + Gold y correr Data Quality en orden de dependencia
@@ -100,7 +100,7 @@ automatizado**: un grafo de Dagster (`data_pipeline/orchestration/`) materializa
 **env-driven**: el mismo procedimiento sirve a staging (`oil_dw_staging`) y prod
 (`oil_dw_prod`); lo único que cambia es el `infra/.env` de cada EC2.
 
-> El grafo extiende la zona de orquestación de A — ver "Actualización (jun-2026)" en
+> El grafo extiende la zona de orquestación del Data Engineer — ver "Actualización (jun-2026)" en
 > ADR-011 (revisada y aceptada por el Data Engineer; decisión formal en ADR-018).
 
 ### a) Setup (una vez por EC2)
@@ -211,14 +211,14 @@ select count(*) from (
   full-refresh determinísticas, reconstruir reproduce el estado exacto.
 - **Plan B:** si el DW no está disponible, BI puede seguir leyendo el último Gold
   materializado; se pausa la promoción hasta restablecer Postgres.
-- **Escalamiento:** problema en Bronze/extracción → Data Engineer (A); problema de
-  conexión/infra del Postgres en AWS → Infra/C; lineage o BI sin datos → C.
+- **Escalamiento:** problema en Bronze/extracción → Data Engineer; problema de
+  conexión/infra del Postgres en AWS → administrador de infra/gobierno; lineage o BI sin datos → administrador de gobierno.
 
 ## 6. Consideraciones no funcionales
 
 - **Frescura:** la promoción a Gold solo es tan fresca como Bronze; el check de
   freshness (`warn`) avisa si la última ingesta supera el umbral. SLA de frescura a
-  acordar con A según cadencia del DAG.
+  acordar con el Data Engineer según cadencia del DAG.
 - **Calidad:** los checks `error` (unicidad de PK, no-nulos de claves, producción no
   negativa, integridad referencial) son el contrato de confiabilidad de Gold.
 - **Costo / latencia:** el `dbt build` full-refresh corre en segundos a la escala

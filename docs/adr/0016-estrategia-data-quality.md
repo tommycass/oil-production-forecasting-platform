@@ -50,7 +50,7 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 ### Persistencia de resultados
 
 - `store_failures: true` en la config de tests → cada test fallido **persiste sus filas ofensoras** en tablas del esquema `dq` de Postgres (`dq.<nombre_test>`). No son asserts efímeros: quedan consultables después de la corrida.
-- Además materializamos un modelo **`dq.dq_results`** que consolida, por corrida, cada check con: nombre, dimensión de calidad, severidad, estado (pass/fail), nº de filas que fallaron y timestamp. Es la "marca de calidad visible" que Persona C puede exponer en Metabase y que documenta el historial de calidad.
+- Además materializamos un modelo **`dq.dq_results`** que consolida, por corrida, cada check con: nombre, dimensión de calidad, severidad, estado (pass/fail), nº de filas que fallaron y timestamp. Es la "marca de calidad visible" que BI puede exponer en Metabase y que documenta el historial de calidad.
 
 ### Consecuencia operativa
 
@@ -103,7 +103,7 @@ No todo fallo de validez debe frenar el pipeline. Distinguimos dos casos:
 ## Decisiones Técnicas Posteriores
 
 - **Clasificación de severidad:** definir qué checks son `error` (bloquean: unicidad de PK, no-nulos de claves, integridad referencial) vs `warn` (variantes de nombres, outliers leves). La producción negativa NO bloquea: se desvía a cuarentena en Silver (ver "Manejo de filas inválidas") y el check ≥ 0 queda como invariante post-limpieza. Se documenta junto a cada test.
-- **Umbral de freshness:** acordar con A el SLA de frescura (p. ej. fallar si la última ingesta supera N días) según la cadencia real del DAG.
+- **Umbral de freshness:** acordar con el Data Engineer el SLA de frescura (p. ej. fallar si la última ingesta supera N días) según la cadencia real del DAG.
 - **Retención de `store_failures`:** truncado/rotación de las tablas `dq.*` para que no crezcan sin límite.
-- **Exposición en gobierno:** coordinar con C para que `dq.dq_results` se ingiera en DataHub como señal de calidad a nivel tabla.
+- **Exposición en gobierno:** coordinar con el administrador de gobierno para que `dq.dq_results` se ingiera en DataHub como señal de calidad a nivel tabla.
 - **Alerta push (pendiente):** cablear la notificación a Slack ante un fallo crítico. Camino previsto: un paso *best-effort* en `run_pipeline.sh` que, tras el `dbt build`, consulte `dq.dq_results` de la última corrida y, si hay `status='fail'` (o `warn` críticos), postee al webhook de Alertmanager/Slack de Fase 1. No bloquea el pipeline si falla. Mientras tanto, la consecuencia operativa se cumple con el bloqueo + la marca visible.

@@ -39,7 +39,7 @@ Usaremos **Dagster** como herramienta de orquestación, modelando el pipeline co
 ### Por qué Dagster sobre Airflow
 
 - **Overhead acorde al equipo.** Airflow exige scheduler, webserver, base de metadatos y típicamente un worker: varios contenedores que sumar al `docker-compose` y mantener entre 3 personas en 2 semanas. Dagster corre con un único servicio y su UI, suficiente para nuestra escala.
-- **El lineage nativo de Airflow no compensa.** Su principal ventaja para nosotros sería la integración con DataHub, pero ese linaje también lo obtendremos por el plugin de Dagster y por la ingesta de metadata desde el propio DW que hará la Persona C. No justifica el costo operativo.
+- **El lineage nativo de Airflow no compensa.** Su principal ventaja para nosotros sería la integración con DataHub, pero ese linaje también lo obtendremos por el plugin de Dagster y por la ingesta de metadata desde el propio DW que hará el administrador de gobierno (DataHub). No justifica el costo operativo.
 
 El tipo de carga por fuente (full refresh para el catálogo de pozos; full refresh materializado por partición `anio/mes` para producción, con la resolución de meses corregidos —merge/upsert por `idpozo + anio + mes`— diferida a Silver) se implementa sobre el modelo de particiones de Dagster y se justifica en el ADR-012.
 
@@ -65,7 +65,7 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos; full refre
 
 ## Actualización (jun-2026) — el grafo se extiende al DW y corre en AWS
 
-> Propuesta del Analytics Engineer (Persona B), **revisada y aceptada por el Data Engineer**
+> Propuesta del Analytics Engineer, **revisada y aceptada por el Data Engineer**
 > (dueño de este ADR) el 11-jun-2026. Toca la zona de orquestación, por eso se documenta acá.
 > La extensión es coherente con la decisión original: reusa los assets de Bronze como upstream,
 > conserva el modelo de particiones por mes y el backfill nativo, y no altera la elección de

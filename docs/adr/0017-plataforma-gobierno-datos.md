@@ -63,7 +63,7 @@ calidad, y su footprint es incluso algo menor. La elección entre ambos se defin
    CLI (`datahub ingest -c ...`) o con emitters, encajando como un comando más del
    pipeline. El framework de ingesta de OpenMetadata está más acoplado a su propio
    scheduler/workflows, lo que sumaría una pieza viva a un setup diseñado sin daemons.
-3. **La calidad de B se reutiliza sin desarrollo extra.** Los 31 tests de dbt
+3. **La calidad del Analytics Engineer se reutiliza sin desarrollo extra.** Los 31 tests de dbt
    ([ADR-016](0016-estrategia-data-quality.md)) se mapean a **assertions sobre cada
    dataset** a partir del mismo manifest, exponiendo el gate de calidad a nivel tabla en
    el catálogo de gobierno directamente desde el artefacto que ya emitimos.

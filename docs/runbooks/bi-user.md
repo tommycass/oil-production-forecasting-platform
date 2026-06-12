@@ -121,15 +121,15 @@ El análisis está correcto cuando:
 
 | Síntoma | Causa probable | Acción |
 |---|---|---|
-| No se puede acceder a `18.117.126.59:3001` | Metabase caído o red sin acceso | Avisar al administrador (C); mientras tanto usar los datos de la sesión anterior |
-| Fecha de última corrida > 35 días | Pipeline no corrió o falló | Escalar al Analytics Engineer (B); no usar los datos para decisiones críticas |
-| Checks de Calidad OK < 31 | Un check de datos falló en la última corrida | Escalar a B; revisar `dq.dq_results` si se tiene acceso al DW |
+| No se puede acceder a `18.117.126.59:3001` | Metabase caído o red sin acceso | Avisar al administrador de gobierno/infra; mientras tanto usar los datos de la sesión anterior |
+| Fecha de última corrida > 35 días | Pipeline no corrió o falló | Escalar al Analytics Engineer; no usar los datos para decisiones críticas |
+| Checks de Calidad OK < 31 | Un check de datos falló en la última corrida | Escalar al Analytics Engineer; revisar `dq.dq_results` si se tiene acceso al DW |
 | Datos del mes esperado ausentes | Fuente aún no publicó o pipeline aún no corrió | La fuente publica con ~30 días de retraso; esperar al siguiente ciclo |
 | Error "No autorizado" al guardar una pregunta | Credenciales de Viewer no permiten escritura | Solicitar al administrador un rol con permisos de edición |
 
 **A quién escalar:**
-- Problemas de acceso o credenciales → administrador de infraestructura (C).
-- Datos faltantes, checks fallidos o pipeline detenido → Analytics Engineer (B).
+- Problemas de acceso o credenciales → administrador de infraestructura/gobierno.
+- Datos faltantes, checks fallidos o pipeline detenido → Analytics Engineer.
 - Preguntas sobre definición de métricas o lógica de negocio → Data PM / owner.
 
 ---
