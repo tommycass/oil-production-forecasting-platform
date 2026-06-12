@@ -2,7 +2,9 @@
 
 Plataforma Predictiva de Producción de Hidrocarburos — Trabajo Integrador de Ingeniería de Software.
 
-El sistema expone una API REST que simula el comportamiento de una plataforma de pronóstico de producción de hidrocarburos, incluyendo infraestructura reproducible con Docker, pipeline de CI/CD y monitoreo con Prometheus y Grafana.
+El sistema integra datos reales de producción de hidrocarburos (datos.gob.ar) en una **plataforma de datos** sobre arquitectura Medallion: ingesta orquestada con **Dagster**, transformación con **dbt** (Bronze → Silver → Gold con modelo estrella), checks de **calidad de datos** persistidos, exploración para usuarios de negocio en **Metabase** (BI) y linaje/gobierno en **DataHub**. Por encima, expone una **API REST** que sirve esos datos, con infraestructura reproducible con Docker, pipeline de **CI/CD** y monitoreo con **Prometheus y Grafana**.
+
+> **Fase 1** construyó la API, la infraestructura (Docker/AWS), el CI/CD y el monitoreo. **Fase 2** (esta entrega) agrega la integración de datos: pipeline Medallion, DW dimensional, calidad de datos, BI y gobierno. La arquitectura de datos se describe en [Arquitectura de datos](#arquitectura-de-datos).
 
 ---
 
@@ -57,19 +59,36 @@ oil-production-forecasting-platform/
 │   ├── requirements-dev.txt        # Dependencias de desarrollo (pytest, ruff, etc.)
 │   └── README.md
 │
-├── data_pipeline/                  # Pipeline de datos 
-│   ├── config.py                   # URLs de las fuentes + rutas (landing/Bronze)
+├── data_pipeline/                  # Zona Data Engineer: extracción + Bronze + orquestación
+│   ├── config.py                   # URLs de las fuentes + rutas (landing/Bronze) + contrato de schema
 │   ├── extraction/                 # Extracción de las 2 fuentes datos.gob.ar
 │   │   ├── extract_pozos.py
-│   │   └── extract_produccion.py
+│   │   ├── extract_produccion.py
+│   │   └── validation.py           # Validación de schema en la ingesta (fail-fast, ADR-022)
 │   ├── orchestration/              # Assets de Dagster (orquestación)
-│   │   ├── assets.py
-│   │   └── definitions.py
+│   │   ├── assets.py               # Bronze(parquet) → Bronze(Postgres) → dbt (Silver/Gold/DQ)
+│   │   ├── definitions.py          # Punto de entrada + job dw_publish
+│   │   ├── dbt_project.py          # Proyecto dbt expuesto a dagster-dbt
+│   │   └── run_pipeline.sh         # Refresh headless para cron (full reload, env-driven)
 │   ├── tests/                      # Tests del pipeline (pytest)
 │   ├── requirements.txt
 │   └── requirements-dev.txt
 │
 ├── data/                           # Datos crudos (gitignored): landing + capa Bronze
+│
+├── transform/                      # Zona Analytics Engineer: proyecto dbt (Silver/Gold/DQ)
+│   ├── dbt_project.yml             # Configuración del proyecto dbt
+│   ├── profiles.yml                # Conexión al DW Postgres (env-driven: POSTGRES_*)
+│   ├── models/
+│   │   ├── bronze/                 # dbt sources de bronze.* (entrada del modelo)
+│   │   ├── silver/                 # Limpieza, tipado, dedup + cuarentena de rechazos
+│   │   └── gold/                   # Modelo estrella: fact_produccion_mensual + 4 dims
+│   ├── macros/
+│   │   └── log_dq_results.sql      # Persiste los checks de calidad en dq.dq_results
+│   ├── scripts/
+│   │   ├── load_bronze.py          # Puente parquet → bronze.* (Postgres)
+│   │   └── seed_sample_bronze.py   # Bronze de muestra para pruebas/bootstrap
+│   └── tests/                      # Tests dbt singulares (p. ej. freshness)
 │
 ├── docs/
 │   ├── consigna-fase1.md
