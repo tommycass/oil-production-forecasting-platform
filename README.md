@@ -252,13 +252,89 @@ ruff check api/app/
 ## Workflows del pipeline de datos
 
 La ingesta de datos se orquesta con **Dagster**. Trae las dos fuentes de
-datos.gob.ar a la **capa Bronze** (parquet crudo en `data/`). Los assets son:
+datos.gob.ar a la **capa Bronze** y, de ahí, el grafo continúa al DW (carga a
+Postgres + dbt). Antes de los comandos conviene entender **cómo fluyen los datos** y
+**cómo se dispara el pipeline**.
 
-| Asset | Qué hace |
-|---|---|
-| `bronze_pozos` | Descarga el listado de pozos → Bronze (full refresh) |
-| `produccion_raw` | Descarga el CSV completo de producción → landing (una vez) |
-| `bronze_produccion` | Particionado por mes; deriva cada partición del landing |
+### Cómo fluye la ingesta: landing → Bronze
+
+La fuente de producción **solo publica el archivo completo** (~144 MB con todo el
+histórico desde 2006); no hay forma de pedir "solo un mes". Para no re-descargar ese
+archivo cada vez que se reprocesa un período, la extracción se parte en dos pasos:
+
+```
+datos.gob.ar  ──(1 descarga)──►  LANDING                 ──(filtra por mes)──►  BRONZE
+(CSV completo)                   data/landing/...                              data/bronze/produccion/
+                                 produccion.parquet                            anio=YYYY/mes=MM/produccion.parquet
+                                 (crudo entero, 1 sola vez)                    (1 parquet por mes, particionado)
+```
+
+- **Landing** = una copia cruda del archivo completo, descargada **una sola vez** por
+  corrida. Es la zona de aterrizaje desde la cual se derivan las particiones.
+- **Bronze** = el mismo dato **particionado por mes** (`anio=YYYY/mes=MM/`). Cada
+  partición se obtiene **leyendo del landing y filtrando ese mes**, sin volver a la red.
+
+Así, reprocesar marzo-2024 reescribe solo `anio=2024/mes=3/` leyendo del landing ya
+bajado, sin re-descargar 144 MB ni tocar los demás meses. El catálogo de pozos
+(`bronze_pozos`) es chico y se baja entero en cada corrida (full refresh). Detalle y
+alternativas descartadas en [ADR-012](docs/adr/0012-tipo-de-carga.md) y
+[ADR-013](docs/adr/0013-diseno-capa-bronze.md).
+
+| Asset | Qué hace | Salida |
+|---|---|---|
+| `produccion_raw` | Descarga el CSV completo de producción **a landing** (1 vez) | `data/landing/produccion/produccion.parquet` |
+| `bronze_produccion` | **Particionado por mes**: filtra el mes desde el landing | `data/bronze/produccion/anio=YYYY/mes=MM/` |
+| `bronze_pozos` | Descarga el catálogo de pozos (full refresh) | `data/bronze/pozos/ingesta=AAAA-MM-DD/` |
+
+### Cómo se dispara el pipeline: automático vs. manual
+
+Hay **dos formas** de correr la ingesta, y resuelven cosas distintas:
+
+#### 1. Automático — cron mensual (es el disparador de producción)
+
+Un **cron del SO** (`0 3 5 * *`, el día 5 de cada mes) ejecuta
+`data_pipeline/orchestration/run_pipeline.sh` en cada EC2, *headless* (sin UI). Ese
+script hace un **full reload**: en cada corrida
+
+1. descarga el landing (`produccion_raw`) y el catálogo (`bronze_pozos`);
+2. **reescribe TODAS las particiones mensuales** de Bronze desde el landing (no solo el
+   último mes), para capturar correcciones que la fuente publica sobre meses viejos
+   (columna `rectificado`, ver [ADR-021](docs/adr/0021-refresh-bronze-full-reload.md));
+3. ejecuta el job `dw_publish`: carga Bronze→Postgres y corre dbt (Silver/Gold + Data
+   Quality). Si un check `error` falla, **se frena la promoción a Gold**.
+
+```bash
+# Lo que corre el cron (también sirve para forzar un refresh completo a mano):
+bash data_pipeline/orchestration/run_pipeline.sh
+```
+
+La cadencia es mensual porque la fuente publica ~una vez por mes. No usa el scheduler de
+Dagster: la cadencia la pone el cron del SO (ver [ADR-018](docs/adr/0018-orquestacion-end-to-end-dw.md)).
+
+#### 2. Manual — backfill dirigido de un mes (fuera de ciclo)
+
+Para forzar **un período puntual** sin esperar al cron ni recargar todo (p. ej. la fuente
+corrigió un mes y hay que propagarlo ya), se re-materializa **solo esa partición**,
+leyendo del landing ya descargado:
+
+```bash
+MOD=data_pipeline.orchestration.definitions
+
+# Un mes (la partición usa el formato AAAA-MM-01)
+dagster asset materialize --select bronze_produccion --partition "2024-03-01" -m $MOD
+
+# Un rango de meses
+dagster asset materialize --select bronze_produccion \
+  --partition-range 2024-01-01...2024-03-01 -m $MOD
+```
+
+También se lanza desde la UI con el botón **Backfill** del asset. El procedimiento
+completo (disparador, validación, rollback) está en el
+[runbook del Data Engineer](docs/runbooks/data-engineer.md).
+
+> **En resumen:** el **automático** (cron → full reload de todos los meses) mantiene el DW
+> al día sin intervención; el **manual** (backfill de una partición) es la vía rápida para
+> reprocesar un mes corregido fuera de ciclo. Ambos derivan de Bronze del **mismo landing**.
 
 ### Requisitos
 
@@ -266,7 +342,11 @@ datos.gob.ar a la **capa Bronze** (parquet crudo en `data/`). Los assets son:
 pip install -r data_pipeline/requirements.txt
 ```
 
-### Levantar Dagster (UI con logs y status)
+### Levantar la UI de Dagster (logs y status)
+
+La UI muestra el grafo de assets, los logs y el status de cada corrida, y permite
+materializar/backfillear desde el navegador. En producción **no** es el disparador (eso es
+el cron); sirve para observabilidad y corridas on-demand.
 
 **Opción A — con el venv local (desarrollo):**
 
@@ -274,8 +354,7 @@ pip install -r data_pipeline/requirements.txt
 dagster dev -m data_pipeline.orchestration.definitions
 ```
 
-La UI queda en **http://localhost:3000**: muestra el grafo de assets, los logs y
-el status de cada corrida, y permite materializar desde el navegador.
+La UI queda en **http://localhost:3000**.
 
 **Opción B — containerizada (perfil `orchestration`):** el compose trae un servicio
 `dagster` (webserver + daemon) con todo preinstalado. Combinar con `local-db` para
@@ -286,41 +365,8 @@ docker compose -f infra/docker-compose.yml --profile orchestration --profile loc
 ```
 
 La UI queda en **http://localhost:3070** (3000 lo usa Grafana). El servicio no arranca
-con un `up` por defecto ni entra en el build de CI. En producción, el disparador sigue
-siendo el cron mensual headless (ver [ADR-018](docs/adr/0018-orquestacion-end-to-end-dw.md));
-esta UI es para observabilidad y materializaciones on-demand.
-
-### Correr la ingesta completa
-
-Desde la UI: *Materialize all* (Dagster respeta el orden `produccion_raw` →
-`bronze_produccion`). O por línea de comandos:
-
-```bash
-# Catálogo de pozos
-dagster asset materialize --select bronze_pozos -m data_pipeline.orchestration.definitions
-# Producción completa (descarga + todas las particiones)
-python -m data_pipeline.extraction.extract_produccion
-```
-
-### Backfill — reprocesar un mes corregido por la fuente
-
-Reprocesar un período puntual reescribe **solo esa partición**, leyendo del landing
-ya descargado (sin volver a bajar el archivo completo):
-
-```bash
-# Un mes (la partición usa el formato AAAA-MM-01)
-dagster asset materialize --select bronze_produccion --partition "2024-03-01" \
-  -m data_pipeline.orchestration.definitions
-
-# Un rango de meses
-dagster asset materialize --select bronze_produccion \
-  --partition-range 2024-01-01...2024-03-01 \
-  -m data_pipeline.orchestration.definitions
-```
-
-También se puede lanzar desde la UI con el botón **Backfill** del asset. El
-procedimiento completo (disparador, validación, rollback) está en el
-[runbook del Data Engineer](docs/runbooks/data-engineer.md).
+con un `up` por defecto ni entra en el build de CI; se levanta donde haya capacidad
+(ver [ADR-023](docs/adr/0023-ui-dagster-containerizada.md)).
 
 ### Actualizar / agregar workflows
 
