@@ -19,9 +19,10 @@ Materializar Silver y Gold a partir de Bronze y dejar el modelo estrella listo y
   vía `rectificado`) o cargó datos nuevos en Bronze. Hay que propagar a Gold.
 - **Cambio de modelo:** se modificó un modelo dbt (nueva dimensión, métrica, regla
   de limpieza) y hay que publicarlo.
-- **Incidente de calidad (disparo por alerta):** un check `severity: error` falló y
-  **bloqueó la promoción a Gold**; llega alerta por Slack (Alertmanager, ADR-016)
-  o lo reporta Persona C porque un dashboard quedó sin datos frescos.
+- **Incidente de calidad:** un check `severity: error` falló y **bloqueó la promoción a
+  Gold** — la corrida del cron termina en error (visible en `cron.log` y en `dq.dq_results`)
+  o lo reporta Persona C porque un dashboard quedó sin datos frescos. (La alerta push a Slack
+  ante el fallo es evolución pendiente, ver ADR-016.)
 
 ## 2. Rol / dueño y prerrequisitos
 

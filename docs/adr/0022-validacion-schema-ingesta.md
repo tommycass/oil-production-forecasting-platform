@@ -31,7 +31,9 @@ escribir Bronze (`data_pipeline/extraction/validation.py`, llamado desde
   (lo que consumen los modelos Silver; `fecha_ingesta` no está porque se agrega al cargar).
 - **Falta alguna columna esperada → se lanza `SchemaContractError` y se aborta la
   extracción** (fail-fast). El asset de Dagster falla → los assets aguas abajo no corren →
-  Bronze viejo queda intacto → se dispara la alerta (mismo stack que ADR-016).
+  Bronze viejo queda intacto → el fallo queda visible (corta la corrida, queda en
+  `cron.log` y en el status de Dagster). La notificación push a Slack es la misma evolución
+  pendiente que en ADR-016.
 - **Aparecen columnas de más → solo se avisa por log** (cambio aditivo, no corta).
 
 Esto **complementa**, no reemplaza, el check de schema de Silver (ADR-016): la ingesta es
