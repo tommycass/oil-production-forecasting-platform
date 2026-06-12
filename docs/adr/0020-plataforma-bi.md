@@ -85,8 +85,10 @@ se inyecta por variable de entorno desde `infra/.env`.
 
 ## Decisiones Técnicas Posteriores
 
-- **Persistencia de Metabase:** su DB interna de metadata (volumen propio; H2 para
-  demo vs Postgres para algo más durable).
+- **Persistencia de Metabase (resuelto):** la metadata interna de Metabase vive en una
+  base Postgres dedicada (`metabase_app`), **no en H2**, para que los tableros y cuentas
+  sobrevivan reinicios del contenedor. Configurado en `infra/docker-compose.yml` (perfil
+  `bi`, variables `MB_DB_*`).
 - **Provisioning como código:** definir cómo se versionan los tableros (export/serialization vía API).
 - **Cuentas/roles** para usuarios no técnicos (lectura) vs admin.
 - **Apuntar a prod vs staging** según entorno; regla de SG coordinada con A.

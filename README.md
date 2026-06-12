@@ -124,7 +124,9 @@ oil-production-forecasting-platform/
 │       ├── 0020-plataforma-bi.md
 │       ├── 0021-refresh-bronze-full-reload.md
 │       ├── 0022-validacion-schema-ingesta.md
-│       └── 0023-ui-dagster-containerizada.md
+│       ├── 0023-ui-dagster-containerizada.md
+│       ├── 0024-motor-transformacion-y-dw.md
+│       └── 0025-testing-pipeline-datos.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
@@ -611,3 +613,5 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [021](docs/adr/0021-refresh-bronze-full-reload.md) | Estrategia de refresh de Bronze | Full reload vs ventana incremental en el refresh recurrente de Bronze |
 | [022](docs/adr/0022-validacion-schema-ingesta.md) | Validación de schema en la ingesta | Contrato de columnas por fuente; fail-fast ante cambios de schema |
 | [023](docs/adr/0023-ui-dagster-containerizada.md) | UI de Dagster containerizada | Complementa ADR-018: UI vía perfil de compose; `dagster dev` y por qué no toca el cron de prod |
+| [024](docs/adr/0024-motor-transformacion-y-dw.md) | Motor de transformación y del DW | Por qué dbt (vs SQLMesh/Dataform/Pandas/Spark) y PostgreSQL/RDS (vs DuckDB/MPP) |
+| [025](docs/adr/0025-testing-pipeline-datos.md) | Testing del pipeline de datos | Tests de extracción y DAGs con I/O mockeado (`materialize()`); contratos de idempotencia/particiones/fail-fast |
