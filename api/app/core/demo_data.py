@@ -2,6 +2,12 @@ from datetime import date
 
 DECLINE_RATE_BBL_PER_DAY = 0.5
 
+# Base_production de fallback para IDs reales del DW (idpozo numérico) que no
+# están en la lista de demo. El modelo de declive lineal es sintético de todas
+# formas; lo único que varía es el nivel inicial. Valor elegido como promedio
+# representativo de la flota de demo.
+_DEFAULT_BASE_PRODUCTION = 200.0
+
 WELLS = [
     {"id": "POZO-001", "base_production": 200.0, "active_from": date(2020, 1, 1)},
     {"id": "POZO-002", "base_production": 150.0, "active_from": date(2021, 6, 1)},
@@ -26,10 +32,19 @@ WELLS = [
 ]
 
 
-def get_well(id_well: str) -> dict | None:
-    """Return the well record with the given id, or None if it does not exist."""
-    return next((w for w in WELLS if w["id"] == id_well), None)
+def get_well(id_well: str) -> dict:
+    """Return the well record for id_well.
+
+    Wells in WELLS get their configured base_production. Any other ID (e.g. real
+    idpozo from the DW returned by /wells) gets the default base_production so
+    /forecast accepts it and returns a valid synthetic forecast.
+    """
+    record = next((w for w in WELLS if w["id"] == id_well), None)
+    if record is not None:
+        return record
+    return {"id": id_well, "base_production": _DEFAULT_BASE_PRODUCTION, "active_from": date(2006, 1, 1)}
 
 
 def well_exists(id_well: str) -> bool:
-    return get_well(id_well) is not None
+    """Any non-empty ID is valid: /wells returns real DW IDs that /forecast must accept."""
+    return bool(id_well and id_well.strip())
