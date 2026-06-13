@@ -50,7 +50,16 @@ def entorno_tmp(tmp_path, monkeypatch):
     return tmp_path
 
 
-@pytest.mark.parametrize("asset_def", [bronze_pozos, produccion_raw, bronze_produccion])
+@pytest.mark.parametrize(
+    "asset_def",
+    [
+        bronze_pozos,
+        produccion_raw,
+        bronze_produccion,
+        bronze_produccion_db,
+        bronze_pozos_db,
+    ],
+)
 def test_asset_tiene_retry_con_backoff_exponencial(asset_def):
     retry_policy = asset_def.op.retry_policy
     assert retry_policy is not None
