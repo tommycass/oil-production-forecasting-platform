@@ -4,97 +4,205 @@ Este documento proporciona las pautas y comandos necesarios para trabajar con el
 
 ## Resumen del Proyecto
 
-API REST para el pronóstico de producción de hidrocarburos construida con FastAPI. Actualmente, todos los datos de negocio son simulados — la capa `api/app/services/` genera datos sintéticos, sin conexión a una base de datos real.
+Plataforma de datos para el pronóstico de producción de hidrocarburos. El sistema integra
+datos reales de [datos.gob.ar](https://datos.gob.ar) en un pipeline Medallion (Bronze →
+Silver → Gold) orquestado con **Dagster**, transforma con **dbt** sobre **PostgreSQL** y
+expone los datos a través de:
+
+- **API REST** (FastAPI): `/wells` consulta pozos reales del Data Warehouse (`gold.*`);
+  `/forecast` genera un pronóstico sintético de declive lineal para cualquier pozo.
+- **Metabase** (BI): exploración de datos `gold.*` para usuarios no técnicos.
+- **DataHub** (gobierno): linaje Bronze→Silver→Gold derivado de los artefactos dbt.
+
+---
 
 ## Comandos Comunes
 
-Todos los comandos se ejecutan desde el directorio `api/` a menos que se indique lo contrario.
-
-### Desarrollo Local
+### API (directorio `api/`)
 
 ```bash
 # Instalar dependencias
 pip install -r requirements.txt -r requirements-dev.txt
 
-# Levantar la API (requiere la variable de entorno API_KEY)
+# Levantar la API (requiere API_KEY y las POSTGRES_* del DW para /wells)
 API_KEY=tu_clave uvicorn app.main:app --reload
 
-# Linter (solo para código de producción — coincide con la configuración de CI)
+# Linter (coincide con la configuración de CI)
 ruff check app/
 
-# Correr todos los tests
+# Tests de la API
 API_KEY=test-key pytest tests/ -v
+```
 
-# Correr un archivo de test específico
-API_KEY=test-key pytest tests/test_forecast.py -v
+### Pipeline de datos (directorio raíz / `data_pipeline/`)
 
-# Correr un test individual
-API_KEY=test-key pytest tests/test_forecast.py::test_forecast_valid -v
+```bash
+# Instalar dependencias del pipeline
+pip install -r data_pipeline/requirements.txt
+
+# Levantar Dagster UI (desarrollo local, con venv activado)
+dagster dev -m data_pipeline.orchestration.definitions
+
+# Materializar un asset individual
+dagster asset materialize -m data_pipeline.orchestration.definitions --select produccion_raw
+
+# Tests del pipeline (sin red ni DB — I/O mockeado)
+pytest data_pipeline/tests/ -v
+```
+
+### Transformación dbt (directorio `transform/`)
+
+```bash
+# Instalar dependencias de dbt
+pip install -r data_pipeline/requirements.txt   # incluye dbt-postgres y dbt-expectations
+
+# Parsear modelos y generar manifest.json (necesario antes de correr Dagster)
+cd transform && dbt parse --profiles-dir .
+
+# Construir Silver/Gold/DQ (incluye los 31 checks de calidad)
+cd transform && dbt build --profiles-dir .
+
+# Generar catalog.json para linaje de columna en DataHub
+cd transform && dbt docs generate --profiles-dir .
 ```
 
 ### Docker (desde la raíz del repositorio)
 
 ```bash
-# Levantar todos los servicios (API + Prometheus + Grafana)
+# Stack base: API + monitoreo
 docker compose -f infra/docker-compose.yml up --build
 
-# API: http://localhost:8000
-# Prometheus: http://localhost:9090
-# Grafana: http://localhost:3000 (admin admin/admin | visor ext_read/visitor123)
-# Alertmanager: http://localhost:9093
-# cAdvisor: http://localhost:8080
+# API:           http://localhost:8000
+# Prometheus:    http://localhost:9090
+# Grafana:       http://localhost:3000  (admin/admin | visor ext_read/visitor123)
+# Alertmanager:  http://localhost:9093
+# cAdvisor:      http://localhost:8080
+
+# Agregar base de datos local (Postgres)
+docker compose -f infra/docker-compose.yml --profile local-db up
+
+# Postgres DW:   localhost:5432  (user/pass/db: oil/oil/oil_dw)
+
+# Agregar Metabase (BI)
+docker compose -f infra/docker-compose.yml --profile bi up
+
+# Metabase:      http://localhost:3001
+
+# Agregar Dagster UI (visualización del grafo de assets)
+docker compose -f infra/docker-compose.yml --profile orchestration up
+
+# Dagster UI:    http://localhost:3070
 ```
 
-### Autenticación
+### Servicios remotos — EC2 de gobierno (DataHub)
 
-Todos los endpoints, excepto `GET /health` y `GET /metrics`, requieren el siguiente header:
+DataHub **no corre en el docker-compose local**; está en una EC2 separada gestionada
+por el administrador de gobierno. No se necesita levantar nada local para desarrollar.
+
+| Servicio | URL | Credenciales |
+|---|---|---|
+| DataHub UI (catálogo) | `http://<ip-governance>:9002` | `datahub / datahub` |
+| DataHub GMS (API) | `http://<ip-governance>:8080` | — |
+
+Para el **setup inicial** de la EC2 de gobierno (solo el admin de gobierno):
+```bash
+# En la EC2 de gobierno (Ubuntu 24.04, ≥8 GB RAM):
+chmod +x infra/governance/setup-datahub.sh
+./infra/governance/setup-datahub.sh
+```
+
+Para **ingerir el linaje** desde los artefactos dbt (ver runbook completo en
+`docs/runbooks/governance-admin.md`):
+```bash
+export DATAHUB_GMS_HOST=<ip-governance>
+datahub ingest -c infra/datahub/dbt_recipe.yml
+```
+
+### Autenticación de la API
+
+Todos los endpoints, excepto `GET /health` y `GET /metrics`, requieren el header:
 ```
 X-API-Key: <valor de la variable de entorno API_KEY>
 ```
 
+---
+
 ## Arquitectura
 
-### Estructura de Servicios
+### Pipeline de datos (Fase 2)
+
+```
+datos.gob.ar → [produccion_raw] → landing (parquet crudo)
+                     ↓
+             [bronze_produccion]  →  Bronze (parquet particionado por mes)
+             [bronze_pozos]       →  Bronze (catálogo de pozos)
+                     ↓
+             [bronze_*_db]        →  Postgres bronze.*
+                     ↓
+             [dbt: Silver]        →  Postgres silver.* (limpio, tipado, dedup)
+                     ↓  (gate de calidad: 31 tests dbt; error → bloquea Gold)
+             [dbt: Gold]          →  Postgres gold.* (modelo estrella)
+             [dbt: DQ]            →  Postgres dq.*   (resultados de calidad)
+```
+
+El grafo está modelado en Dagster (`data_pipeline/orchestration/assets.py`) y las
+transformaciones en dbt (`transform/models/`). En producción lo dispara un cron mensual
+(`data_pipeline/orchestration/run_pipeline.sh`); en desarrollo se usa `dagster dev`.
+
+### API REST
 
 ```
 api/app/
-├── main.py          # App factory, registro de routers, configuración de Prometheus
+├── main.py          # App factory, registro de routers, Prometheus
 ├── core/
-│   └── security.py  # Dependencia verify_api_key() de FastAPI
-├── routes/          # Routers de health, wells y forecast
-├── services/        # Generación de datos mock (lista de pozos, declinación lineal)
-└── schemas/         # Modelos de respuesta de Pydantic
+│   ├── database.py  # Engine SQLAlchemy → gold.* del DW (perezoso, env-driven)
+│   ├── demo_data.py # Datos de fallback para /forecast (declive sintético)
+│   └── security.py  # Dependencia verify_api_key()
+├── routes/          # health, wells, forecast
+├── services/
+│   ├── wells.py     # Consulta gold.fact_produccion_mensual → IDs reales del DW
+│   └── forecast.py  # Genera pronóstico sintético (acepta cualquier ID de /wells)
+└── schemas/         # Modelos Pydantic de respuesta
 ```
 
-### Flujo de Request
-
-Petición HTTP → Route handler → Dependencia `verify_api_key` (Chequeo de Header) → Función de Service → Pydantic schema → Respuesta HTTP
+`/wells` consulta el DW real (gold); `/forecast` genera datos sintéticos y acepta
+cualquier ID devuelto por `/wells`, incluyendo IDs numéricos reales de la fuente.
 
 ### Stack de Monitoreo
 
 - Prometheus scrapea `/metrics` cada 15s; reglas de alerta en `monitoring/alerts.yml`.
 - Grafana lee de Prometheus; dashboards provisionados en `monitoring/grafana/`.
-- El endpoint `/metrics` está **excluido** del tracking del instrumentador de Prometheus (ADR-003) para evitar inflar artificialmente las métricas de negocio.
+- El endpoint `/metrics` está **excluido** del instrumentador de Prometheus (ADR-003).
 
 ### CI/CD
 
-GitHub Actions (`.github/workflows/ci.yml`) ejecuta tres jobs secuenciales:
+GitHub Actions (`.github/workflows/ci.yml`) ejecuta jobs secuenciales:
 
-1. **test** (en push/PR a `staging` o `main`): Ejecuta `ruff check api/app/` y luego `pytest api/tests/ -v` con la API_KEY inyectada.
-2. **build** (solo si `test` pasa): Construye la imagen apuntando al contexto correcto (`docker build -f infra/Dockerfile api/`), escanea vulnerabilidades con Trivy, chequea la salud del contenedor y publica las imágenes en **Amazon ECR** (autenticación OIDC).
-3. **deploy** (en merge a `staging` o `main`): Usa **AWS Systems Manager (SSM)** para ejecutar el despliegue en la instancia EC2 correspondiente, identificada por tag (`Name=api-dev` o `Name=api`). El script en EC2 captura el digest previo, pullea la nueva imagen, verifica `/health` con reintentos y hace rollback automático si falla.
+1. **test**: `ruff check api/app/` + `pytest api/tests/` (tests de la API).
+2. **test-pipeline**: `pytest data_pipeline/tests/` (contracts del pipeline, sin red).
+3. **build** (solo si `test` y `test-pipeline` pasan): build Docker → Trivy → ECR.
+4. **deploy** (en merge a `staging` o `main`): SSM → EC2 (`api-dev` o `api`), con
+   rollback automático si `/health` falla.
 
-### Git Workflow    
+### Git Workflow
 
-Basado en GitFlow: ramas de features → `staging` → `main`.
-Nomenclatura de ramas: `feature/`, `fix/`, `docs/`.
+GitFlow: ramas de features → `staging` → `main` (siempre vía PR).
+Nomenclatura: `feature/`, `fix/`, `docs/`, `fase2/<persona>-<tema>`.
+
+---
 
 ## Restricciones Clave
 
-- La variable de entorno `API_KEY` debe estar configurada tanto para levantar el servicio como para la ejecución de los tests.
-- El análisis estático de `ruff` solo se aplica sobre la carpeta `app/` (se excluye `tests/`) — esto refleja exactamente el comportamiento en CI.
-- El contexto de construcción del Dockerfile es la carpeta `api/`, pero el archivo se encuentra en la carpeta `infra/`. El comando exacto de compilación debe ser: `docker build -f infra/Dockerfile api/`.
+- `API_KEY` debe estar configurada para levantar la API y para los tests.
+- `POSTGRES_*` deben apuntar al DW (RDS en EC2, o Postgres local) para que `/wells`
+  funcione; `/forecast` no requiere DB.
+- El contexto de build de Docker es `api/`, pero el Dockerfile está en `infra/`:
+  `docker build -f infra/Dockerfile api/`.
+- `ruff` se aplica solo sobre `api/app/` (se excluye `tests/`).
+- Los tests del pipeline (`data_pipeline/tests/`) mockean la red y el filesystem;
+  corren sin Postgres ni descarga de datos reales.
 
 ## Consigna y requerimientos
 
-Ver `docs/consigna-fase1.md` para el resumen de entregables y requerimientos de la Fase 1. Los markdowns con la especificación técnica completa y decisiones de diseño se encuentran en el directorio `adr/`.
+Ver `docs/adenda_tecnica_fase2.md` para los requerimientos de Fase 2. Las decisiones de
+diseño están en `docs/adr/`. La documentación del modelo de datos está en `docs/data-model.md`.
