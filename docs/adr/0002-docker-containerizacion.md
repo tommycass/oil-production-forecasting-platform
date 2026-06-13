@@ -82,3 +82,15 @@ Esto permite que Docker marque el contenedor como `healthy` o `unhealthy` indepe
 **Negativas:**
 - Mayor complejidad inicial en la configuración de la infraestructura en AWS (creación del proveedor OIDC, políticas JSON y roles IAM específicos para GitHub y la instancia EC2).
 - Acoplamiento fuerte al ecosistema de AWS (ECR y SSM), dificultando una posible migración futura a otro proveedor de nube en comparación con el uso de herramientas agnósticas (como SSH y GHCR).
+
+---
+
+## Actualización — Fase 2
+
+**Conteo de tests (línea 30 del contexto):** la suite creció de 16 a 26 tests al incorporar las coberturas de Fase 2:
+- `test_forecast_real_dw_id_accepted` — verifica que `/forecast` acepta IDs numéricos reales del DW (PR #81, integración con `gold.dim_pozo`).
+- Tests de contratos de auth adicionales (`test_auth.py`): case-insensitivity del header, body del 403.
+- Tests de exención de rate limit para `/health` y `/metrics` (`test_rate_limit.py`).
+- Tests de cobertura de formato de respuesta y manejo de parámetros inválidos en `test_wells.py` y `test_forecast.py`.
+
+El número "16 tests" en el contexto de este ADR refleja el estado al cierre de Fase 1; la arquitectura de testing (framework, nivel de abstracción, ejecución en CI) no cambió.
