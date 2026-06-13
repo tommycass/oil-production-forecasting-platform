@@ -2,10 +2,8 @@ from datetime import date
 
 DECLINE_RATE_BBL_PER_DAY = 0.5
 
-# Base_production de fallback para IDs reales del DW (idpozo numérico) que no
-# están en la lista de demo. El modelo de declive lineal es sintético de todas
-# formas; lo único que varía es el nivel inicial. Valor elegido como promedio
-# representativo de la flota de demo.
+# Base_production de fallback para IDs que no están en la lista de demo pero
+# sí existen en el DW (validados por well_exists_in_dw antes de llegar aquí).
 _DEFAULT_BASE_PRODUCTION = 200.0
 
 WELLS = [
@@ -46,5 +44,6 @@ def get_well(id_well: str) -> dict:
 
 
 def well_exists(id_well: str) -> bool:
-    """Any non-empty ID is valid: /wells returns real DW IDs that /forecast must accept."""
-    return bool(id_well and id_well.strip())
+    """True si id_well está en la lista de mocks. Usado solo en tests; el route
+    usa well_exists_in_dw (services/wells.py) para validar contra el DW real."""
+    return any(w["id"] == id_well for w in WELLS)

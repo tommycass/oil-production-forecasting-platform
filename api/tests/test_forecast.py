@@ -15,6 +15,13 @@ def mock_api_key():
         yield
 
 
+@pytest.fixture(autouse=True)
+def mock_well_exists():
+    """Evita queries al DW en tests unitarios: well_exists_in_dw retorna True por defecto."""
+    with patch("app.routes.forecast.well_exists_in_dw", return_value=True):
+        yield
+
+
 def test_forecast_success():
     response = client.get(
         "/api/v1/forecast",
@@ -38,6 +45,18 @@ def test_forecast_real_dw_id_accepted():
     data = response.json()
     assert data["id_well"] == "12345"
     assert len(data["data"]) == 3
+
+
+def test_forecast_well_not_found():
+    """Un ID que no existe en el DW debe devolver 404."""
+    with patch("app.routes.forecast.well_exists_in_dw", return_value=False):
+        response = client.get(
+            "/api/v1/forecast",
+            params={"id_well": "POZO-999", "date_start": "2024-01-01", "date_end": "2024-01-03"},
+            headers=HEADERS,
+        )
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Well not found"
 
 
 def test_forecast_date_start_after_date_end():
