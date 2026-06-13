@@ -36,11 +36,11 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 
 | Dimensión | Cómo se chequea (ejemplos) | Sobre |
 |---|---|---|
-| **Schema** | tipos y columnas esperadas (`dbt_expectations.expect_column_values_to_be_of_type`, contracts de dbt) | Silver producción y pozos |
+| **Schema** | tipos y presencia de columnas esperadas (`dbt_expectations.expect_column_values_to_be_of_type`, `dbt_expectations.expect_column_to_exist`) | Silver producción y pozos |
 | **Uniqueness** | unicidad de la clave de negocio (`unique` / `dbt_utils.unique_combination_of_columns` sobre `idpozo+anio+mes`) | Silver producción |
 | **Completeness** | no-nulos en claves y medidas críticas (`not_null` en `idpozo`, `anio`, `mes`) | Silver ambas |
-| **Validity** | rangos y dominios (`expect_column_values_to_be_between` para producción ≥ 0; `anio`/`mes` en rango; `accepted_values` para tipo de recurso) | Silver producción |
-| **Freshness** | antigüedad de la última ingesta (`dbt source freshness` / check sobre `max(fecha_data)`) | Silver / source Bronze |
+| **Validity** | rangos y dominios (`expect_column_values_to_be_between` para producción ≥ 0; `anio`/`mes` en rango) | Silver producción |
+| **Freshness** | antigüedad de la última ingesta (test singular sobre `max(fecha_ingesta)` en Silver: falla si supera 7 días) | Silver producción |
 
 > **Schema en dos capas (ADR-022):** además de este check en Silver, el schema se valida
 > **en la ingesta** (fail-fast): si la fuente cambia las columnas, la extracción aborta
