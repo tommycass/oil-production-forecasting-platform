@@ -218,7 +218,9 @@ Abrir en el navegador: `http://<ip-ec2-gobierno>:9002`
   acceder a la fact table del modelo estrella.
 - **Linaje (tabla):** en la ficha del dataset, hacer clic en la pestaña **Lineage**.
   El grafo muestra `silver_produccion → fact_produccion_mensual` y las dimensiones
-  conformadas (`dim_pozo`, `dim_operadora`, etc.).
+  conformadas (`dim_pozo`, `dim_operadora`, etc.). Las vistas del esquema `semantic.*`
+  (`sem_top_pozos`, `sem_produccion_mensual_por_yacimiento`, etc.) aparecen como
+  nodos **downstream** de la fact y las dims: el linaje cubre Bronze → Silver → Gold → Semantic.
 - **Calidad:** la pestaña **Assertions** lista los 31 tests dbt con su último estado
   (`pass`/`fail`) derivado de `run_results.json`.
 - **Última actualización:** la pestaña **Timeline** muestra cuándo ocurrió la última
