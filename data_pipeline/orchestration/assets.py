@@ -39,9 +39,11 @@ from data_pipeline.extraction.extract_pozos import extract_pozos
 from data_pipeline.extraction.extract_produccion import descargar_landing, escribir_particion
 from data_pipeline.orchestration.dbt_project import dw_dbt_project
 
-# Reintentos con backoff exponencial: la extracción descarga por HTTP desde
-# datos.gob.ar, que puede fallar de forma transitoria. Reintenta a los 5s, 10s
-# y 20s. La extracción es idempotente, así que reintentar es seguro.
+# Reintentos con backoff exponencial para los fallos transitorios del grafo:
+# la extracción descarga por HTTP desde datos.gob.ar, y la carga a Postgres y los
+# modelos dbt pueden chocar con un corte momentáneo de conexión al DW. Reintenta a
+# los 5s, 10s y 20s. Todos los pasos son idempotentes (Bronze sobrescribe, la carga
+# usa if_exists="replace", dbt es full-refresh), así que reintentar es seguro.
 _RETRY_POLICY = RetryPolicy(max_retries=3, delay=5, backoff=Backoff.EXPONENTIAL)
 
 # Particiones mensuales de producción. La fuente arranca en enero de 2006.
@@ -108,6 +110,7 @@ def _cargar_a_postgres(context: AssetExecutionContext, fuente: str) -> Materiali
     key=AssetKey(["bronze", "produccion"]),
     deps=[bronze_produccion],
     group_name="bronze_db",
+    retry_policy=_RETRY_POLICY,
 )
 def bronze_produccion_db(context: AssetExecutionContext) -> MaterializeResult:
     """Carga las particiones Bronze de producción a `bronze.produccion` (Postgres)."""
@@ -118,6 +121,7 @@ def bronze_produccion_db(context: AssetExecutionContext) -> MaterializeResult:
     key=AssetKey(["bronze", "pozos"]),
     deps=[bronze_pozos],
     group_name="bronze_db",
+    retry_policy=_RETRY_POLICY,
 )
 def bronze_pozos_db(context: AssetExecutionContext) -> MaterializeResult:
     """Carga el snapshot Bronze de pozos a `bronze.pozos` (Postgres)."""
@@ -148,6 +152,7 @@ if dw_dbt_project.manifest_path.exists():
     @dbt_assets(
         manifest=dw_dbt_project.manifest_path,
         dagster_dbt_translator=_DwDbtTranslator(),
+        retry_policy=_RETRY_POLICY,
     )
     def dw_dbt_models(context: AssetExecutionContext, dbt: DbtCliResource):
         """Materializa Silver/Gold y corre Data Quality (`dbt build`)."""
