@@ -147,8 +147,9 @@ para el lineage tabla-a-tabla y columna-a-columna en DataHub.
   `dbt build` (genera manifest + run_results, no catalog); si querés catalog, se agrega un paso
   o lo corrés on-demand.
 - **Alternativa:** el grafo de assets de Dagster (vía `datahub-dagster-plugin`). La UI de Dagster
-  está activa en `api-dev` en el puerto 3070 (servicio systemd, ver [ADR-023](adr/0023-ui-dagster-containerizada.md));
-  si se instala el plugin de DataHub para Dagster, el lineage puede ingestarse también desde ahí.
+  está activa en `api` (producción) en el puerto 3070 (servicio systemd, ver
+  [ADR-023](adr/0023-ui-dagster-containerizada.md)); si se instala el plugin de DataHub para
+  Dagster, el lineage puede ingestarse también desde ahí.
 - El gate de calidad (tests dbt) son **nodos del manifest**, así que las señales de calidad
   también viajan a DataHub.
 

@@ -93,9 +93,9 @@ usa el cron del SO (ADR-018), así que esa complejidad no aporta hoy.
 
 ## Actualización (jun-2026) — implementación en `api-dev` via systemd
 
-En `api-dev`, el venv de Dagster (`~/dagster-venv`) ya estaba instalado para el cron
-headless (ADR-018) y la imagen Docker nunca fue construida. En lugar de buildear la
-imagen, la UI se expone mediante un **servicio systemd** (`/etc/systemd/system/dagster-ui.service`)
+En `api` (producción), el venv de Dagster (`~/dagster-venv`) ya estaba instalado para
+el cron headless (ADR-018) y la imagen Docker nunca fue construida. En lugar de buildear
+la imagen, la UI se expone mediante un **servicio systemd** (`/etc/systemd/system/dagster-ui.service`)
 que invoca `dagster dev` directamente sobre el venv existente:
 
 ```
