@@ -25,6 +25,8 @@ DATAHUB_GMS_PORT="${DATAHUB_GMS_PORT:-8080}"
 DATAHUB_GMS_URL="http://localhost:${DATAHUB_GMS_PORT}"
 MAX_WAIT_SECONDS=300   # 5 min para que el GMS quede healthy
 PYTHON="${PYTHON:-python3}"
+DATAHUB_VENV="${DATAHUB_VENV:-$HOME/.datahub-venv}"
+DATAHUB="$DATAHUB_VENV/bin/datahub"
 
 # Contenedores de larga duración de DataHub v1.5+ (KRaft, OpenSearch, sin ZooKeeper).
 # datahub-system-update corre migraciones y sale con Exited 0 — no se incluye.
@@ -52,14 +54,23 @@ if ! docker info >/dev/null 2>&1; then
 fi
 log "Docker OK: $(docker --version)"
 
-# 2. Instalar DataHub CLI
-log "Instalando/actualizando DataHub CLI..."
-$PYTHON -m pip install --quiet --upgrade 'acryl-datahub[datahub-rest]'
-log "DataHub CLI: $(datahub version 2>/dev/null || echo 'instalado')"
+# 2. Instalar DataHub CLI en virtualenv (Ubuntu 24.04 bloquea pip install global — PEP 668)
+log "Creando virtualenv en $DATAHUB_VENV e instalando DataHub CLI..."
+$PYTHON -m venv "$DATAHUB_VENV"
+"$DATAHUB_VENV/bin/pip" install --quiet --upgrade pip
+"$DATAHUB_VENV/bin/pip" install --quiet --upgrade 'acryl-datahub[datahub-rest]'
+log "DataHub CLI: $($DATAHUB version 2>/dev/null || echo 'instalado')"
+
+# Agregar el venv al PATH permanentemente para uso manual posterior
+PROFILE_LINE="export PATH=\"$DATAHUB_VENV/bin:\$PATH\""
+if ! grep -qF "$DATAHUB_VENV/bin" "$HOME/.bashrc" 2>/dev/null; then
+  echo "$PROFILE_LINE" >> "$HOME/.bashrc"
+  log "PATH actualizado en ~/.bashrc (activá con: source ~/.bashrc)"
+fi
 
 # 3. Levantar quickstart
 log "Lanzando datahub docker quickstart (puede tardar 5-10 min en el primer arranque)..."
-datahub docker quickstart
+$DATAHUB docker quickstart
 
 # 4. Esperar a que el GMS esté healthy
 log "Esperando que el GMS esté disponible en ${DATAHUB_GMS_URL}..."
