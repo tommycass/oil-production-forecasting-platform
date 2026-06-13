@@ -40,7 +40,7 @@ Materializar Silver y Gold a partir de Bronze y dejar el modelo estrella listo y
 Las bases del DW (`oil_dw_staging`, `oil_dw_prod`) deben existir antes de correr el
 pipeline. Crearlas es idempotente con `infra/db/bootstrap.sql` (usa `\gexec`; ver el
 header del archivo). dbt y `load_bronze.py` crean los **schemas** solos
-(`bronze/silver/gold/dq`), no hace falta crearlos a mano.
+(`bronze/silver/gold/semantic/dq`), no hace falta crearlos a mano.
 
 ```bash
 # Conecta a la base de mantenimiento `postgres`; el secreto va por el entorno.
