@@ -142,7 +142,7 @@ La ingesta lee **tres** artefactos dbt y los envía al GMS de la EC2 de gobierno
 **sin tocar el DW**:
 
 - `manifest.json` — grafo de modelos (linaje tabla). **Obligatorio.**
-- `catalog.json` — tipos y descripciones de columna (linaje de columna). **Obligatorio.**
+- `catalog.json` — tipos y descripciones de columna (linaje de columna). Obligatorio para linaje de columna; *best-effort* en la corrida automática del pipeline (si `dbt docs generate` falla, la ingesta continúa sin él con `WARN` y no bloquea el pipeline).
 - `run_results.json` — resultado de los 31 tests de calidad (assertions). Opcional.
 
 Como el linaje y el esquema se derivan de las **definiciones** de los modelos (no de

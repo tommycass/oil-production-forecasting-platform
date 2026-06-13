@@ -36,13 +36,11 @@ All endpoints (except `/health`) require an API key in the header:
 X-API-Key: <your-api-key>
 ```
 
-## Available wells (mock)
+## Available wells
 
-| ID | Base production |
-|----|----------------|
-| POZO-001 | 200 m³/day |
-| POZO-002 | 150 m³/day |
-| POZO-003 | 100 m³/day |
+Use `GET /api/v1/wells?date_query=YYYY-MM-DD` to retrieve active wells for a date.
+Well IDs are numeric strings sourced from the data warehouse (e.g. `507`).
+Pass a well ID returned by `/wells` to `/forecast?id_well=<id>`.
 """,
     version="1.0.0",
     openapi_tags=tags_metadata,
@@ -61,6 +59,15 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429,
         content={"detail": "Rate limit exceeded. Try again later."},
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    """Return a clean 500 JSON for any unhandled exception (e.g. DW unreachable)."""
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error."},
     )
 
 

@@ -69,3 +69,18 @@ El workflow `.github/workflows/ci.yml` declara un job `test` que ejecuta `pytest
 - La fórmula del mock y los datos de los tres pozos no están cubiertos. Si alguien rompe la lógica de `get_forecast()` manteniendo la forma del response, los tests pasan. Se acepta el trade-off porque el mock es explícitamente temporal; cuando se reemplace por una fuente real de datos, la estrategia deberá revisarse para incluir tests de integración contra esa fuente.
 - `TestClient` no ejerce la pila de red real: no cubre timeouts, comportamiento de reverse proxies ni concurrencia real entre procesos. Para el stack actual (una sola instancia EC2 detrás de Docker Compose) esto no introduce riesgo significativo, pero si en el futuro se incorpora un balanceador o múltiples réplicas, se deberá evaluar sumar un tramo de tests de integración que sí ejercite red.
 - Los tests de rate limiting dependen de un detalle de implementación de `slowapi` (`limiter.reset()` para limpiar el storage). Si la librería cambia esa API, habrá que actualizar los tests afectados. El impacto está acotado a un archivo (`api/tests/test_rate_limit.py`) y compensa sobradamente el costo de testear rate limit por tiempo real.
+
+---
+
+## Actualización — Fase 2
+
+**Cambios en el workflow CI:**
+
+- El job `build-and-push` mencionado en el contexto y consecuencias fue **renombrado a `build`** al reestructurar el pipeline en Fase 2.
+- Se incorporó el job **`test-pipeline`** (ejecuta los tests del data pipeline dbt + Dagster con pytest), que también es prerrequisito de `build`. La restricción original — la suite de API debe pasar antes de que se publique la imagen — se mantiene; se amplió para incluir el pipeline de datos como segundo gate paralelo.
+- **Flujo actual del CI:** `test` + `test-pipeline` (paralelos) → `build` → `deploy` / `deploy_dev`.
+
+**Alcance de los tests de la API tras el PR #81 (integración con el DW real):**
+
+- `/forecast` dejó de validar contra el catálogo mock (`demo_data.WELLS`) y ahora llama a `well_exists_in_dw()` que consulta `gold.dim_pozo`. Los tests de la suite mockean esta función (`patch("app.routes.forecast.well_exists_in_dw")`) para no requerir una conexión real al DW en el job `test` de CI.
+- La cobertura de la lógica SQL de `well_exists_in_dw` y `get_wells` es **manual**: el equipo validó el SQL contra un Postgres real antes del merge del PR #81. No existe un job de integración que ejercite el SQL contra Postgres en CI; se acepta como trade-off dado que agregar un servicio Postgres al job `test` aumentaría la complejidad del workflow y el tiempo de CI. Si en el futuro se agrega dicho job, deberá diferenciarse el scope (unit tests vs integration tests) en el workflow.
