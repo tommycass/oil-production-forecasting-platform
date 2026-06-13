@@ -48,9 +48,15 @@ de forma idempotente.
      dagster asset materialize -m $MOD --select produccion_raw          # refresca el landing
      dagster asset materialize -m $MOD --select bronze_produccion --partition 2024-03-01
      ```
-   - **Full reload** (todo Bronze, idéntico a lo que hace el cron): correr
-     `data_pipeline/orchestration/run_pipeline.sh`, o como fallback sin orquestador
-     `python -m data_pipeline.extraction.extract_produccion`.
+   - **Full reload** (recargar *todo* Bronze, idéntico a lo que hace el cron): correr
+     `data_pipeline/orchestration/run_pipeline.sh`. Hace el flujo completo —landing →
+     todas las particiones de Bronze → carga a Postgres → dbt (Silver/Gold/DQ)—, así
+     que ya deja la corrección publicada en el DW sin pasos adicionales.
+   - **Fallback sin orquestador** (solo Bronze parquet): `python -m
+     data_pipeline.extraction.extract_produccion`. ⚠️ **No equivale al cron**: reescribe
+     únicamente los parquet de Bronze en disco (no carga a Postgres ni corre dbt) e incluye
+     el mes en curso. Sirve para refrescar Bronze cuando Dagster no está disponible; tras
+     usarlo hay que completar igual el paso 4 para propagar la corrección al DW.
 
 3. **Verificar Bronze.** Confirmar que la partición del mes quedó reescrita y que
    contiene la versión corregida:
