@@ -75,7 +75,8 @@ Cuatro esquemas por base, una por capa Medallion:
 |---|---|---|
 | `bronze` | Crudo de la fuente como **texto** (`bronze.produccion`, `bronze.pozos`). Inmutable. | No — solo trazabilidad/debug |
 | `silver` | Limpio y tipado: `silver_produccion`, `silver_pozos`. | Raramente (drill-down) |
-| **`gold`** | **Modelo estrella** — lo que consume BI/API. | **Sí** |
+| **`gold`** | **Modelo estrella** — lo que consume BI/API (avanzado). | **Sí** |
+| **`semantic`** | **Vistas semánticas** sobre Gold pre-unificadas (ADR-027). Contrato recomendado para usuarios de BI sin conocimiento del modelo estrella. | **Sí (preferido para BI no técnico)** |
 | `dq` | Señales de calidad: `dq_results`, cuarentena, `store_failures`. | Sí (tableros de calidad / gobierno) |
 
 ### 3.1 Gold (estrella) — el contrato principal para BI
@@ -122,9 +123,13 @@ calidad a nivel tabla en DataHub.
 ## 4. Para BI (Metabase)
 
 1. Conectá Metabase a la base **`oil_dw_prod`** (staging para preview/QA).
-2. Modelá sobre el esquema **`gold`** (la estrella ya está lista; no hace falta SQL de limpieza).
-3. Cuidados de modelado: sumar solo medidas aditivas; `tef` se promedia; usá `dim_fecha.periodo`
-   (`AAAA-MM`) para ejes temporales; los joins van por `sk_*`.
+2. Para usuarios no técnicos: modelá sobre el esquema **`semantic`** — las cuatro vistas
+   (`sem_produccion_mensual_por_yacimiento`, `sem_top_pozos`, `sem_kpi_pipeline`,
+   `sem_produccion_anual_por_operadora`) ya aplican los joins y exponen nombres en lenguaje
+   de negocio sin surrogate keys. Ver [ADR-027](adr/0027-semantic-layer.md).
+3. Para análisis avanzados: modelá sobre **`gold`** (la estrella ya está lista). Cuidados: sumar
+   solo medidas aditivas; `tef` se promedia; usá `dim_fecha.periodo` (`AAAA-MM`) para ejes
+   temporales; los joins van por `sk_*`.
 4. (Opcional) un dashboard de calidad sobre `dq.dq_results` + `dq.silver_produccion_rechazos`.
 
 ---

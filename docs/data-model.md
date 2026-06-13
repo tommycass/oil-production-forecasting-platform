@@ -21,9 +21,11 @@ Bronze (parquet, crudo)  →  Silver (limpio, tipado)  →  Gold (modelo estrell
 - **Bronze**: crudo de datos.gob.ar, parquet particionado por `anio/mes`, inmutable.
 - **Silver**: una fila limpia por registro de origen (casteo de tipos, deduplicación,
   normalización de nombres, manejo de nulos). Sobre Silver corre el gate de calidad (ADR-016).
-- **Gold**: esquema estrella consumido por BI (Metabase), gobierno (DataHub) y la API.
+- **Gold**: esquema estrella consumido por la API y analistas técnicos en BI.
+- **Semantic**: vistas pre-unificadas sobre Gold para usuarios de BI no técnicos; abstrae las
+  surrogate keys y los joins del modelo estrella. Ver [ADR-027](adr/0027-semantic-layer.md).
 
-Esquemas en Postgres: `silver`, `gold`, `dq` (resultados de calidad).
+Esquemas en Postgres: `silver`, `gold`, `semantic`, `dq` (resultados de calidad).
 
 ---
 
