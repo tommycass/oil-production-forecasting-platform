@@ -173,9 +173,9 @@ Repetir (a)–(c) en la EC2 de prod. **Único cambio:** su `infra/.env` tiene
 ## 3.2 UI de Dagster en AWS (observabilidad on-demand)
 
 > **Referencia:** [ADR-023](../adr/0023-ui-dagster-containerizada.md) documenta la
-> decisión de arquitectura. En `api-dev` la UI se expone via **systemd** sobre el venv
-> existente (`~/dagster-venv`) en lugar del contenedor Docker, dado que el venv ya estaba
-> instalado y el build de la imagen no fue necesario para la corrida headless.
+> decisión de arquitectura. En `api` (producción) la UI se expone via **systemd** sobre
+> el venv existente (`~/dagster-venv`) en lugar del contenedor Docker, dado que el venv
+> ya estaba instalado y el build de la imagen no fue necesario para la corrida headless.
 
 La UI de Dagster (grafo de assets, historial de runs, estado de checks de calidad,
 materialización on-demand) se levanta como **servicio systemd** sobre el mismo venv que
@@ -222,34 +222,15 @@ sudo journalctl -u dagster-ui -f
 # Buscá: "Serving dagster-webserver on http://0.0.0.0:3070"
 ```
 
-### b) Habilitar acceso externo (puerto 3070 en el Security Group)
-
-Sin esta regla el navegador no llega. Se hace una sola vez desde la consola de AWS o CLI:
-
-**Opción A — AWS Console:**
-1. EC2 → Instances → seleccionar `api-dev`.
-2. Pestaña "Security" → click en el Security Group.
-3. "Edit inbound rules" → "Add rule": Type = Custom TCP, Port = 3070, Source = My IP
-   (para restringirlo a tu IP) o 0.0.0.0/0 (para demo pública).
-4. "Save rules".
-
-**Opción B — AWS CLI:**
-```bash
-# Reemplazar sg-XXXXXXXX con el SG ID de la instancia (visible en la consola)
-aws ec2 authorize-security-group-ingress \
-  --group-id sg-XXXXXXXX \
-  --protocol tcp \
-  --port 3070 \
-  --cidr 0.0.0.0/0
-```
-
-### c) Acceder a la UI
+### b) Acceder a la UI
 
 ```
-http://<IP-PÚBLICA-EC2>:3070
+http://<IP-pública-api>:3070
 ```
 
-La IP pública se ve en: EC2 → Instances → columna "Public IPv4 address".
+La IP pública de la instancia `api` se consulta en AWS Console → EC2 → instancia `api`
+→ columna "Public IPv4 address" (cambia en cada stop/start si no hay Elastic IP).
+El puerto 3070 ya está abierto en el Security Group compartido del proyecto.
 
 ### d) Comportamiento en stop/start de EC2
 
