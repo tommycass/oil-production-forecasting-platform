@@ -170,6 +170,97 @@ crontab -l 2>/dev/null | { cat; echo "0 3 5 * * /home/ubuntu/oil-production-fore
 Repetir (a)–(c) en la EC2 de prod. **Único cambio:** su `infra/.env` tiene
 `POSTGRES_DB=oil_dw_prod`. El código y los comandos son idénticos.
 
+## 3.2 UI de Dagster en AWS (observabilidad on-demand)
+
+> **Referencia:** [ADR-023](../adr/0023-ui-dagster-containerizada.md) documenta la
+> decisión de arquitectura. En `api-dev` la UI se expone via **systemd** sobre el venv
+> existente (`~/dagster-venv`) en lugar del contenedor Docker, dado que el venv ya estaba
+> instalado y el build de la imagen no fue necesario para la corrida headless.
+
+La UI de Dagster (grafo de assets, historial de runs, estado de checks de calidad,
+materialización on-demand) se levanta como **servicio systemd** sobre el mismo venv que
+usa el cron. Sobrevive a los stop/start de la EC2: systemd lo relanza en cada boot
+automáticamente. No reemplaza el cron de producción (ADR-018); es solo para
+observabilidad y materializaciones on-demand.
+
+### a) Setup inicial (una vez por EC2)
+
+```bash
+sudo tee /etc/systemd/system/dagster-ui.service > /dev/null <<'EOF'
+[Unit]
+Description=Dagster UI
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/oil-production-forecasting-platform
+EnvironmentFile=/home/ubuntu/oil-production-forecasting-platform/infra/.env
+Environment="DAGSTER_HOME=/home/ubuntu/dagster-runtime"
+Environment="PATH=/home/ubuntu/dagster-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ubuntu/dagster-venv/bin/dagster dev \
+  -m data_pipeline.orchestration.definitions \
+  --host 0.0.0.0 --port 3070
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable dagster-ui    # arranca automáticamente en cada boot
+sudo systemctl start dagster-ui
+```
+
+Verificar que arrancó:
+
+```bash
+sudo systemctl status dagster-ui
+# O seguir los logs en vivo:
+sudo journalctl -u dagster-ui -f
+# Buscá: "Serving dagster-webserver on http://0.0.0.0:3070"
+```
+
+### b) Habilitar acceso externo (puerto 3070 en el Security Group)
+
+Sin esta regla el navegador no llega. Se hace una sola vez desde la consola de AWS o CLI:
+
+**Opción A — AWS Console:**
+1. EC2 → Instances → seleccionar `api-dev`.
+2. Pestaña "Security" → click en el Security Group.
+3. "Edit inbound rules" → "Add rule": Type = Custom TCP, Port = 3070, Source = My IP
+   (para restringirlo a tu IP) o 0.0.0.0/0 (para demo pública).
+4. "Save rules".
+
+**Opción B — AWS CLI:**
+```bash
+# Reemplazar sg-XXXXXXXX con el SG ID de la instancia (visible en la consola)
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-XXXXXXXX \
+  --protocol tcp \
+  --port 3070 \
+  --cidr 0.0.0.0/0
+```
+
+### c) Acceder a la UI
+
+```
+http://<IP-PÚBLICA-EC2>:3070
+```
+
+La IP pública se ve en: EC2 → Instances → columna "Public IPv4 address".
+
+### d) Comportamiento en stop/start de EC2
+
+Con `systemctl enable`, el servicio queda registrado en el arranque del sistema. Apagás
+la EC2, la volvés a prender → Dagster UI disponible en ~30 segundos sin intervención.
+
+Para detenerlo manualmente:
+```bash
+sudo systemctl stop dagster-ui
+```
+
 ## 4. Validación (cómo sé que salió bien)
 
 - La corrida termina en `Completed successfully` con `ERROR=0` y `SKIP=0`.
