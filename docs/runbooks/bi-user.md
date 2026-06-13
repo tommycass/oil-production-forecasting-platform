@@ -78,21 +78,44 @@ conocimiento de SQL. Se ejecuta cuando:
 
 ### 3.5 Construir una pregunta ad-hoc (sin SQL)
 
-Metabase permite explorar el esquema `gold` sin escribir código:
+Metabase permite explorar datos sin escribir código. Para usuarios sin conocimiento
+del modelo estrella se recomienda el esquema **`semantic`**; para análisis avanzados
+con joins cruzados, usar el esquema **`gold`**.
+
+#### Opción A — Esquema `semantic` (recomendada para usuarios no técnicos)
+
+Las vistas semánticas ya aplican todos los joins y exponen nombres en lenguaje de negocio:
+
+1. Ir a **+ Nuevo → Pregunta**.
+2. Seleccionar la base **Oil DW Producción** → esquema **semantic**.
+3. Elegir la vista según el análisis deseado:
+
+| Vista | Uso recomendado |
+|---|---|
+| `sem_produccion_mensual_por_yacimiento` | Producción por yacimiento y período |
+| `sem_top_pozos` | Ranking histórico de pozos |
+| `sem_kpi_pipeline` | Frescura y estado operativo del pipeline |
+| `sem_produccion_anual_por_operadora` | Comparativa anual por empresa |
+
+4. Usar **Resumir** para agregar métricas (las columnas `prod_pet_total_m3`, etc., ya están pre-sumadas por período; si se aplica un SUM sobre ellas con más agrupaciones, el resultado es correcto).
+5. Usar **Filtrar** para acotar por yacimiento, período u otra dimensión.
+6. Cambiar la visualización con el botón **Visualización** (línea, barra, tabla, etc.).
+7. Guardar con **Guardar** → asignar un nombre descriptivo → **Guardar en Nuestros análisis**.
+
+#### Opción B — Esquema `gold` (para usuarios con conocimiento del modelo estrella)
 
 1. Ir a **+ Nuevo → Pregunta**.
 2. Seleccionar la base **Oil DW Producción** → esquema **gold**.
 3. Elegir la tabla de inicio (por ejemplo, `Fact Produccion Mensual`).
 4. Usar **Resumir** para agregar métricas (suma de `prod_pet`, promedio de `tef`).
 5. Usar **Filtrar** para acotar por yacimiento, período o cualquier dimensión.
-6. Cambiar la visualización con el botón **Visualización** (línea, barra, tabla, etc.).
-7. Guardar con **Guardar** → asignar un nombre descriptivo → **Guardar en Nuestros
-   análisis** o en una colección propia.
+6. Cambiar la visualización y guardar como en la Opción A.
 
-> **Precaución al agregar métricas:**
+> **Precaución al agregar métricas en `gold`:**
 > - `prod_pet`, `prod_gas`, `prod_agua`, `iny_*`: sumar con SUM.
 > - `tef` (tiempo efectivo de producción): promediar con AVG, nunca sumar.
 > - Para el eje temporal, usar `dim_fecha.periodo` (formato `AAAA-MM`).
+> - Los joins van por columnas `sk_*` (surrogate keys enteras).
 
 ### 3.6 Compartir un análisis
 
@@ -146,14 +169,16 @@ Metabase no es adecuado para análisis de producción en tiempo real ni para ale
 operativas; su valor está en el análisis de tendencias, comparaciones históricas y
 reporting estratégico.
 
-**Decisión funcional:** el contrato de BI con el DW es exclusivamente el esquema
-`gold.*`. El esquema `silver.*` (datos limpios pero sin el modelo dimensional) y
-`bronze.*` (crudo) no se exponen en los dashboards principales. Esta decisión la
-ownea el Analytics Engineer en coordinación con el usuario de BI: mantener el
-contrato estable en `gold` significa que los dashboards no se rompen cuando B cambia
-la lógica de limpieza en Silver; el analista de negocio nunca necesita saber qué
-pasó en capas anteriores. Si una métrica de negocio cambia de definición, la
-conversación ocurre en el modelo dimensional (Gold), no en los dashboards.
+**Decisión funcional:** el contrato primario de BI con el DW es el esquema `semantic.*`
+(vistas semánticas pre-unificadas sobre Gold, ver [ADR-027](../adr/0027-semantic-layer.md))
+para usuarios no técnicos, y `gold.*` para analistas con conocimiento del modelo
+estrella. Los esquemas `silver.*` (datos limpios pero sin el modelo dimensional) y
+`bronze.*` (crudo) no se exponen en los dashboards principales. Esta decisión la ownea
+el Analytics Engineer en coordinación con el usuario de BI: mantener el contrato estable
+en `semantic`/`gold` significa que los dashboards no se rompen cuando B cambia la lógica
+de limpieza en Silver; el analista de negocio nunca necesita saber qué pasó en capas
+anteriores. Si una métrica de negocio cambia de definición, la conversación ocurre en las
+vistas semánticas o en el modelo dimensional (Gold), no en los dashboards.
 
 **Decisión no funcional:** la latencia de un mes es aceptable para el caso de uso
 actual (reporting estratégico de producción de pozos no convencionales en Argentina),
