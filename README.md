@@ -82,7 +82,8 @@ oil-production-forecasting-platform/
 │   ├── models/
 │   │   ├── bronze/                 # dbt sources de bronze.* (entrada del modelo)
 │   │   ├── silver/                 # Limpieza, tipado, dedup + cuarentena de rechazos
-│   │   └── gold/                   # Modelo estrella: fact_produccion_mensual + 4 dims
+│   │   ├── gold/                   # Modelo estrella: fact_produccion_mensual + 4 dims
+│   │   └── semantic/               # Vistas semánticas sobre Gold para BI (ADR-027)
 │   ├── macros/
 │   │   └── log_dq_results.sql      # Persiste los checks de calidad en dq.dq_results
 │   ├── scripts/
@@ -405,8 +406,8 @@ El sistema implementa una **arquitectura Medallion** de tres capas sobre Postgre
 dos fuentes del Ministerio de Energía de Argentina (datos.gob.ar).
 
 ```
-datos.gob.ar  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* + dq.*
-                  Data Engineer (A)        Analytics Engineer (B) — cron mensual en EC2
+datos.gob.ar  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* + dq.*  →  semantic.*
+                  Data Engineer (A)        Analytics Engineer (B) — cron mensual en EC2        BI / API
 ```
 
 | Capa | Esquema | Descripción | Inmutable |
@@ -414,6 +415,7 @@ datos.gob.ar  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  �
 | **Bronze** | `data/bronze/` (parquet) + `bronze.*` | Crudo de la fuente tal como llega: todo como texto, sin transformar. Particionado por `anio/mes` para producción. | Sí |
 | **Silver** | `silver.*` | Limpio y tipado. Filas con errores duros van a cuarentena (`dq.silver_produccion_rechazos`), no se descartan en silencio. | No (full refresh) |
 | **Gold** | `gold.*` | Modelo estrella listo para BI y la API. Grano `(pozo, mes)`. Surrogate keys `sk_*` en todas las dimensiones. | No (full refresh) |
+| **Semantic** | `semantic.*` | Vistas semánticas pre-unificadas sobre Gold. Exponen métricas y dimensiones en lenguaje de negocio sin surrogate keys; contrato estable para BI. Ver [ADR-027](docs/adr/0027-semantic-layer.md). | No (view on Gold) |
 | **Data Quality** | `dq.*` | Resultados de los 31 checks dbt por corrida (`dq_results`), cuarentena y `store_failures`. Un check `severity: error` bloquea la promoción a Gold. | Acumulativo |
 
 ### Modelo estrella (Gold)
@@ -482,7 +484,7 @@ Si el header está ausente o no coincide con el valor configurado, la API respon
 
 ### Metabase (plataforma de BI)
 
-Metabase lee del esquema `gold.*` del DW y está desplegado en la EC2 de producción.
+Metabase lee preferentemente del esquema `semantic.*` (vistas semánticas pre-unificadas sobre Gold) y del esquema `gold.*` para consultas avanzadas. Está desplegado en la EC2 de producción.
 
 | Ambiente | URL |
 |---|---|
@@ -497,7 +499,11 @@ top 8 pozos por producción histórica total, y KPIs de frescura y calidad del p
 
 **Cuidados al construir preguntas propias:** las medidas aditivas son `prod_pet`,
 `prod_gas`, `prod_agua`, `iny_*`; `tef` se promedia, no se suma. El eje temporal es
-`dim_fecha.periodo` (`AAAA-MM`). Los joins van por surrogate keys `sk_*`.
+`dim_fecha.periodo` (`AAAA-MM`). Para consultas sin conocimiento del modelo estrella,
+usar las vistas del esquema `semantic.*` (ej. `sem_produccion_mensual_por_yacimiento`,
+`sem_top_pozos`) que exponen métricas ya unificadas en lenguaje de negocio. Para
+consultas avanzadas que requieran joins cruzados, usar `gold.*` directamente con
+surrogate keys `sk_*`.
 
 ### DataHub (gobierno de datos)
 
@@ -511,11 +517,14 @@ export DATAHUB_GMS_HOST=<ip-ec2-gobierno>
 datahub ingest -c infra/datahub/dbt_recipe.yml
 ```
 
-La UI de gobierno queda en `http://<ip-ec2-gobierno>:9002` (usuario `datahub`).
+La UI de gobierno queda en `http://<ip-ec2-gobierno>:9002` (usuario `datahub` /
+contraseña `datahub`). La IP pública de la EC2 de gobierno cambia en cada
+stop/start; consultarla en AWS Console → EC2 → instancia `governance` →
+"Public IPv4 address". La IP privada (`172.31.23.108`) es estable y es la que
+usa `DATAHUB_GMS_HOST` en `infra/.env` para la ingesta automática del pipeline.
+
 El procedimiento completo de despliegue e ingesta está en el
 [runbook del administrador de gobierno](docs/runbooks/governance-admin.md).
-
-> **Estado:** en despliegue; ver [ADR-017](docs/adr/0017-plataforma-gobierno-datos.md).
 
 ---
 
@@ -615,3 +624,5 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [023](docs/adr/0023-ui-dagster-containerizada.md) | UI de Dagster containerizada | Complementa ADR-018: UI vía perfil de compose; `dagster dev` y por qué no toca el cron de prod |
 | [024](docs/adr/0024-motor-transformacion-y-dw.md) | Motor de transformación y del DW | Por qué dbt (vs SQLMesh/Dataform/Pandas/Spark) y PostgreSQL/RDS (vs DuckDB/MPP) |
 | [025](docs/adr/0025-testing-pipeline-datos.md) | Testing del pipeline de datos | Tests de extracción y DAGs con I/O mockeado (`materialize()`); contratos de idempotencia/particiones/fail-fast |
+| [026](docs/adr/0026-restart-policy-datahub-ec2.md) | Política de reinicio de DataHub en EC2 | `unless-stopped` en los 6 contenedores de larga duración; script idempotente de setup |
+| [027](docs/adr/0027-semantic-layer.md) | Capa semántica sobre Gold | Vistas SQL en esquema `semantic.*` vs. dbt MetricFlow vs. Cube.dev; abstracción del modelo estrella para BI |

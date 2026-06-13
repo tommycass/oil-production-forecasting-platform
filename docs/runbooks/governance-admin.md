@@ -173,14 +173,20 @@ pip install 'acryl-datahub[dbt,datahub-rest]'
 set -a; source infra/.env; set +a
 cd transform && dbt docs generate --profiles-dir . && cd ..
 
-export DATAHUB_GMS_HOST=<ip-ec2-governance>
+# DATAHUB_GMS_HOST debe ser la IP PRIVADA de la EC2 governance (ej: 172.31.23.108),
+# no la pública. La IP privada no cambia con stop/start de la instancia (solo si se
+# termina y recrea). La IP pública sí cambia en cada arranque; usarla aquí rompería
+# la ingesta automática del cron tras cada reinicio de la instancia.
+export DATAHUB_GMS_HOST=<ip-privada-ec2-governance>   # ver AWS Console → Private IPv4
 # Rutas reales si el Analytics Engineer usa DBT_TARGET_PATH (~/dbt-runtime/target/); si no, transform/target/:
-T=/home/ubuntu/dbt-runtime/target
-datahub ingest -c infra/datahub/dbt_recipe.yml \
-  --set source.config.manifest_path="$T/manifest.json" \
-  --set source.config.catalog_path="$T/catalog.json" \
-  --set source.config.run_results_paths[0]="$T/run_results.json"
+T=/home/ubuntu/oil-production-forecasting-platform/transform/target
+datahub ingest -c infra/datahub/dbt_recipe.yml
 ```
+
+> **Nota sobre `--set`:** el flag `--set` no existe en datahub-cli ≥ 1.6. Las rutas
+> del recipe se resuelven relativas al directorio de trabajo; correr el comando desde
+> la raíz del repo con las rutas por defecto del recipe (`transform/target/`) es suficiente.
+> Si los artefactos están en otra ruta, editá `infra/datahub/dbt_recipe.yml` directamente.
 
 **Camino B — bootstrap desde una máquina con el repo (muestra local).** Útil para la
 carga inicial / demo sin depender del cron de prod. El puerto 8080 del GMS está
@@ -191,8 +197,9 @@ abierto, así que la ingesta puede correr desde cualquier host:
 # 2. Sembrar Bronze de muestra y construir el modelo:
 python transform/scripts/seed_sample_bronze.py --rows 2000
 cd transform && dbt deps && dbt build --profiles-dir . && dbt docs generate --profiles-dir . && cd ..
-# 3. Ingestar al GMS remoto:
-export DATAHUB_GMS_HOST=<ip-ec2-governance>
+# 3. Ingestar al GMS remoto (usar IP privada si se corre desde dentro de la VPC;
+#    IP pública si se corre desde fuera, ej: laptop local):
+export DATAHUB_GMS_HOST=<ip-governance>
 datahub ingest -c infra/datahub/dbt_recipe.yml
 ```
 
@@ -211,7 +218,9 @@ Abrir en el navegador: `http://<ip-ec2-gobierno>:9002`
   acceder a la fact table del modelo estrella.
 - **Linaje (tabla):** en la ficha del dataset, hacer clic en la pestaña **Lineage**.
   El grafo muestra `silver_produccion → fact_produccion_mensual` y las dimensiones
-  conformadas (`dim_pozo`, `dim_operadora`, etc.).
+  conformadas (`dim_pozo`, `dim_operadora`, etc.). Las vistas del esquema `semantic.*`
+  (`sem_top_pozos`, `sem_produccion_mensual_por_yacimiento`, etc.) aparecen como
+  nodos **downstream** de la fact y las dims: el linaje cubre Bronze → Silver → Gold → Semantic.
 - **Calidad:** la pestaña **Assertions** lista los 31 tests dbt con su último estado
   (`pass`/`fail`) derivado de `run_results.json`.
 - **Última actualización:** la pestaña **Timeline** muestra cuándo ocurrió la última

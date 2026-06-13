@@ -14,11 +14,11 @@ Analytics Engineer](runbooks/analytics-engineer.md) (operación), ADR-014/015/01
 El flujo Medallion corre **end-to-end, automatizado y reproducible en staging y prod**:
 
 ```
-data.gob.ar (2 CSV)  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* (estrella) + dq.*
-        Data Engineer                             Analytics Engineer — orquestado en Dagster (cron mensual)
+data.gob.ar (2 CSV)  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* (estrella) + dq.*  →  semantic.*
+        Data Engineer                             Analytics Engineer — orquestado en Dagster (cron mensual)             BI / API
 ```
 
-- Orquestado con **Dagster** (grafo de assets Bronze→Postgres→Silver/Gold/DQ), disparado por
+- Orquestado con **Dagster** (grafo de assets Bronze→Postgres→Silver/Gold/DQ→Semantic), disparado por
   **cron mensual headless** en cada EC2 (ADR-018).
 - **Gold** (modelo estrella) ya está **poblado y consultable** en ambos entornos:
   **405.993 filas** en `gold.fact_produccion_mensual` (dataset real completo, producción no
@@ -62,20 +62,21 @@ el **SG de las EC2** (no por IP, por SG). Implicancias para vos:
 Prueba rápida de conexión (desde una EC2 del proyecto):
 ```bash
 PGPASSWORD=... psql -h oil-dw-prod.cnm68se8k08m.us-east-2.rds.amazonaws.com \
-  -U oil_admin -d oil_dw_prod -c '\dn'   # lista los esquemas: bronze, silver, gold, dq
+  -U oil_admin -d oil_dw_prod -c '\dn'   # lista los esquemas: bronze, silver, gold, semantic, dq
 ```
 
 ---
 
 ## 3. Dónde están los datos (esquemas y contratos)
 
-Cuatro esquemas por base, una por capa Medallion:
+Cinco esquemas por base (cuatro capas Medallion + capa semántica):
 
 | Esquema | Contenido | ¿Lo consume BI? |
 |---|---|---|
 | `bronze` | Crudo de la fuente como **texto** (`bronze.produccion`, `bronze.pozos`). Inmutable. | No — solo trazabilidad/debug |
 | `silver` | Limpio y tipado: `silver_produccion`, `silver_pozos`. | Raramente (drill-down) |
-| **`gold`** | **Modelo estrella** — lo que consume BI/API. | **Sí** |
+| **`gold`** | **Modelo estrella** — lo que consume BI/API (avanzado). | **Sí** |
+| **`semantic`** | **Vistas semánticas** sobre Gold pre-unificadas (ADR-027). Contrato recomendado para usuarios de BI sin conocimiento del modelo estrella. | **Sí (preferido para BI no técnico)** |
 | `dq` | Señales de calidad: `dq_results`, cuarentena, `store_failures`. | Sí (tableros de calidad / gobierno) |
 
 ### 3.1 Gold (estrella) — el contrato principal para BI
@@ -122,9 +123,13 @@ calidad a nivel tabla en DataHub.
 ## 4. Para BI (Metabase)
 
 1. Conectá Metabase a la base **`oil_dw_prod`** (staging para preview/QA).
-2. Modelá sobre el esquema **`gold`** (la estrella ya está lista; no hace falta SQL de limpieza).
-3. Cuidados de modelado: sumar solo medidas aditivas; `tef` se promedia; usá `dim_fecha.periodo`
-   (`AAAA-MM`) para ejes temporales; los joins van por `sk_*`.
+2. Para usuarios no técnicos: modelá sobre el esquema **`semantic`** — las cuatro vistas
+   (`sem_produccion_mensual_por_yacimiento`, `sem_top_pozos`, `sem_kpi_pipeline`,
+   `sem_produccion_anual_por_operadora`) ya aplican los joins y exponen nombres en lenguaje
+   de negocio sin surrogate keys. Ver [ADR-027](adr/0027-semantic-layer.md).
+3. Para análisis avanzados: modelá sobre **`gold`** (la estrella ya está lista). Cuidados: sumar
+   solo medidas aditivas; `tef` se promedia; usá `dim_fecha.periodo` (`AAAA-MM`) para ejes
+   temporales; los joins van por `sk_*`.
 4. (Opcional) un dashboard de calidad sobre `dq.dq_results` + `dq.silver_produccion_rechazos`.
 
 ---
@@ -197,7 +202,7 @@ Mismo esquema y mismos contratos en ambas. Apuntá producción a `oil_dw_prod`.
 
 1. **Regla de SG para BI/gobierno:** habilitar que el host de Metabase/DataHub llegue al RDS
    (agregar el SG de ese host al security group del RDS). Sin esto, las herramientas no conectan.
-2. **Metabase** apuntando a `oil_dw_prod`, modelando sobre `gold.*` (+ opcional dashboard de `dq.*`).
+2. **Metabase** apuntando a `oil_dw_prod`, modelando preferentemente sobre `semantic.*` para usuarios no técnicos y `gold.*` para consultas avanzadas (+ opcional dashboard de `dq.*`).
 3. **DataHub:** decidir host (instancia aparte por capacidad), configurar la ingesta dbt desde
    `transform/target/manifest.json` (+ `dbt docs generate` si querés lineage de columnas).
 4. **Retención de tablas `dq.*`** (`dq_results`, `store_failures`, cuarentena): definir rotación
