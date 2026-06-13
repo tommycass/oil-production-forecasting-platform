@@ -37,9 +37,11 @@ calidad del pipeline. Se ejecuta cuando:
   - Puertos TCP 8080 (GMS) y 9002 (frontend DataHub) abiertos en el SG de la EC2 de
     gobierno hacia tu IP.
 - **Prerrequisitos de la EC2 de gobierno:**
-  - Ubuntu 22.04, Docker y Docker Compose instalados.
-  - RAM ≥ 4 GB (DataHub levanta ~8 contenedores: GMS, frontend, Kafka, ZooKeeper,
-    Elasticsearch, MySQL, schema-registry, datahub-upgrade).
+  - Ubuntu 24.04, Docker y Docker Compose instalados.
+  - RAM ≥ 8 GB recomendado (DataHub v1.5+ levanta 6 contenedores de larga duración:
+    GMS, frontend, MySQL, OpenSearch, Kafka con KRaft integrado y datahub-actions;
+    más el contenedor `datahub-system-update` que corre las migraciones al arrancar y
+    luego sale con `Exited 0`).
   - Puerto 8080 (GMS) y 9002 (frontend) publicados en el SG de entrada.
 - **Prerrequisitos de la EC2 del pipeline (`api`):**
   - `datahub` CLI instalado: `pip install 'acryl-datahub[dbt,datahub-rest]'`
@@ -51,6 +53,18 @@ calidad del pipeline. Se ejecuta cuando:
 ## 3. Pasos
 
 ### 3.1 Desplegar DataHub en la EC2 de gobierno (una vez)
+
+> **Atajo:** el script `infra/governance/setup-datahub.sh` automatiza todos los
+> pasos de §3.1 y §3.1.1 en un solo comando. Si preferís hacerlo manual, sigue
+> las instrucciones a continuación.
+>
+> ```bash
+> # Clonar el repo en la EC2 de gobierno y ejecutar el script:
+> git clone <repo-url> oil-production-forecasting-platform
+> cd oil-production-forecasting-platform
+> chmod +x infra/governance/setup-datahub.sh
+> ./infra/governance/setup-datahub.sh
+> ```
 
 Conectarse a la EC2 de gobierno vía Session Manager:
 
@@ -82,6 +96,45 @@ Para verificar que el stack está sano:
 ```bash
 datahub docker check
 ```
+
+### 3.1.1 Configurar reinicio automático (paso obligatorio post-deploy)
+
+`datahub docker quickstart` levanta los contenedores con la política de reinicio por
+defecto de Docker (`no`), lo que significa que **al apagar y volver a prender la
+instancia EC2, los contenedores quedan en estado `Exited` y DataHub no vuelve solo**.
+
+Después del primer `quickstart`, configurar `unless-stopped` en los 6 servicios de
+larga duración y habilitar Docker en el boot del sistema:
+
+```bash
+# Política durable en los 6 servicios de larga duración.
+# unless-stopped: se reanudan al prender la instancia, pero respetan un `docker stop`
+# manual (útil para mantenimiento). No incluir datahub-system-update: es un job de
+# migraciones (Exited 0) que no debe reiniciarse.
+docker update --restart unless-stopped \
+  datahub-mysql-1 \
+  datahub-opensearch-1 \
+  datahub-kafka-broker-1 \
+  datahub-datahub-gms-quickstart-1 \
+  datahub-frontend-quickstart-1 \
+  datahub-datahub-actions-quickstart-1
+
+# Asegurar que el daemon de Docker arranque con el SO.
+sudo systemctl enable docker
+```
+
+Verificar que la política quedó aplicada:
+
+```bash
+docker inspect -f '{{.Name}}: {{.HostConfig.RestartPolicy.Name}}' \
+  $(docker ps -aq --filter name=datahub)
+```
+
+> **Regla operativa:** para apagar la instancia, hacerlo siempre desde la **consola/CLI
+> de AWS** (stop de EC2). Los contenedores estaban corriendo → al prenderla se reanudan
+> solos. **NO** correr `datahub docker quickstart --stop` ni `docker stop` antes de
+> apagar: eso marca los contenedores como "parados intencionalmente" y `unless-stopped`
+> —por diseño— no los vuelve a levantar automáticamente.
 
 ### 3.2 Ejecutar la ingesta dbt→DataHub
 
@@ -121,7 +174,7 @@ set -a; source infra/.env; set +a
 cd transform && dbt docs generate --profiles-dir . && cd ..
 
 export DATAHUB_GMS_HOST=<ip-ec2-governance>
-# Rutas reales si B usa DBT_TARGET_PATH (~/dbt-runtime/target/); si no, transform/target/:
+# Rutas reales si el Analytics Engineer usa DBT_TARGET_PATH (~/dbt-runtime/target/); si no, transform/target/:
 T=/home/ubuntu/dbt-runtime/target
 datahub ingest -c infra/datahub/dbt_recipe.yml \
   --set source.config.manifest_path="$T/manifest.json" \
@@ -184,13 +237,13 @@ La ingesta y el catálogo están correctos cuando:
 
 | Síntoma | Causa probable | Acción |
 |---|---|---|
-| `datahub docker check` muestra contenedores `unhealthy` | RAM insuficiente o Elasticsearch tardó en arrancar | Esperar 2 min más; si persiste: `datahub docker quickstart --stop && datahub docker quickstart` |
+| Contenedores en `Exited` al prender la EC2 | Política de restart `no` (no se configuró §3.1.1) | Correr el `docker update --restart unless-stopped` del §3.1.1 y arrancarlos con `docker start $(docker ps -aq --filter name=datahub)` |
+| `datahub docker check` muestra contenedores `unhealthy` | OpenSearch o Kafka tardaron en arrancar post-boot | Esperar 3–4 min; GMS puede reiniciarse una vez hasta que sus dependencias queden `healthy`. Si persiste: `datahub docker quickstart --stop && datahub docker quickstart` |
 | `Connection refused` al GMS durante la ingesta | El SG de la EC2 de gobierno no tiene el puerto 8080 abierto | Agregar regla de entrada TCP 8080 desde la IP de la EC2 del pipeline (o `0.0.0.0/0` temporalmente para el demo) |
-| `FileNotFoundError: manifest.json not found` | dbt no corrió o la ruta es distinta | Verificar que B ejecutó `dbt build` y confirmar la ruta real del artefacto en la EC2 del pipeline |
+| `FileNotFoundError: manifest.json not found` | dbt no corrió o la ruta es distinta | Verificar que el Analytics Engineer ejecutó `dbt build` y confirmar la ruta real del artefacto en la EC2 del pipeline |
 | `Failed to find a registered source for type dbt` | Falta el extra `[dbt]` del CLI | `pip install 'acryl-datahub[dbt,datahub-rest]'` y reintentar |
 | Ingesta con errores en la fuente dbt | Versión de datahub CLI incompatible con el schema del manifest | `pip install --upgrade 'acryl-datahub[dbt,datahub-rest]'` y reintentar |
 | UI muestra datos de una corrida anterior | El paso de ingesta de `run_pipeline.sh` no corrió (o `DATAHUB_GMS_HOST` no está seteado) | Confirmar que `DATAHUB_GMS_HOST` está en `infra/.env` y el CLI instalado; si no, ejecutar el paso 3.2 manualmente |
-| DataHub requiere más de 4 GB y la instancia se queda sin RAM | El quickstart levanta ~8 contenedores pesados | Detener contenedores no usados en esa EC2, ampliar swap, o migrar a instancia `t3.large` |
 
 ---
 
@@ -235,7 +288,13 @@ puerto 9002 a la red interna. El GMS (8080) nunca debe exponerse públicamente e
 
 ### Disponibilidad
 
-DataHub depende de ~8 contenedores. Si la EC2 de gobierno se reinicia, el quickstart
-registra los contenedores con política `restart: always`, por lo que reanudan
-automáticamente. Si Elasticsearch tarda en arrancar (frecuente al reiniciar), el GMS
-puede responder lento durante 1–2 minutos — esperar antes de concluir que está caído.
+DataHub (v1.5+) levanta 6 servicios de larga duración: GMS, frontend, MySQL, OpenSearch,
+Kafka (modo KRaft, sin ZooKeeper) y datahub-actions. El contenedor `datahub-system-update`
+corre migraciones al arrancar y sale con `Exited 0`; es normal y no indica error.
+
+Por defecto, `datahub docker quickstart` deja los contenedores con política `restart: no`.
+Para que sobrevivan a un stop/start de la instancia **es obligatorio** correr el
+`docker update` del §3.1.1 inmediatamente después del primer deploy. Una vez configurado
+`unless-stopped`, al prender la EC2 los contenedores se reanudan solos; durante 2–4 minutos
+pueden verse reinicios transitorios del GMS mientras OpenSearch y Kafka terminan de levantar
+— es esperado y se estabiliza solo.

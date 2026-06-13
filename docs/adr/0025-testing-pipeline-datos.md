@@ -46,8 +46,9 @@ Restricciones de los tests:
 ## Decisión
 
 Adoptamos **pytest con unit tests + tests de integración de assets con I/O mockeado**
-(alternativa 4), en `data_pipeline/tests/`, como **gate del job `test` de CI** (mismo job
-que corre los tests de la API, ADR-009). El patrón concreto:
+(alternativa 4), en `data_pipeline/tests/`, como **gate del job `test-pipeline` de CI**
+(job separado de `test` que corre los tests de la API; ambos son `needs` de `build`,
+de modo que `build` solo ocurre si los dos pasan). El patrón concreto:
 
 - **Red mockeada:** se reemplaza `requests.get` (monkeypatch) por un **CSV fijo en memoria
   con BOM** que trae el schema completo de la fuente. Cero descargas reales.
@@ -92,7 +93,7 @@ particiones, retry, fail-fast, fidelidad del crudo), **no**:
 - CI valida los contratos de reprocesamiento **sin red ni DB**, rápido y determinístico,
   desacoplado de la disponibilidad de datos.gob.ar.
 - Simétrico con ADR-009: la API y el pipeline tienen, cada uno, su estrategia documentada y
-  su gate en el mismo job de CI.
+  su propio job de CI (`test` y `test-pipeline`); ambos gatean `build`.
 - Patrón replicable: agregar un asset o una regla nueva tiene costo marginal bajo de cubrir.
 
 **Negativas:**
