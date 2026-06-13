@@ -43,7 +43,3 @@ def get_well(id_well: str) -> dict:
     return {"id": id_well, "base_production": _DEFAULT_BASE_PRODUCTION, "active_from": date(2006, 1, 1)}
 
 
-def well_exists(id_well: str) -> bool:
-    """True si id_well está en la lista de mocks. Usado solo en tests; el route
-    usa well_exists_in_dw (services/wells.py) para validar contra el DW real."""
-    return any(w["id"] == id_well for w in WELLS)

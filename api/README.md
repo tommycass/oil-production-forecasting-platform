@@ -51,8 +51,9 @@ api/
 | `app/schemas/` | Schemas Pydantic para validación de datos de entrada y estructura de respuestas. |
 | `app/core/security.py` | `APIKeyMiddleware` que valida el header `X-API-Key` para todas las rutas bajo `/api/`. Devuelve 403 si la clave es inválida o faltante. |
 | `app/core/rate_limit.py` | Define el `Limiter` de slowapi y lee el límite desde la variable de entorno `RATE_LIMIT` (por defecto `60/minute`). |
-| `app/core/demo_data.py` | Catálogo mock con 20 pozos (`POZO-001` a `POZO-020`) más los helpers `get_well` y `well_exists`. |
-| `app/services/` | Lógica de negocio separada de los endpoints. Actualmente devuelve datos mock; en fases futuras se reemplazará por el modelo predictivo real. |
+| `app/core/demo_data.py` | Catálogo de 20 pozos de prueba (`POZO-001` a `POZO-020`) y el helper `get_well`. Usado por el servicio de forecast para generar pronósticos sintéticos con base configurable por pozo. |
+| `app/services/wells.py` | Consulta el DW real (`gold.dim_pozo`, `gold.fact_produccion_mensual`) para `/wells` y valida la existencia de un pozo para `/forecast` (`well_exists_in_dw`). |
+| `app/services/forecast.py` | Genera pronósticos de producción sintéticos (declinación lineal) a partir de los datos del pozo. |
 
 ## Requisitos Previos
 
@@ -151,7 +152,7 @@ La API expone métricas en formato Prometheus en `GET /metrics` mediante `promet
 **GET /api/v1/forecast**
 | Parámetro | Tipo | Requerido | Descripción |
 |-----------|------|-----------|-------------|
-| `id_well` | string | Sí | Identificador del pozo (debe existir en el catálogo, ej: `POZO-001`). |
+| `id_well` | string | Sí | Identificador del pozo. Debe existir en el DW (`gold.dim_pozo`); usar los IDs devueltos por `/api/v1/wells` (valores numéricos, ej: `507`). |
 | `date_start` | fecha (YYYY-MM-DD) | Sí | Fecha de inicio del pronóstico. |
 | `date_end` | fecha (YYYY-MM-DD) | Sí | Fecha de fin del pronóstico. Debe ser mayor o igual a `date_start`. |
 
