@@ -406,8 +406,8 @@ El sistema implementa una **arquitectura Medallion** de tres capas sobre Postgre
 dos fuentes del Ministerio de Energía de Argentina (datos.gob.ar).
 
 ```
-datos.gob.ar  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* + dq.*
-                  Data Engineer (A)        Analytics Engineer (B) — cron mensual en EC2
+datos.gob.ar  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  →  gold.* + dq.*  →  semantic.*
+                  Data Engineer (A)        Analytics Engineer (B) — cron mensual en EC2        BI / API
 ```
 
 | Capa | Esquema | Descripción | Inmutable |
