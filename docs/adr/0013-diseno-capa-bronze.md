@@ -99,8 +99,8 @@ conservar.
 - Bronze fiel al crudo (todo texto, sin transformar) y a la vez eficiente de leer
   y almacenar (parquet comprimido con esquema).
 - El particionado de producción por `anio/mes`, derivado del landing, habilita el
-  backfill de un mes puntual (reescribe solo esa partición, sin re-descargar) y
-  lecturas selectivas por período desde Silver.
+  backfill manual de un mes puntual (reescribe solo esa partición, sin re-descargar)
+  y organiza/observa el Bronze por mes en disco y en el grafo de Dagster (ver ADR-021).
 - El descarte de BOM evita el bug que ensuciaba el nombre de la primera columna,
   validado con tests.
 - La separación crudo/limpieza deja claro el contrato con Silver: Bronze entrega
