@@ -1,0 +1,116 @@
+version: 2
+
+models:
+  - name: sem_produccion_mensual_por_yacimiento
+    description: >
+      Vista semántica de producción mensual agregada por yacimiento, cuenca y provincia.
+      Diseñada para consumo directo desde Metabase u otras herramientas de BI sin
+      necesidad de conocer el modelo estrella subyacente ni aplicar joins manuales.
+      Excluye el miembro desconocido ('DESCONOCIDO') en yacimiento y período.
+    columns:
+      - name: yacimiento
+        description: Nombre del yacimiento (de dim_yacimiento).
+      - name: cuenca
+        description: Cuenca a la que pertenece el yacimiento.
+      - name: provincia
+        description: Provincia donde se ubica el yacimiento.
+      - name: periodo
+        description: Período en formato 'AAAA-MM' (eje temporal recomendado para BI).
+      - name: anio
+        description: Año del período.
+      - name: mes
+        description: Mes del período (1-12).
+      - name: trimestre
+        description: Trimestre del período (1-4).
+      - name: prod_pet_total_m3
+        description: Producción de petróleo acumulada en el período, en m³. Aditiva (SUM).
+      - name: prod_gas_total_mm3
+        description: Producción de gas acumulada en el período, en Mm³. Aditiva (SUM).
+      - name: prod_agua_total_m3
+        description: Producción de agua acumulada en el período, en m³. Aditiva (SUM).
+      - name: pozos_activos
+        description: Cantidad de pozos distintos con producción registrada en el período.
+
+  - name: sem_top_pozos
+    description: >
+      Vista semántica con el ranking histórico de pozos por producción acumulada
+      de petróleo y gas. Incluye atributos descriptivos (operadora, yacimiento, cuenca,
+      provincia, tipo de recurso, clasificación y formación) para facilitar exploración
+      en BI sin necesidad de joins contra el modelo estrella. Excluye el miembro
+      desconocido (idpozo = -1).
+    columns:
+      - name: idpozo
+        description: Identificador numérico de pozo del sistema fuente.
+      - name: sigla
+        description: Sigla o nombre corto del pozo.
+      - name: tipo_de_recurso
+        description: Tipo de recurso explotado (e.g. Tight, Shale).
+      - name: clasificacion
+        description: Clasificación técnica del pozo.
+      - name: formacion
+        description: Formación geológica del pozo.
+      - name: operadora
+        description: Empresa operadora del pozo.
+      - name: yacimiento
+        description: Yacimiento donde opera el pozo.
+      - name: cuenca
+        description: Cuenca del yacimiento.
+      - name: provincia
+        description: Provincia del yacimiento.
+      - name: prod_pet_total_m3
+        description: Producción acumulada histórica de petróleo, en m³. Aditiva (SUM).
+      - name: prod_gas_total_mm3
+        description: Producción acumulada histórica de gas, en Mm³. Aditiva (SUM).
+      - name: prod_agua_total_m3
+        description: Producción acumulada histórica de agua, en m³. Aditiva (SUM).
+      - name: meses_con_produccion
+        description: Cantidad de meses distintos con al menos una medición registrada.
+      - name: primer_periodo
+        description: Primer período con producción registrada (formato 'AAAA-MM').
+      - name: ultimo_periodo
+        description: Último período con producción registrada (formato 'AAAA-MM').
+      - name: ranking_pet
+        description: Posición del pozo en el ranking por producción acumulada de petróleo (1 = mayor).
+      - name: ranking_gas
+        description: Posición del pozo en el ranking por producción acumulada de gas (1 = mayor).
+
+  - name: sem_kpi_pipeline
+    description: >
+      Vista semántica de una sola fila que expone los KPIs operativos del pipeline de
+      datos. Diseñada para ser consumida directamente por la tarjeta "Última Corrida
+      Pipeline" del dashboard de Metabase. estado_fresqueza = 'OK' si la última ingesta
+      ocurrió hace 35 días o menos (ciclo mensual con buffer de 5 días); 'ATRASADO' en
+      caso contrario, lo que indica que el pipeline no corrió en el ciclo esperado.
+    columns:
+      - name: ultima_ingesta
+        description: Fecha de la ingesta más reciente registrada en silver_produccion.
+      - name: hoy
+        description: Fecha actual al momento de ejecutar la consulta (current_date).
+      - name: dias_sin_actualizar
+        description: Días transcurridos desde la última ingesta hasta hoy.
+      - name: estado_fresqueza
+        description: "'OK' si dias_sin_actualizar <= 35; 'ATRASADO' si supera ese umbral."
+      - name: ultimo_periodo_disponible
+        description: Período más reciente con datos en Gold (formato 'AAAA-MM').
+      - name: total_pozos_activos
+        description: Cantidad de pozos distintos con producción en Gold (excluye miembro desconocido).
+
+  - name: sem_produccion_anual_por_operadora
+    description: >
+      Vista semántica de producción anual agregada por operadora. Permite comparar el
+      desempeño de cada empresa a nivel año sin exponer surrogate keys ni requerir
+      joins contra el modelo estrella. Excluye operadoras desconocidas ('DESCONOCIDA')
+      y filas sin año asignado.
+    columns:
+      - name: operadora
+        description: Nombre de la empresa operadora.
+      - name: anio
+        description: Año de la producción.
+      - name: prod_pet_anual_m3
+        description: Producción anual de petróleo, en m³. Aditiva (SUM).
+      - name: prod_gas_anual_mm3
+        description: Producción anual de gas, en Mm³. Aditiva (SUM).
+      - name: prod_agua_anual_m3
+        description: Producción anual de agua, en m³. Aditiva (SUM).
+      - name: pozos_activos
+        description: Cantidad de pozos distintos con producción registrada en el año.
