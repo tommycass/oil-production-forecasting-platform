@@ -8,7 +8,7 @@
 
 ## Contexto
 
-El esquema `gold.*` está diseñado para ser correcto y eficiente como modelo dimensional: una fact table con surrogate keys enteras y cuatro dimensiones conformadas. Esa estructura es óptima para una herramienta de BI con soporte de join drag-and-drop, pero tiene dos fricciones para casos de uso comunes:
+El esquema `gold.*` está diseñado para ser correcto y eficiente como modelo dimensional: una fact table con surrogate keys de texto (hash MD5) y cuatro dimensiones conformadas. Esa estructura es óptima para una herramienta de BI con soporte de join drag-and-drop, pero tiene dos fricciones para casos de uso comunes:
 
 1. **Usuarios de negocio en Metabase**: cuando construyen una pregunta ad-hoc, deben unir `fact_produccion_mensual` con las cuatro dimensiones usando las columnas `sk_*`. Para un analista que no conoce el modelo dimensional, eso es una barrera. Además, si quieren ver "producción por yacimiento por mes", tienen que recordar cuáles columnas sumar (`prod_pet`) y cuáles promediar (`tef`), lo que genera errores frecuentes.
 
