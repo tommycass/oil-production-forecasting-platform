@@ -36,6 +36,24 @@ mkdir -p "$DAGSTER_HOME"
 
 echo "[run_pipeline] $(date -Is) DB=$POSTGRES_DB full-reload"
 
+# 0) Preflight: garantizar el manifest de dbt que consumen los assets Silver/Gold/DQ.
+#    dagster-dbt registra un asset por modelo leyendo transform/target/manifest.json AL
+#    IMPORTAR las definiciones; si ese archivo falta, el bloque @dbt_assets no se registra
+#    (ver assets.py) y `dw_publish` cargaría SOLO Bronze, salteando Silver/Gold/DQ EN
+#    SILENCIO. Lo regeneramos en cada corrida (idempotente y barato) para no depender de un
+#    `dbt parse` de setup previo y para capturar cambios de modelos tras un git pull. El
+#    DbtProject de dagster lee siempre <project_dir>/target/manifest.json (NO respeta
+#    DBT_TARGET_PATH), por eso forzamos --target-path a esa ruta.
+DBT_DIR="$REPO/transform"
+DBT_MANIFEST="$DBT_DIR/target/manifest.json"
+echo "[run_pipeline] preflight: asegurando el manifest de dbt → $DBT_MANIFEST"
+[ -d "$DBT_DIR/dbt_packages" ] || ( cd "$DBT_DIR" && dbt deps )
+( cd "$DBT_DIR" && dbt parse --profiles-dir . --target-path "$DBT_DIR/target" )
+if [ ! -f "$DBT_MANIFEST" ]; then
+  echo "[run_pipeline] ERROR: no se generó $DBT_MANIFEST; Silver/Gold/DQ no se ejecutarían. Abortando corrida." >&2
+  exit 1
+fi
+
 # 1) Landing (descarga el CSV completo una vez, con retry) + catálogo de pozos.
 dagster asset materialize -m "$MOD" --select produccion_raw
 dagster asset materialize -m "$MOD" --select bronze_pozos
