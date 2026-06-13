@@ -146,9 +146,9 @@ para el lineage tabla-a-tabla y columna-a-columna en DataHub.
   descripciones, agregá un `dbt docs generate` (produce `catalog.json`) — hoy el cron corre
   `dbt build` (genera manifest + run_results, no catalog); si querés catalog, se agrega un paso
   o lo corrés on-demand.
-- **Alternativa:** el grafo de assets de Dagster (vía `datahub-dagster-plugin`), pero como en las
-  EC2 Dagster corre **headless por cron** (sin daemon/UI), la ruta por el manifest de dbt es la
-  más directa. Si más adelante se levanta el daemon de Dagster, esa opción queda disponible.
+- **Alternativa:** el grafo de assets de Dagster (vía `datahub-dagster-plugin`). La UI de Dagster
+  está activa en `api-dev` en el puerto 3070 (servicio systemd, ver [ADR-023](adr/0023-ui-dagster-containerizada.md));
+  si se instala el plugin de DataHub para Dagster, el lineage puede ingestarse también desde ahí.
 - El gate de calidad (tests dbt) son **nodos del manifest**, así que las señales de calidad
   también viajan a DataHub.
 
