@@ -90,3 +90,25 @@ usa el cron del SO (ADR-018), así que esa complejidad no aporta hoy.
 - `dbt parse` + `dagster definitions validate -m data_pipeline.orchestration.definitions`
   dentro de la imagen: *"All code locations passed validation"* (carga el grafo completo,
   Bronze + modelos dbt).
+
+## Actualización (jun-2026) — implementación en `api-dev` via systemd
+
+En `api` (producción), el venv de Dagster (`~/dagster-venv`) ya estaba instalado para
+el cron headless (ADR-018) y la imagen Docker nunca fue construida. En lugar de buildear
+la imagen, la UI se expone mediante un **servicio systemd** (`/etc/systemd/system/dagster-ui.service`)
+que invoca `dagster dev` directamente sobre el venv existente:
+
+```
+ExecStart=/home/ubuntu/dagster-venv/bin/dagster dev \
+  -m data_pipeline.orchestration.definitions --host 0.0.0.0 --port 3070
+```
+
+Variables clave del servicio: `EnvironmentFile=infra/.env`, `DAGSTER_HOME=/home/ubuntu/dagster-runtime`,
+`PATH` extendido con el bin del venv (necesario para que `DbtCliResource` resuelva el
+ejecutable `dbt`). El servicio está habilitado con `systemctl enable`, por lo que
+**reinicia automáticamente en cada boot de EC2** — equivalente operativo del
+`restart: unless-stopped` del compose.
+
+La decisión de usar Docker Compose sigue siendo la referencia para nuevos entornos o
+desarrollo local (donde el venv no está preinstalado). El procedimiento operativo
+completo está en el [runbook del Analytics Engineer §3.2](../runbooks/analytics-engineer.md).

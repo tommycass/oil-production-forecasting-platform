@@ -371,6 +371,12 @@ La UI queda en **http://localhost:3070** (3000 lo usa Grafana). El servicio no a
 con un `up` por defecto ni entra en el build de CI; se levanta donde haya capacidad
 (ver [ADR-023](docs/adr/0023-ui-dagster-containerizada.md)).
 
+**Opción C — producción (`api`, acceso permanente):** en la instancia de producción la
+UI corre como **servicio systemd** (`dagster-ui.service`, habilitado en boot) sobre el
+venv existente. Es accesible en `http://<IP-pública-api>:3070` — la IP se consulta en
+AWS Console → EC2 → instancia `api` → "Public IPv4 address". Ver procedimiento de setup
+en el [runbook del Analytics Engineer §3.2](docs/runbooks/analytics-engineer.md).
+
 ### Actualizar / agregar workflows
 
 La lógica de extracción vive en `data_pipeline/extraction/` y los assets en
