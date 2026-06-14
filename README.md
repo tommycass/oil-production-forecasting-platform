@@ -12,10 +12,10 @@ El sistema integra datos reales de producción de hidrocarburos (datos.gob.ar) e
 
 | Ambiente | IP |
 |---|---|
-| Producción | 18.117.126.59 |
+| Producción | 18.116.35.133 |
 | Staging | _No Disponible_ |
 
-**Documentación interactiva (Swagger UI):** http://18.117.126.59:8000/docs
+**Documentación interactiva (Swagger UI):** http://18.116.35.133:8000/docs
 
 > Todas las rutas bajo `/api/v1/` requieren autenticación por API key (ver sección [Autenticación](#autenticación)). Se debe completar la ruta con IP:PORT/RUTA (ver sección Servicios expuestos en el host)
 
@@ -373,8 +373,7 @@ con un `up` por defecto ni entra en el build de CI; se levanta donde haya capaci
 
 **Opción C — producción (`api`, acceso permanente):** en la instancia de producción la
 UI corre como **servicio systemd** (`dagster-ui.service`, habilitado en boot) sobre el
-venv existente. Es accesible en `http://<IP-pública-api>:3070` — la IP se consulta en
-AWS Console → EC2 → instancia `api` → "Public IPv4 address". Ver procedimiento de setup
+venv existente. Es accesible en http://18.116.35.133:3070 (sin credenciales). Ver procedimiento de setup
 en el [runbook del Analytics Engineer §3.2](docs/runbooks/analytics-engineer.md).
 
 ### Actualizar / agregar workflows
@@ -494,10 +493,13 @@ Metabase lee preferentemente del esquema `semantic.*` (vistas semánticas pre-un
 
 | Ambiente | URL |
 |---|---|
-| Producción | http://18.117.126.59:3001 |
+| Producción | http://18.116.35.133:3001 |
 
-Solicitar credenciales de Viewer al administrador del sistema. El procedimiento de
-exploración de dashboards está en el [runbook de usuario de BI](docs/runbooks/bi-user.md).
+| Usuario | Contraseña |
+|---|---|
+| tommycass55@gmail.com | MicValTom2026 |
+
+El procedimiento de exploración de dashboards está en el [runbook de usuario de BI](docs/runbooks/bi-user.md).
 
 **Dashboards disponibles:** Producción No Convencional — producción mensual por
 yacimiento (top 5 + otros desde 2015), tendencia de petróleo y gas (gráfico combo),
@@ -519,11 +521,11 @@ columna. Corre en una **EC2 dedicada** (requiere ≥ 4 GB RAM). La ingesta es un
 one-shot que se ejecuta desde la EC2 del pipeline tras cada `dbt build`:
 
 ```bash
-export DATAHUB_GMS_HOST=<ip-ec2-gobierno>
+export DATAHUB_GMS_HOST=3.21.241.164
 datahub ingest -c infra/datahub/dbt_recipe.yml
 ```
 
-La UI de gobierno queda en `http://<ip-ec2-gobierno>:9002` (usuario `datahub` /
+La UI de gobierno queda en http://3.21.241.164:9002 (usuario `datahub` /
 contraseña `datahub`). La IP pública de la EC2 de gobierno cambia en cada
 stop/start; consultarla en AWS Console → EC2 → instancia `governance` →
 "Public IPv4 address". La IP privada (`172.31.23.108`) es estable y es la que
