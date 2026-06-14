@@ -6,7 +6,7 @@
 
 La adenda exige que el Data Warehouse use **modelo estrella** y que documentemos grano de la fact, dimensiones, surrogate keys y decisión de SCD. Este ADR justifica la elección del estilo de modelado dimensional y la estrategia de SCD; el detalle campo por campo vive en `docs/data-model.md`.
 
-El consumo de la capa Gold es analítico y de BI: Persona C arma dashboards en Metabase (producción mensual por yacimiento, top pozos, frescura) y DataHub navega el linaje a nivel tabla. Los datos llegan desde Silver con grano fila-por-registro: producción a grano `idpozo + anio + mes` y un catálogo de pozos a grano `idpozo`. El volumen es moderado (producción no convencional, decenas de millones de filas históricas; catálogo ~84k pozos).
+El consumo de la capa Gold es analítico y de BI: **BI (Metabase)** arma dashboards (producción mensual por yacimiento, top pozos, frescura) y **gobierno (DataHub)** navega el linaje a nivel tabla. Los datos llegan desde Silver con grano fila-por-registro: producción a grano `idpozo + anio + mes` y un catálogo de pozos a grano `idpozo`. El volumen es moderado (producción no convencional, **~406 mil filas históricas** verificadas contra el dataset real completo, ver ADR-019; catálogo ~84k pozos).
 
 Las fuentes vienen **denormalizadas**: la tabla de producción ya trae `empresa`, `sigla`, `areayacimiento`, `cuenca`, `provincia` y `tipo_de_recurso` en cada fila. Eso nos da libertad para elegir el estilo de modelado en Gold sin estar atados a la forma del origen.
 
@@ -34,7 +34,7 @@ Modelamos Gold como **esquema estrella** con una fact y cuatro dimensiones confo
 - **`dim_yacimiento`** — un registro por área/yacimiento: yacimiento, cuenca, provincia.
 - **`dim_fecha`** — un registro por mes calendario: `anio`, `mes`, trimestre, etiqueta.
 
-Todas las dimensiones usan **surrogate keys** enteras (`sk_*`) generadas en Gold (hash/secuencia sobre la clave de negocio), no las claves naturales de la fuente. Esto desacopla la fact de cambios en los identificadores de origen, habilita SCD y acelera los joins.
+Todas las dimensiones usan **surrogate keys de texto** (`sk_*`), generadas en Gold como **hash MD5** de la clave de negocio (`dbt_utils.generate_surrogate_key`), no las claves naturales de la fuente. Esto desacopla la fact de cambios en los identificadores de origen, habilita SCD y simplifica los joins a una sola columna.
 
 ### Decisión de SCD: Type 1 en `dim_pozo` y `dim_operadora`
 

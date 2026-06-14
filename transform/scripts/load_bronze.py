@@ -6,7 +6,7 @@ cargan como TEXTO para preservar la fidelidad del crudo; el tipado y la limpieza
 ocurren en Silver (modelos dbt).
 
 Es el handoff Bronze → DW. En producción puede invocarlo el orquestador (Dagster,
-Persona A) tras materializar Bronze. Idempotente: reemplaza la tabla destino.
+Data Engineer) tras materializar Bronze. Idempotente: reemplaza la tabla destino.
 
 Uso:
     python scripts/load_bronze.py                      # carga produccion y pozos

@@ -7,7 +7,7 @@
 La adenda exige una **plataforma de BI en la que usuarios no técnicos puedan
 revisar los datos**. La consigna concreta tres tableros mínimos: producción
 mensual por yacimiento, top pozos por producción y frescura de datos (última
-ingesta). El handoff de B deja el contrato listo del lado del dato:
+ingesta). El handoff del Analytics Engineer deja el contrato listo del lado del dato:
 
 - El consumo va contra el esquema **`gold.*`** (modelo estrella ya poblado:
   `fact_produccion_mensual` + dims con surrogate keys), más `dq.*` para un tablero
@@ -58,7 +58,7 @@ preview/QA), modelando sobre el esquema **`gold.*`**.
 3. **Frescura de datos** — última ingesta vía `max(fecha)` / `dq.dq_results` (señal de freshness).
 4. *(opcional)* **Tablero de calidad** sobre `dq.dq_results` + `dq.silver_produccion_rechazos`.
 
-### Cuidados de modelado (del contrato de B)
+### Cuidados de modelado (del contrato del Analytics Engineer)
 
 - Sumar **solo medidas aditivas** (`prod_pet`, `prod_gas`, `prod_agua`, `iny_*`);
   **`tef` se promedia, no se suma**.
@@ -85,8 +85,10 @@ se inyecta por variable de entorno desde `infra/.env`.
 
 ## Decisiones Técnicas Posteriores
 
-- **Persistencia de Metabase:** su DB interna de metadata (volumen propio; H2 para
-  demo vs Postgres para algo más durable).
+- **Persistencia de Metabase (resuelto):** la metadata interna de Metabase vive en una
+  base Postgres dedicada (`metabase_app`), **no en H2**, para que los tableros y cuentas
+  sobrevivan reinicios del contenedor. Configurado en `infra/docker-compose.yml` (perfil
+  `bi`, variables `MB_DB_*`).
 - **Provisioning como código:** definir cómo se versionan los tableros (export/serialization vía API).
 - **Cuentas/roles** para usuarios no técnicos (lectura) vs admin.
 - **Apuntar a prod vs staging** según entorno; regla de SG coordinada con A.

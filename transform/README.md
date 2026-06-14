@@ -1,8 +1,8 @@
-# transform — capas Silver y Gold (dbt)
+# transform — capas Silver, Gold y Semantic (dbt)
 
-Proyecto **dbt** que transforma la capa Bronze en las capas **Silver** (limpieza) y
-**Gold** (modelo estrella) del Data Warehouse PostgreSQL, y corre el framework de
-**Data Quality**. Zona del Analytics Engineer.
+Proyecto **dbt** que transforma la capa Bronze en las capas **Silver** (limpieza),
+**Gold** (modelo estrella) y **Semantic** (vistas pre-unificadas para BI) del Data
+Warehouse PostgreSQL, y corre el framework de **Data Quality**. Zona del Analytics Engineer.
 
 - Decisiones: [ADR-014 Medallion](../docs/adr/0014-arquitectura-medallion.md) ·
   [ADR-015 estrella](../docs/adr/0015-modelo-dimensional-estrella.md) ·
@@ -17,12 +17,13 @@ transform/
   profiles.yml             conexión a Postgres por env vars
   packages.yml             dbt_utils + dbt_expectations
   macros/
-    generate_schema_name.sql   esquemas limpios (silver/gold/dq)
+    generate_schema_name.sql   esquemas limpios (silver/gold/semantic/dq)
     log_dq_results.sql         persiste cada check en dq.dq_results
   models/
     bronze/_bronze_sources.yml  fuentes (bronze.produccion, bronze.pozos)
     silver/                     silver_produccion, silver_pozos + tests de calidad
     gold/                       dim_* , fact_produccion_mensual + tests de integridad
+    semantic/                   vistas pre-unificadas sobre Gold para BI (ADR-027)
   tests/
     assert_freshness_produccion.sql   check de freshness (warn)
   scripts/
@@ -37,6 +38,7 @@ transform/
 | Bronze | `bronze` | crudo cargado como texto (lo provee A / `load_bronze.py`) |
 | Silver | `silver` | `silver_produccion`, `silver_pozos` (limpio, tipado) |
 | Gold | `gold` | `fact_produccion_mensual` + `dim_pozo/operadora/yacimiento/fecha` |
+| Semantic | `semantic` | vistas pre-unificadas sobre Gold para BI sin surrogate keys (ADR-027) |
 | Data Quality | `dq` | `dq_results` (audit de checks) + tablas de `store_failures` |
 
 ## Cómo correr (local)
@@ -91,9 +93,10 @@ group by dimension, status;
 ## Comandos útiles
 
 ```bash
-dbt build --profiles-dir .                 # todo (models + tests)
-dbt run   --profiles-dir . --select silver # solo Silver
-dbt test  --profiles-dir . --select gold   # solo tests de Gold
-dbt source freshness --profiles-dir .      # freshness de Bronze
+dbt build --profiles-dir .                    # todo (models + tests, incluye semantic)
+dbt run   --profiles-dir . --select silver    # solo Silver
+dbt test  --profiles-dir . --select gold      # solo tests de Gold
+dbt run   --profiles-dir . --select semantic  # solo vistas semánticas
+dbt source freshness --profiles-dir .         # freshness de Bronze
 dbt docs generate --profiles-dir . && dbt docs serve --profiles-dir .  # linaje
 ```

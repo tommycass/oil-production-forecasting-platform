@@ -24,3 +24,17 @@ def get_wells(date_query: date) -> list[dict]:
     `WellResponse`.
     """
     return fetch_all(_WELLS_SQL, {"anio": date_query.year, "mes": date_query.month})
+
+
+_WELL_EXISTS_SQL = """
+    SELECT 1
+    FROM gold.dim_pozo
+    WHERE idpozo::text = :id_well
+      AND idpozo != -1
+    LIMIT 1
+"""
+
+
+def well_exists_in_dw(id_well: str) -> bool:
+    """Devuelve True si el id_well existe en gold.dim_pozo (excluye el miembro desconocido -1)."""
+    return bool(fetch_all(_WELL_EXISTS_SQL, {"id_well": id_well}))

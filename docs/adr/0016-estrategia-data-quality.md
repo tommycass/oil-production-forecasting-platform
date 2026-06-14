@@ -36,11 +36,11 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 
 | Dimensión | Cómo se chequea (ejemplos) | Sobre |
 |---|---|---|
-| **Schema** | tipos y columnas esperadas (`dbt_expectations.expect_column_values_to_be_of_type`, contracts de dbt) | Silver producción y pozos |
+| **Schema** | tipos y presencia de columnas esperadas (`dbt_expectations.expect_column_values_to_be_of_type`, `dbt_expectations.expect_column_to_exist`) | Silver producción y pozos |
 | **Uniqueness** | unicidad de la clave de negocio (`unique` / `dbt_utils.unique_combination_of_columns` sobre `idpozo+anio+mes`) | Silver producción |
 | **Completeness** | no-nulos en claves y medidas críticas (`not_null` en `idpozo`, `anio`, `mes`) | Silver ambas |
-| **Validity** | rangos y dominios (`expect_column_values_to_be_between` para producción ≥ 0; `anio`/`mes` en rango; `accepted_values` para tipo de recurso) | Silver producción |
-| **Freshness** | antigüedad de la última ingesta (`dbt source freshness` / check sobre `max(fecha_data)`) | Silver / source Bronze |
+| **Validity** | rangos y dominios (`expect_column_values_to_be_between` para producción ≥ 0; `anio`/`mes` en rango) | Silver producción |
+| **Freshness** | antigüedad de la última ingesta (test singular sobre `max(fecha_ingesta)` en Silver: falla si supera 7 días) | Silver producción |
 
 > **Schema en dos capas (ADR-022):** además de este check en Silver, el schema se valida
 > **en la ingesta** (fail-fast): si la fuente cambia las columnas, la extracción aborta
@@ -50,13 +50,32 @@ Implementamos Data Quality con **dbt tests, extendidos con el paquete `dbt-expec
 ### Persistencia de resultados
 
 - `store_failures: true` en la config de tests → cada test fallido **persiste sus filas ofensoras** en tablas del esquema `dq` de Postgres (`dq.<nombre_test>`). No son asserts efímeros: quedan consultables después de la corrida.
-- Además materializamos un modelo **`dq.dq_results`** que consolida, por corrida, cada check con: nombre, dimensión de calidad, severidad, estado (pass/fail), nº de filas que fallaron y timestamp. Es la "marca de calidad visible" que Persona C puede exponer en Metabase y que documenta el historial de calidad.
+- Además materializamos un modelo **`dq.dq_results`** que consolida, por corrida, cada check con: nombre, dimensión de calidad, severidad, estado (pass/fail), nº de filas que fallaron y timestamp. Es la "marca de calidad visible" que BI puede exponer en Metabase y que documenta el historial de calidad.
 
-### Consecuencia operativa (las tres, en capas)
+### Consecuencia operativa
 
-1. **Bloqueo de promoción Silver→Gold (principal):** los checks críticos se marcan con `severity: error`. Como Gold depende de Silver en el DAG de dbt, un `error` **aborta `dbt build` antes de materializar Gold** — la promoción aguas abajo queda bloqueada por construcción. Los checks no críticos van como `severity: warn` (registran pero no bloquean).
-2. **Alerta:** Dagster detecta el fallo del step de dbt y dispara una alerta reutilizando el **stack de Alertmanager/Slack ya montado en Fase 1** (webhook existente), notificando qué check crítico falló.
-3. **Marca de calidad visible:** `dq.dq_results` + las tablas de `store_failures` dejan el resultado navegable en el DW y en DataHub.
+La consigna pide **al menos una** consecuencia (alerta, bloqueo aguas abajo o marca de
+calidad visible). Hoy implementamos **dos**:
+
+1. **Bloqueo de promoción Silver→Gold (principal):** los checks críticos se marcan con
+   `severity: error`. Como Gold depende de Silver en el DAG de dbt, un `error` **aborta
+   `dbt build` antes de materializar Gold** — la promoción aguas abajo queda bloqueada por
+   construcción. Los checks no críticos van como `severity: warn` (registran pero no bloquean).
+2. **Marca de calidad visible:** la macro `log_dq_results` (en `on-run-end`) registra **cada
+   check** de la corrida en `dq.dq_results` (nombre, dimensión, severidad, estado, nº de filas
+   ofensoras, timestamp), y `store_failures` persiste las filas que fallan en tablas del
+   esquema `dq`. Queda navegable en el DW, consultable en Metabase (KPI de calidad) y en
+   DataHub. Es observabilidad **pull**: alguien la consulta, no se empuja.
+
+Con estas dos el requisito de la consigna ya se cumple. Cómo se "anuncia" cada fallo hoy:
+un `error` se nota porque **rompe el `dbt build`** (queda en `cron.log` y Gold no se
+actualiza); un `warn` queda **solo registrado** en `dq.dq_results` (no corta ni notifica).
+
+> **Alerta (push) — NO implementada hoy.** Sería deseable que un fallo crítico dispare una
+> notificación reutilizando el stack de Alertmanager/Slack de Fase 1 (webhook existente),
+> pero **ese cableado no existe** en el pipeline actual (el cron corre `run_pipeline.sh`
+> headless y no postea a Slack ante un fallo de dbt). Queda como evolución; ver *Decisiones
+> Técnicas Posteriores*.
 
 ### Manejo de filas inválidas: cuarentena vs bloqueo
 
@@ -79,10 +98,12 @@ No todo fallo de validez debe frenar el pipeline. Distinguimos dos casos:
 - Menos expectativas "exóticas" que Great Expectations y sin Data Docs visuales propios (lo suplimos con el modelo `dq.dq_results` + dashboard en Metabase).
 - `store_failures` agrega tablas al DW que hay que versionar/limpiar (retención a definir).
 - La severidad de cada check (error vs warn) es una decisión de criterio que hay que mantener explícita y revisada.
+- **No hay alerta push:** un `warn` solo queda registrado y un `error` solo se nota porque rompe el build; nadie es notificado activamente (ver Decisiones Técnicas Posteriores). La consecuencia operativa hoy es **pull** (bloqueo + marca visible), no notificación.
 
 ## Decisiones Técnicas Posteriores
 
 - **Clasificación de severidad:** definir qué checks son `error` (bloquean: unicidad de PK, no-nulos de claves, integridad referencial) vs `warn` (variantes de nombres, outliers leves). La producción negativa NO bloquea: se desvía a cuarentena en Silver (ver "Manejo de filas inválidas") y el check ≥ 0 queda como invariante post-limpieza. Se documenta junto a cada test.
-- **Umbral de freshness:** acordar con A el SLA de frescura (p. ej. fallar si la última ingesta supera N días) según la cadencia real del DAG.
+- **Umbral de freshness:** acordar con el Data Engineer el SLA de frescura (p. ej. fallar si la última ingesta supera N días) según la cadencia real del DAG.
 - **Retención de `store_failures`:** truncado/rotación de las tablas `dq.*` para que no crezcan sin límite.
-- **Exposición en gobierno:** coordinar con C para que `dq.dq_results` se ingiera en DataHub como señal de calidad a nivel tabla.
+- **Exposición en gobierno:** coordinar con el administrador de gobierno para que `dq.dq_results` se ingiera en DataHub como señal de calidad a nivel tabla.
+- **Alerta push (pendiente):** cablear la notificación a Slack ante un fallo crítico. Camino previsto: un paso *best-effort* en `run_pipeline.sh` que, tras el `dbt build`, consulte `dq.dq_results` de la última corrida y, si hay `status='fail'` (o `warn` críticos), postee al webhook de Alertmanager/Slack de Fase 1. No bloquea el pipeline si falla. Mientras tanto, la consecuencia operativa se cumple con el bloqueo + la marca visible.

@@ -33,9 +33,9 @@ Se evaluaron tres enfoques de capas.
 
 Adoptamos la **arquitectura Medallion de tres capas**:
 
-- **Bronze** (dueño: Data Engineer, ADR-013): crudo tal cual viene de la fuente, en parquet versionado por fecha de ingesta y particionado por `anio/mes`. Inmutable y append/merge según ADR-012. Es la red de seguridad que habilita backfill sin re-descargar.
+- **Bronze** (dueño: Data Engineer, ADR-013): crudo tal cual viene de la fuente, en parquet versionado por fecha de ingesta y particionado por `anio/mes`. Inmutable; la carga es **full refresh** (full reload de todas las particiones, ADR-021), con la resolución del merge de meses corregidos **diferida a Silver** (ADR-012). Es la red de seguridad que habilita backfill sin re-descargar.
 - **Silver** (dueño: Analytics Engineer): **una fila limpia y tipada por registro de origen**. Aplica casteo de tipos, deduplicación por clave de negocio (`idpozo + anio + mes` en producción; `idpozo` en el catálogo), normalización de nombres de pozos/operadoras y manejo de nulos. No mezcla lógica de negocio ni reglas dimensionales.
-- **Gold** (dueño: Analytics Engineer): **modelo estrella** servido a BI y gobierno — `fact_produccion_mensual` + `dim_pozo`, `dim_operadora`, `dim_yacimiento`, `dim_fecha` con surrogate keys (ver ADR-015). Es la única capa que consumen Persona C (Metabase, DataHub) y la API.
+- **Gold** (dueño: Analytics Engineer): **modelo estrella** servido a BI y gobierno — `fact_produccion_mensual` + `dim_pozo`, `dim_operadora`, `dim_yacimiento`, `dim_fecha` con surrogate keys (ver ADR-015). Es la única capa que consumen BI y gobierno (Metabase, DataHub) y la API.
 
 El **gate de Data Quality se ubica entre Silver y Gold** (ADR-016): los checks corren sobre Silver y, si falla uno crítico, **bloquean la materialización de Gold**. Las tres capas se implementan como modelos dbt sobre PostgreSQL, alineados con los software-defined assets de Dagster (ADR-011), de modo que cada capa es un asset con dependencias declaradas.
 
@@ -60,4 +60,4 @@ El **gate de Data Quality se ubica entre Silver y Gold** (ADR-016): los checks c
 
 - **Materialización dbt por capa:** Silver y Gold como `table` (no `view`) para que BI y gobierno lean datos materializados estables; reevaluable a `incremental` en Silver de producción si el volumen lo exige.
 - **Esquemas en Postgres:** un esquema por capa (`silver`, `gold`) más el esquema de resultados de DQ (ver ADR-016), para que el linaje y los permisos se lean por zona.
-- **Coordinación con A:** Silver consume Bronze parquet vía dbt (lectura de parquet a Postgres en la ingesta inicial o `read_parquet` según defina la integración Dagster↔dbt). Contrato de entrada ya acordado: grano y claves de ambas fuentes.
+- **Coordinación con el Data Engineer:** Silver consume Bronze parquet vía dbt (lectura de parquet a Postgres en la ingesta inicial o `read_parquet` según defina la integración Dagster↔dbt). Contrato de entrada ya acordado: grano y claves de ambas fuentes.

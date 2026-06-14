@@ -71,7 +71,7 @@ Se evaluaron dos formas de materializar ese full refresh:
 ### El merge/upsert se difiere a Silver, no se hace en Bronze
 
 La resolución de los meses corregidos —quedarse con un único registro vigente por
-`(idpozo, anio, mes)` según `fecha_data`— se realiza **en Silver** (Persona B),
+`(idpozo, anio, mes)` según `fecha_data`— se realiza **en Silver** (Analytics Engineer),
 no en Bronze. Bronze conserva **todos** los registros crudos, incluidas las
 versiones corregidas, porque su rol es ser fiel e inmutable: esa historia es el
 insumo para auditar y reprocesar.

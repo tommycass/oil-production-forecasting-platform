@@ -12,10 +12,10 @@ versión corregida de un período (`anio/mes`), sin alterar el resto de los dato
 de forma idempotente.
 
 **Cuándo se ejecuta (disparadores):**
-- **Incidente / pedido:** un analista o la Persona B reporta que las cifras de un
+- **Incidente / pedido:** un analista o el Analytics Engineer reporta que las cifras de un
   mes "cambiaron" o no cuadran contra la fuente oficial.
-- **Alerta de calidad:** un check de freshness o de validez (ADR-016) marca que un
-  período tiene registros con `rectificado = t` recién aparecidos.
+- **Señal de calidad:** un check de freshness o de validez (ADR-016) registra en
+  `dq.dq_results` que un período tiene registros con `rectificado = t` recién aparecidos.
 - **Programado:** la corrida regular hace **full reload** de todo Bronze (ADR-021),
   así que ya absorbe las correcciones de cualquier mes sin intervención; este runbook
   es para **forzar/verificar** el reproceso de un mes puntual fuera de ciclo.
@@ -30,7 +30,7 @@ de forma idempotente.
 - Entorno del pipeline instalado: `pip install -r data_pipeline/requirements.txt`.
 - Conectividad a `datos.gob.ar` (la extracción descarga el CSV completo).
 - Acceso de lectura al Data Warehouse (Postgres) para validar Silver/Gold, o
-  coordinación con la Persona B (Analytics Engineer) para esa parte.
+  coordinación con el Analytics Engineer para esa parte.
 - Saber el período afectado: `anio` y `mes` a reprocesar.
 
 ## Pasos
@@ -48,9 +48,15 @@ de forma idempotente.
      dagster asset materialize -m $MOD --select produccion_raw          # refresca el landing
      dagster asset materialize -m $MOD --select bronze_produccion --partition 2024-03-01
      ```
-   - **Full reload** (todo Bronze, idéntico a lo que hace el cron): correr
-     `data_pipeline/orchestration/run_pipeline.sh`, o como fallback sin orquestador
-     `python -m data_pipeline.extraction.extract_produccion`.
+   - **Full reload** (recargar *todo* Bronze, idéntico a lo que hace el cron): correr
+     `data_pipeline/orchestration/run_pipeline.sh`. Hace el flujo completo —landing →
+     todas las particiones de Bronze → carga a Postgres → dbt (Silver/Gold/DQ)—, así
+     que ya deja la corrección publicada en el DW sin pasos adicionales.
+   - **Fallback sin orquestador** (solo Bronze parquet): `python -m
+     data_pipeline.extraction.extract_produccion`. ⚠️ **No equivale al cron**: reescribe
+     únicamente los parquet de Bronze en disco (no carga a Postgres ni corre dbt) e incluye
+     el mes en curso. Sirve para refrescar Bronze cuando Dagster no está disponible; tras
+     usarlo hay que completar igual el paso 4 para propagar la corrección al DW.
 
 3. **Verificar Bronze.** Confirmar que la partición del mes quedó reescrita y que
    contiene la versión corregida:
@@ -60,7 +66,7 @@ de forma idempotente.
    (Reemplazar `anio=2024/mes=3` por el período afectado.)
 
 4. **Propagar a Silver y Gold.** Disparar el reproceso aguas abajo de ese período,
-   coordinando con la Persona B (Analytics Engineer). Silver deduplica por
+   coordinando con el Analytics Engineer. Silver deduplica por
    `(idpozo, anio, mes)` conservando el registro vigente (último `fecha_data`), de
    modo que el dato corregido reemplaza al anterior; Gold se re-materializa a
    partir de Silver. El reproceso es por partición (mes), no global.
@@ -94,7 +100,7 @@ Sé que el reproceso salió bien cuando:
   de referencia → volver a ejecutar la extracción; si la propia fuente publicó un
   dato erróneo, **no promover** y escalar.
 - **El gate de calidad bloquea Silver→Gold (ADR-016):** Bronze queda actualizado
-  pero Gold no se promueve. Escalar a la **Persona B (Analytics Engineer)** para
+  pero Gold no se promueve. Escalar al **Analytics Engineer** para
   investigar la falla de DQ del período; no forzar la promoción.
 - **Escalamiento:** problemas de Silver/Gold/DQ → Analytics Engineer; sospecha de
   que la fuente oficial publicó datos incorrectos → elevar al equipo antes de
@@ -139,7 +145,7 @@ La corrida automática se programa **mensual** (cron `0 3 5 * *`), acompañando 
 la fuente, que publica producción con cadencia aproximadamente mensual (ver ADR-018; este
 runbook cubre los reprocesos urgentes entre corridas). La decisión responde a los
 incentivos del DE, expuesto por dos lados opuestos: si el dato queda viejo, los consumidores
-(analistas y la Persona B) se quejan y el DE es el responsable; pero si el job corre de más,
+(analistas y el Analytics Engineer) se quejan y el DE es el responsable; pero si el job corre de más,
 son descargas de 144 MB y reescrituras de todo Bronze (full reload, ADR-021) desperdiciadas,
 más oportunidades de fallas transitorias que el DE tiene que ir a vigilar. Como la fuente
 cambia ~mensualmente y el full reload de cada corrida ya captura correcciones de cualquier

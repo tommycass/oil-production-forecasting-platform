@@ -13,6 +13,7 @@ target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
 # Capas Medallion (ADR-014). Cada carpeta materializa en su propio esquema Postgres.
+# La capa semantic (ADR-027) expone vistas pre-unificadas para BI sin exponer el modelo estrella.
 models:
   oil_dw:
     silver:
@@ -21,6 +22,9 @@ models:
     gold:
       +schema: gold
       +materialized: table
+    semantic:
+      +schema: semantic
+      +materialized: view
 
 # Data Quality (ADR-016): los resultados se persisten.
 #  - store_failures: las filas que fallan cada test quedan en tablas del esquema dq.

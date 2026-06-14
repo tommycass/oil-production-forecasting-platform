@@ -63,7 +63,7 @@ calidad, y su footprint es incluso algo menor. La elección entre ambos se defin
    CLI (`datahub ingest -c ...`) o con emitters, encajando como un comando más del
    pipeline. El framework de ingesta de OpenMetadata está más acoplado a su propio
    scheduler/workflows, lo que sumaría una pieza viva a un setup diseñado sin daemons.
-3. **La calidad de B se reutiliza sin desarrollo extra.** Los 31 tests de dbt
+3. **La calidad del Analytics Engineer se reutiliza sin desarrollo extra.** Los 31 tests de dbt
    ([ADR-016](0016-estrategia-data-quality.md)) se mapean a **assertions sobre cada
    dataset** a partir del mismo manifest, exponiendo el gate de calidad a nivel tabla en
    el catálogo de gobierno directamente desde el artefacto que ya emitimos.
@@ -84,9 +84,14 @@ columna, agregando un `dbt docs generate`).
   cada capa y sus dependencias quedan navegables a nivel tabla (y columna con catalog).
 - **"Datos del DW" y "última actualización":** la ingesta dbt + (opcional) un conector
   Postgres reflejan las tablas de `gold.*`/`dq.*` y sus timestamps de corrida.
-- **Workflows de extracción visibles:** se exponen vía el grafo dbt/manifest; si más
-  adelante se levanta el daemon de Dagster, queda disponible el `datahub-dagster-plugin`
-  para reflejar el grafo de assets directamente.
+- **Workflows de extracción visibles:** se cubren en dos niveles complementarios. En
+  DataHub, las dbt sources `bronze.produccion`/`bronze.pozos` representan la **salida**
+  de la extracción y quedan ligadas como upstream del linaje (Bronze→Silver→Gold). El
+  **grafo de extracción en sí** (assets `produccion_raw`, `bronze_pozos`,
+  `bronze_produccion` y la carga a Postgres) con sus logs y status se observa en la **UI
+  de Dagster** ([ADR-023](0023-ui-dagster-containerizada.md)), ahora disponible. Si se
+  quisiera unificar todo en DataHub, el `datahub-dagster-plugin` puede emitir el grafo de
+  assets directamente — queda como evolución, no necesario para cumplir el requisito.
 
 ### Capacidad
 
@@ -108,11 +113,45 @@ gobierno hacia el RDS (mismo prerrequisito que BI; ver [ADR-020](0020-plataforma
 - La ingesta no es "en vivo": corre como job (manual o agendado) que lee los artefactos dbt; el catálogo refleja la última ingesta, no el estado en tiempo real.
 - El linaje de columna exige sumar `dbt docs generate` (genera `catalog.json`), paso que hoy el cron no corre.
 
-## Decisiones Técnicas Posteriores
+## Decisiones Técnicas Posteriores → Implementación (jun-2026)
 
-- **Host de DataHub:** definir el tipo/tamaño de la instancia dedicada y si es efímera
-  (solo para corrección) o permanente.
-- **Agendado de la ingesta:** decidir si la ingesta dbt→DataHub corre por cron, como
-  paso del pipeline, o on-demand antes del demo.
-- **Linaje de columna:** sumar `dbt docs generate` al flujo si se quiere `catalog.json`.
-- **Regla de SG** del host de gobierno hacia el RDS (coordinada con la de BI).
+**Host:** instancia dedicada `governance` — **`t3.large`** (8 GB RAM, $0.083/hr),
+Ubuntu 24.04, misma región y VPC que `api`. Se elige `t3.large` sobre `t2.large`:
+igual RAM, $0.01/hr más barato, red hasta 5 Gbps y créditos de CPU sin límite
+(t3 unlimited burst). No se reutiliza `api-dev` (staging) porque ese host tiene un
+ciclo de vida distinto: el CI/CD despliega ahí en cada push a `staging`, lo que
+podría interrumpir DataHub durante una demo o corrida de ingesta; además, mezclar
+responsabilidades de staging y gobierno en el mismo host elimina el aislamiento de
+fallos que justificó elegir una instancia dedicada.
+
+**Despliegue:** vía `datahub docker quickstart` (compose oficial de DataHub, ~8
+contenedores: GMS, frontend, OpenSearch, Kafka, MySQL, etc.). Se eligió el quickstart
+gestionado por el CLI sobre un compose propio para no mantener sincronizadas las
+versiones de cada contenedor; el setup queda en dos comandos (`pip install` +
+`datahub docker quickstart`). Detalle operativo en el runbook
+[governance-admin](../runbooks/governance-admin.md).
+
+**Linaje de columna: habilitado.** La fuente dbt de DataHub exige `manifest_path` y
+`catalog_path`; ambos se proveen. `catalog.json` se genera con `dbt docs generate` y
+aporta tipos y descripciones de columna. `run_results.json` se suma como assertions
+de los 31 tests de calidad (ADR-016). El recipe quedó en `infra/datahub/dbt_recipe.yml`.
+
+**Carga inicial (bootstrap):** la primera ingesta se corrió desde una build local con
+datos de muestra (`seed_sample_bronze.py`), apuntando al GMS remoto. Es legítimo
+porque el **linaje y el esquema se derivan de las definiciones de los modelos**, no de
+los datos: el grafo Bronze→Silver→Gold resultante es idéntico al de producción.
+
+**Ingesta recurrente: automatizada.** Se cierra el loop "cada corrida del pipeline
+refresca el catálogo": `run_pipeline.sh` (el cron mensual del [ADR-018](0018-orquestacion-end-to-end-dw.md))
+ejecuta, tras el `dw_publish`, un paso **best-effort** que corre `dbt docs generate` +
+`datahub ingest`. Es **best-effort a propósito**: una caída de DataHub no debe frenar el
+refresh del DW (gobierno es auxiliar al pipeline), así que el paso solo avisa ante
+fallos y no aborta. Está **env-gated**: corre únicamente si `DATAHUB_GMS_HOST` está en
+el `infra/.env` y el CLI `acryl-datahub[dbt,datahub-rest]` está en el venv; si no, se
+omite. Así, los entornos que aún no lo configuraron no se ven afectados.
+
+**Regla de SG:** SG dedicado `governance-sg`. Puerto 9002 (frontend) y 8080 (GMS)
+abiertos a `0.0.0.0/0` para acceso externo al catálogo y para permitir la ingesta de
+bootstrap desde fuera de la VPC; SSH (22) restringido a la IP del administrador. En un
+despliegue productivo el 8080 debería restringirse al SG de `api` y el 9002 ir detrás
+de TLS.

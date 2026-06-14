@@ -15,17 +15,18 @@ y el [modelo de datos](../data-model.md).
 Materializar Silver y Gold a partir de Bronze y dejar el modelo estrella listo y
 **confiable** para BI (Metabase), gobierno (DataHub) y la API. Se ejecuta cuando:
 
-- **Backfill / nueva ingesta de A:** el Data Engineer reprocesó un mes (corrección
+- **Backfill / nueva ingesta de Bronze:** el Data Engineer reprocesó un mes (corrección
   vía `rectificado`) o cargó datos nuevos en Bronze. Hay que propagar a Gold.
 - **Cambio de modelo:** se modificó un modelo dbt (nueva dimensión, métrica, regla
   de limpieza) y hay que publicarlo.
-- **Incidente de calidad (disparo por alerta):** un check `severity: error` falló y
-  **bloqueó la promoción a Gold**; llega alerta por Slack (Alertmanager, ADR-016)
-  o lo reporta Persona C porque un dashboard quedó sin datos frescos.
+- **Incidente de calidad:** un check `severity: error` falló y **bloqueó la promoción a
+  Gold** — la corrida del cron termina en error (visible en `cron.log` y en `dq.dq_results`)
+  o lo reporta el administrador de BI/gobierno porque un dashboard quedó sin datos frescos. (La alerta push a Slack
+  ante el fallo es evolución pendiente, ver ADR-016.)
 
 ## 2. Rol / dueño y prerrequisitos
 
-- **Dueño:** Analytics Engineer (Persona B).
+- **Dueño:** Analytics Engineer.
 - **Accesos:** credenciales del DW Postgres (`POSTGRES_*`), repo, y permiso de
   ejecución del proyecto `transform/`.
 - **Herramientas:** Python 3.11, dbt-core + dbt-postgres, paquetes dbt
@@ -39,7 +40,7 @@ Materializar Silver y Gold a partir de Bronze y dejar el modelo estrella listo y
 Las bases del DW (`oil_dw_staging`, `oil_dw_prod`) deben existir antes de correr el
 pipeline. Crearlas es idempotente con `infra/db/bootstrap.sql` (usa `\gexec`; ver el
 header del archivo). dbt y `load_bronze.py` crean los **schemas** solos
-(`bronze/silver/gold/dq`), no hace falta crearlos a mano.
+(`bronze/silver/gold/semantic/dq`), no hace falta crearlos a mano.
 
 ```bash
 # Conecta a la base de mantenimiento `postgres`; el secreto va por el entorno.
@@ -78,7 +79,7 @@ export DBT_TARGET_PATH="$HOME/dbt-runtime/target"
 # 2. Asegurar paquetes dbt
 dbt deps
 
-# 3. Confirmar que Bronze tiene los datos esperados (sanity del insumo de A)
+# 3. Confirmar que Bronze tiene los datos esperados (sanity del insumo del Data Engineer)
 dbt source freshness --profiles-dir .
 
 # 4. Construir Silver + Gold y correr Data Quality en orden de dependencia
@@ -99,8 +100,8 @@ automatizado**: un grafo de Dagster (`data_pipeline/orchestration/`) materializa
 **env-driven**: el mismo procedimiento sirve a staging (`oil_dw_staging`) y prod
 (`oil_dw_prod`); lo único que cambia es el `infra/.env` de cada EC2.
 
-> El grafo extiende la zona de orquestación de A — ver "Actualización (jun-2026)" en
-> ADR-011 (pendiente de su review).
+> El grafo extiende la zona de orquestación del Data Engineer — ver "Actualización (jun-2026)" en
+> ADR-011 (revisada y aceptada por el Data Engineer; decisión formal en ADR-018).
 
 ### a) Setup (una vez por EC2)
 
@@ -169,6 +170,78 @@ crontab -l 2>/dev/null | { cat; echo "0 3 5 * * /home/ubuntu/oil-production-fore
 Repetir (a)–(c) en la EC2 de prod. **Único cambio:** su `infra/.env` tiene
 `POSTGRES_DB=oil_dw_prod`. El código y los comandos son idénticos.
 
+## 3.2 UI de Dagster en AWS (observabilidad on-demand)
+
+> **Referencia:** [ADR-023](../adr/0023-ui-dagster-containerizada.md) documenta la
+> decisión de arquitectura. En `api` (producción) la UI se expone via **systemd** sobre
+> el venv existente (`~/dagster-venv`) en lugar del contenedor Docker, dado que el venv
+> ya estaba instalado y el build de la imagen no fue necesario para la corrida headless.
+
+La UI de Dagster (grafo de assets, historial de runs, estado de checks de calidad,
+materialización on-demand) se levanta como **servicio systemd** sobre el mismo venv que
+usa el cron. Sobrevive a los stop/start de la EC2: systemd lo relanza en cada boot
+automáticamente. No reemplaza el cron de producción (ADR-018); es solo para
+observabilidad y materializaciones on-demand.
+
+### a) Setup inicial (una vez por EC2)
+
+```bash
+sudo tee /etc/systemd/system/dagster-ui.service > /dev/null <<'EOF'
+[Unit]
+Description=Dagster UI
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/oil-production-forecasting-platform
+EnvironmentFile=/home/ubuntu/oil-production-forecasting-platform/infra/.env
+Environment="DAGSTER_HOME=/home/ubuntu/dagster-runtime"
+Environment="PATH=/home/ubuntu/dagster-venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/ubuntu/dagster-venv/bin/dagster dev \
+  -m data_pipeline.orchestration.definitions \
+  --host 0.0.0.0 --port 3070
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable dagster-ui    # arranca automáticamente en cada boot
+sudo systemctl start dagster-ui
+```
+
+Verificar que arrancó:
+
+```bash
+sudo systemctl status dagster-ui
+# O seguir los logs en vivo:
+sudo journalctl -u dagster-ui -f
+# Buscá: "Serving dagster-webserver on http://0.0.0.0:3070"
+```
+
+### b) Acceder a la UI
+
+```
+http://<IP-pública-api>:3070
+```
+
+La IP pública de la instancia `api` se consulta en AWS Console → EC2 → instancia `api`
+→ columna "Public IPv4 address" (cambia en cada stop/start si no hay Elastic IP).
+El puerto 3070 ya está abierto en el Security Group compartido del proyecto.
+
+### d) Comportamiento en stop/start de EC2
+
+Con `systemctl enable`, el servicio queda registrado en el arranque del sistema. Apagás
+la EC2, la volvés a prender → Dagster UI disponible en ~30 segundos sin intervención.
+
+Para detenerlo manualmente:
+```bash
+sudo systemctl stop dagster-ui
+```
+
 ## 4. Validación (cómo sé que salió bien)
 
 - La corrida termina en `Completed successfully` con `ERROR=0` y `SKIP=0`.
@@ -210,14 +283,14 @@ select count(*) from (
   full-refresh determinísticas, reconstruir reproduce el estado exacto.
 - **Plan B:** si el DW no está disponible, BI puede seguir leyendo el último Gold
   materializado; se pausa la promoción hasta restablecer Postgres.
-- **Escalamiento:** problema en Bronze/extracción → Data Engineer (A); problema de
-  conexión/infra del Postgres en AWS → Infra/C; lineage o BI sin datos → C.
+- **Escalamiento:** problema en Bronze/extracción → Data Engineer; problema de
+  conexión/infra del Postgres en AWS → administrador de infra/gobierno; lineage o BI sin datos → administrador de gobierno.
 
 ## 6. Consideraciones no funcionales
 
 - **Frescura:** la promoción a Gold solo es tan fresca como Bronze; el check de
   freshness (`warn`) avisa si la última ingesta supera el umbral. SLA de frescura a
-  acordar con A según cadencia del DAG.
+  acordar con el Data Engineer según cadencia del DAG.
 - **Calidad:** los checks `error` (unicidad de PK, no-nulos de claves, producción no
   negativa, integridad referencial) son el contrato de confiabilidad de Gold.
 - **Costo / latencia:** el `dbt build` full-refresh corre en segundos a la escala

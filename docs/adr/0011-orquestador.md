@@ -39,7 +39,7 @@ Usaremos **Dagster** como herramienta de orquestación, modelando el pipeline co
 ### Por qué Dagster sobre Airflow
 
 - **Overhead acorde al equipo.** Airflow exige scheduler, webserver, base de metadatos y típicamente un worker: varios contenedores que sumar al `docker-compose` y mantener entre 3 personas en 2 semanas. Dagster corre con un único servicio y su UI, suficiente para nuestra escala.
-- **El lineage nativo de Airflow no compensa.** Su principal ventaja para nosotros sería la integración con DataHub, pero ese linaje también lo obtendremos por el plugin de Dagster y por la ingesta de metadata desde el propio DW que hará la Persona C. No justifica el costo operativo.
+- **El lineage nativo de Airflow no compensa.** Su principal ventaja para nosotros sería la integración con DataHub, pero ese linaje también lo obtendremos por el plugin de Dagster y por la ingesta de metadata desde el propio DW que hará el administrador de gobierno (DataHub). No justifica el costo operativo.
 
 El tipo de carga por fuente (full refresh para el catálogo de pozos; full refresh materializado por partición `anio/mes` para producción, con la resolución de meses corregidos —merge/upsert por `idpozo + anio + mes`— diferida a Silver) se implementa sobre el modelo de particiones de Dagster y se justifica en el ADR-012.
 
@@ -60,13 +60,19 @@ El tipo de carga por fuente (full refresh para el catálogo de pozos; full refre
 
 - **Coordinación con gobierno:** confirmar la ruta de emisión de linaje a DataHub (plugin de Dagster o ingesta desde el DW). Es la única pata de esta decisión que no es exclusiva del Data Engineer.
 - **Particionado:** producción se modela en **dos assets** para aprovechar el backfill nativo por mes sin pagar la descarga completa por partición. Como la fuente publica un único archivo (no permite bajar un mes puntual), un primer asset `produccion_raw` descarga el CSV completo **una vez** a una zona de landing; un segundo asset `bronze_produccion`, **particionado por mes** (`MonthlyPartitionsDefinition`), lee de ese landing y escribe solo la partición de su mes. Así, reprocesar un mes corregido **de forma dirigida** es materializar esa partición desde la UI de Dagster: reescribe únicamente ese mes, sin re-descargar ni tocar el resto (el refresh automático hace full reload de todas las particiones; ver ADR-012, ADR-013 y ADR-021).
+- **Reintentos:** el requisito de *retries con backoff* se implementa con una única `RetryPolicy` (3 reintentos, backoff exponencial: 5s/10s/20s) aplicada a **todo el grafo** —extracción HTTP, carga a Postgres y modelos dbt—, no solo a la descarga. Cubre los fallos transitorios de cada tramo (corte de red de la fuente o del DW) y es segura porque todos los pasos son idempotentes (Bronze sobrescribe por partición, la carga usa `if_exists="replace"`, dbt es full-refresh; ver ADR-012/ADR-021). Los parámetros viven en el código (`data_pipeline/orchestration/assets.py`, `_RETRY_POLICY`) por ser tuning operativo y no una decisión arquitectónica; un test parametrizado los verifica.
 - **Persistencia:** IO manager hacia el data warehouse (cuya elección corresponde al Analytics Engineer, ver su ADR) y archivos parquet en la capa Bronze (`data/bronze/`, ya versionada como estructura y con los datos gitignoreados).
 - **Despliegue:** Dagster se suma como servicio en el `docker-compose` existente, coordinando con Infraestructura.
 
 ## Actualización (jun-2026) — el grafo se extiende al DW y corre en AWS
 
-> Propuesta del Analytics Engineer (Persona B), **pendiente de review del Data Engineer**
-> (dueño de este ADR). Toca la zona de orquestación, por eso se documenta acá.
+> Propuesta del Analytics Engineer, **revisada y aceptada por el Data Engineer**
+> (dueño de este ADR) el 11-jun-2026. Toca la zona de orquestación, por eso se documenta acá.
+> La extensión es coherente con la decisión original: reusa los assets de Bronze como upstream,
+> conserva el modelo de particiones por mes y el backfill nativo, y no altera la elección de
+> Dagster ni el contrato de la capa Bronze. La decisión formal con comparación de alternativas
+> (dbt vía `dagster-dbt` vs asset-subprocess; cron headless vs daemon persistente) vive en el
+> [ADR-018](0018-orquestacion-end-to-end-dw.md).
 
 Para dejar el flujo Medallion andando end-to-end en AWS (objetivo: que BI/gobierno
 consuman Gold sin pasos manuales), el grafo de assets **se extiende más allá de Bronze**:

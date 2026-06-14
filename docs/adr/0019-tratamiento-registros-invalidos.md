@@ -29,9 +29,9 @@ La limpieza es responsabilidad de la capa **Silver** (ADR-014), así que la deci
 | Reconciliación de conteos (bronze = silver + descartes) | n/a | ✅ (no se pierde fila) | ❌ filas desaparecen sin rastro | ✅ | ✅ (descartes auditables) |
 | Auditabilidad / por qué se excluyó | n/a | ❌ se enmascara | ❌ nula | ⚠️ solo en logs de la corrida | ✅ tabla con motivo + timestamp |
 | Pipeline desatendido (objetivo de la fase) | ❌ frena | ✅ | ✅ | ✅ | ✅ |
-| Coordinar fix en origen con A | — (no viable: fuente pública) | — | — | — | — |
+| Coordinar fix en origen con el Data Engineer | — (no viable: fuente pública) | — | — | — | — |
 
-> "Corregir en origen / coordinar con A" se descarta de entrada: la suciedad está en el CSV
+> "Corregir en origen / coordinar con el Data Engineer" se descarta de entrada: la suciedad está en el CSV
 > público y Bronze debe preservarlo crudo; no es algo que A pueda ni deba arreglar.
 
 ## Decisión
@@ -87,5 +87,5 @@ que se **cuarentena**.
   rotación/truncado si crece (hoy es full-refresh por corrida, así que refleja el estado actual).
 - **Alerta por volumen:** evaluar un check `warn` sobre el conteo de rechazos para avisar si un
   mes trae una cantidad anómala de filas inválidas (señal de degradación de la fuente).
-- **Exposición en gobierno:** coordinar con C para surfacear la tabla de rechazos y `dq.dq_results`
+- **Exposición en gobierno:** coordinar con el administrador de gobierno para surfacear la tabla de rechazos y `dq.dq_results`
   en DataHub/Metabase como señales de calidad a nivel tabla.

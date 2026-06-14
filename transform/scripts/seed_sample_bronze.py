@@ -1,7 +1,7 @@
 """Carga una MUESTRA de las fuentes reales a `bronze` (dev/test).
 
 Permite probar el pipeline dbt (Silver/Gold/DQ) sin esperar la extracción completa
-de Persona A: descarga las primeras N filas de cada CSV de datos.gob.ar y las
+del Data Engineer: descarga las primeras N filas de cada CSV de datos.gob.ar y las
 materializa en `bronze.produccion` / `bronze.pozos` como texto, con `fecha_ingesta`.
 
 Reusa las URLs definidas una sola vez en data_pipeline/config.py (DRY).
