@@ -422,7 +422,7 @@ datos.gob.ar  →  Bronze (parquet)  →  bronze.* (Postgres)  →  silver.*  �
 
 La fact table `gold.fact_produccion_mensual` tiene grano `(idpozo, anio, mes)` y
 cuatro dimensiones conformadas: `dim_pozo`, `dim_operadora`, `dim_yacimiento` y
-`dim_fecha`. Surrogate keys enteras `sk_*` en todas las dimensiones. SCD Type 1 en
+`dim_fecha`. Surrogate keys de texto (hash MD5) `sk_*` en todas las dimensiones. SCD Type 1 en
 `dim_pozo` y `dim_operadora` (la historia de la relación pozo↔operadora queda en la
 fact, no en la dimensión). Detalle completo en [docs/data-model.md](docs/data-model.md).
 

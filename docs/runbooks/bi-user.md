@@ -115,7 +115,7 @@ Las vistas semánticas ya aplican todos los joins y exponen nombres en lenguaje 
 > - `prod_pet`, `prod_gas`, `prod_agua`, `iny_*`: sumar con SUM.
 > - `tef` (tiempo efectivo de producción): promediar con AVG, nunca sumar.
 > - Para el eje temporal, usar `dim_fecha.periodo` (formato `AAAA-MM`).
-> - Los joins van por columnas `sk_*` (surrogate keys enteras).
+> - Los joins van por columnas `sk_*` (surrogate keys de texto, hash MD5).
 
 ### 3.6 Compartir un análisis
 
