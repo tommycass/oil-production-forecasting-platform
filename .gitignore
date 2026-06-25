@@ -28,3 +28,6 @@ monitoring/.slack_webhook
 .dagster/
 dagster_home/
 .tmp_dagster_home_*/
+
+# Notas personales de estudio
+journal-estudio-IS.md
