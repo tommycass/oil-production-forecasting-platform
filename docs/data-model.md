@@ -61,6 +61,7 @@ erDiagram
         numeric profundidad
         text    tipo_de_recurso
         text    clasificacion
+        text    tipopozo
         numeric coordenada_x
         numeric coordenada_y
     }
@@ -138,6 +139,7 @@ yacimiento, tiempo). `tef` no se suma entre meses: se promedia o se usa como con
 | `profundidad` | `profundidad` | metros |
 | `tipo_de_recurso` | `tipo_de_recurso` | p. ej. TIGHT, SHALE (no convencional) |
 | `clasificacion` | `clasificacion` | EXPLOTACION / EXPLORACION |
+| `tipopozo` | `tipopozo` (producción) | PETROLIFERO / GASIFERO / INYECCION / SUMIDERO; alimenta features de Fase 3 |
 | `coordenada_x`, `coordenada_y` | `coordenadax`, `coordenaday` | ubicación |
 
 ### 4.2 `gold.dim_operadora` — **SCD Type 1**

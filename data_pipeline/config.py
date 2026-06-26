@@ -53,7 +53,7 @@ EXPECTED_COLUMNS = {
     "produccion": {
         "idpozo", "anio", "mes", "idempresa", "empresa", "sigla", "formacion",
         "profundidad", "idareayacimiento", "areayacimiento", "cuenca", "provincia",
-        "coordenadax", "coordenaday", "tipo_de_recurso", "clasificacion",
+        "coordenadax", "coordenaday", "tipo_de_recurso", "clasificacion", "tipopozo",
         "prod_pet", "prod_gas", "prod_agua", "iny_agua", "iny_gas", "iny_co2",
         "iny_otro", "tef", "fecha_data", "rectificado",
     },
