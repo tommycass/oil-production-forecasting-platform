@@ -12,7 +12,7 @@ select
     sigla, formacion, profundidad,
     idareayacimiento, yacimiento, cuenca, provincia,
     coordenada_x, coordenada_y,
-    tipo_de_recurso, clasificacion,
+    tipo_de_recurso, clasificacion, tipopozo,
     prod_pet, prod_gas, prod_agua,
     iny_agua, iny_gas, iny_co2, iny_otro,
     tef, fecha_data, rectificado, fecha_ingesta
