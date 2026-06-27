@@ -1,4 +1,7 @@
 annotated-doc==0.0.4
+mlflow==2.17.0
+scikit-learn==1.6.1
+pandas==2.2.3
 annotated-types==0.7.0
 anyio==4.12.1
 click==8.3.1
