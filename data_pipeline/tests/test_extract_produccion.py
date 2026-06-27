@@ -17,14 +17,14 @@ from data_pipeline.extraction.validation import SchemaContractError
 _CSV_CON_BOM = (
     "﻿idempresa,empresa,anio,mes,idpozo,sigla,formacion,profundidad,idareayacimiento,"
     "areayacimiento,cuenca,provincia,coordenadax,coordenaday,tipo_de_recurso,"
-    "clasificacion,prod_pet,prod_gas,prod_agua,iny_agua,iny_gas,iny_co2,iny_otro,tef,"
+    "clasificacion,tipopozo,prod_pet,prod_gas,prod_agua,iny_agua,iny_gas,iny_co2,iny_otro,tef,"
     "fecha_data,rectificado\n"
     "YPF,YPF SA,2020,1,100,SIG1,FM1,2500,AY1,AREA1,NEUQUINA,NEUQUEN,1.0,2.0,SHALE,"
-    "EXPLOTACION,0,50.5,0,0,0,0,0,1,2020-02-01,f\n"
+    "EXPLOTACION,Gasífero,0,50.5,0,0,0,0,0,1,2020-02-01,f\n"
     "YPF,YPF SA,2020,1,101,SIG2,FM1,2500,AY1,AREA1,NEUQUINA,NEUQUEN,1.0,2.0,SHALE,"
-    "EXPLOTACION,0,10.0,0,0,0,0,0,1,2020-02-01,f\n"
+    "EXPLOTACION,Gasífero,0,10.0,0,0,0,0,0,1,2020-02-01,f\n"
     "YSUR,YSUR SA,2020,2,200,SIG3,FM2,3000,AY2,AREA2,NEUQUINA,NEUQUEN,3.0,4.0,SHALE,"
-    "EXPLOTACION,0,5.5,0,0,0,0,0,1,2020-03-01,t\n"
+    "EXPLOTACION,Gasífero,0,5.5,0,0,0,0,0,1,2020-03-01,t\n"
 ).encode("utf-8")
 
 
