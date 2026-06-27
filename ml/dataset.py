@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 from sklearn.preprocessing import OneHotEncoder
 
+from ml import features
 from ml.config import DATA_CSV, DATASET_BASICO_CSV, TARGET, TRAIN_END, VAL_END
 
 _USECOLS = [
@@ -155,6 +156,10 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
         .reset_index(drop=True)
     )
 
+    # features de ingeniería sobre TODA la historia observada (antes del target,
+    # para que los lags por calendario sean correctos). Ver ml/features.py.
+    df = features.add_engineered_features(df)
+
     # target = prod_pet del mes siguiente, alineado por calendario (no por fila)
     nxt = df[["idpozo", "periodo", TARGET]].rename(columns={TARGET: "y_next"})
     nxt["periodo"] = nxt["periodo"] - pd.DateOffset(months=1)
@@ -171,7 +176,8 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
 
     cols = (
         ["idpozo", "periodo", "periodo_objetivo", "split"]
-        + BASIC_NUMERIC_FEATURES + BASIC_CATEGORICAL_FEATURES + ["y_next"]
+        + BASIC_NUMERIC_FEATURES + features.ENGINEERED_FEATURES
+        + BASIC_CATEGORICAL_FEATURES + ["y_next"]
     )
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
