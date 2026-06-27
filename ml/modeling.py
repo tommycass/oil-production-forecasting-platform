@@ -22,7 +22,7 @@ from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.metrics import r2_score, root_mean_squared_error
+from sklearn.metrics import make_scorer, mean_squared_error, r2_score
 from sklearn.model_selection import ParameterGrid, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -115,10 +115,20 @@ def get_models(random_state: int = 42) -> dict:
     }
 
 
+def rmse(y_true, y_pred) -> float:
+    """RMSE compatible con todas las versiones de sklearn (no usa
+    ``root_mean_squared_error``, que recién existe desde sklearn 1.4)."""
+    return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
+# scorer de RMSE para cross_val_score (negativo: sklearn maximiza el score)
+RMSE_SCORER = make_scorer(rmse, greater_is_better=False)
+
+
 def evaluate(y_true, y_pred) -> dict[str, float]:
     """RMSE (m³, penaliza errores grandes) y R² (varianza explicada)."""
     return {
-        "val_rmse": root_mean_squared_error(y_true, y_pred),
+        "val_rmse": rmse(y_true, y_pred),
         "val_r2": r2_score(y_true, y_pred),
     }
 
@@ -280,7 +290,7 @@ def tune_model(
         pipe = build_pipeline(clone(spec["estimator"]), spec["scale"]).set_params(**params)
         scores = cross_val_score(
             pipe, X_train, y_train, cv=folds,
-            scoring="neg_root_mean_squared_error", n_jobs=n_jobs,
+            scoring=RMSE_SCORER, n_jobs=n_jobs,
         )
         rmse = float(-scores.mean())
         resultados.append({"params": params, "cv_rmse": rmse})
@@ -339,3 +349,45 @@ def eval_searches_on_val(
         filas.append({"modelo": nombre, **evaluate(y_val, pred)})
     filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds_enc)})
     return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
+
+
+def eval_searches_train_val(
+    searches: dict, ds_enc: pd.DataFrame, feature_cols: list[str],
+) -> pd.DataFrame:
+    """Toma la **mejor config** de cada búsqueda y mide RMSE/R² en **train y val**.
+
+    El ``best_estimator_`` ya viene reentrenado en todo train. Reportar las dos
+    métricas a la vez sirve para ver el **gap train→val** (sobreajuste): si train
+    es mucho mejor que val, el modelo memoriza. Incluye la persistencia en ambos
+    splits como referencia. Ordena por ``val_rmse``.
+    """
+    X_tr, y_tr, X_va, y_va = split_train_val(ds_enc, feature_cols)
+    X_tr_n, X_va_n = X_tr.to_numpy(), X_va.to_numpy()
+
+    filas = []
+    for nombre, search in searches.items():
+        est = search.best_estimator_
+        m_tr = evaluate(y_tr, est.predict(X_tr_n))
+        m_va = evaluate(y_va, est.predict(X_va_n))
+        filas.append({
+            "modelo": nombre,
+            "train_rmse": m_tr["val_rmse"], "train_r2": m_tr["val_r2"],
+            "val_rmse": m_va["val_rmse"], "val_r2": m_va["val_r2"],
+        })
+
+    # persistencia (ŷ = prod_pet(t)) en cada split, como referencia
+    usable = ds_enc[ds_enc[TARGET_COL].notna()]
+    p_tr = evaluate(*_persistencia(usable, "train"))
+    p_va = evaluate(*_persistencia(usable, "val"))
+    filas.append({
+        "modelo": "persistencia (baseline)",
+        "train_rmse": p_tr["val_rmse"], "train_r2": p_tr["val_r2"],
+        "val_rmse": p_va["val_rmse"], "val_r2": p_va["val_r2"],
+    })
+    return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
+
+
+def _persistencia(usable: pd.DataFrame, split: str) -> tuple[pd.Series, pd.Series]:
+    """(y_true, y_pred) de la persistencia para un split: ŷ(t+1) = prod_pet(t)."""
+    s = usable[usable.split == split]
+    return s[TARGET_COL], s["prod_pet"]
