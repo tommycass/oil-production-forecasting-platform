@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from sklearn.preprocessing import OneHotEncoder
 
 from ml.config import DATA_CSV, DATASET_BASICO_CSV, TARGET, TRAIN_END, VAL_END
 
@@ -168,3 +169,59 @@ def save_basic_dataset(df: pd.DataFrame | None = None, path=DATASET_BASICO_CSV) 
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False, encoding="utf-8-sig")
     return path
+
+
+# --- One-hot encoding de las categóricas (anti-leakage: se ajusta en train) ---
+# Valor con el que se imputan los nulls de las categóricas antes de encodear
+# (lo sugerido en el EDA: una categoría explícita "DESCONOCIDO").
+CATEGORICAL_NA_FILL = "DESCONOCIDO"
+
+
+def fit_onehot_encoder(
+    df: pd.DataFrame, cols: list[str] = BASIC_CATEGORICAL_FEATURES
+) -> OneHotEncoder:
+    """Ajusta un ``OneHotEncoder`` usando **solo las filas de train** (anti-leakage).
+
+    Las categorías (y por ende las columnas resultantes) se aprenden únicamente
+    de train. Las categorías que aparezcan solo en val/test se ignoran al
+    transformar (``handle_unknown="ignore"`` → fila todo-cero para esa feature),
+    así no se crean columnas a partir de datos del futuro. Los nulls se imputan
+    a ``CATEGORICAL_NA_FILL`` antes de ajustar.
+
+    Requiere que ``df`` tenga la columna ``split`` (la crea ``build_basic_dataset``).
+    """
+    train = df.loc[df["split"] == "train", cols].fillna(CATEGORICAL_NA_FILL)
+    enc = OneHotEncoder(handle_unknown="ignore", sparse_output=False, dtype="uint8")
+    enc.fit(train)
+    return enc
+
+
+def transform_onehot(
+    df: pd.DataFrame, encoder: OneHotEncoder, cols: list[str] = BASIC_CATEGORICAL_FEATURES
+) -> pd.DataFrame:
+    """Aplica un encoder ya ajustado y devuelve un DataFrame de dummies 0/1.
+
+    Las columnas son exactamente las que el encoder vio en train (nombres tipo
+    ``tipopozo_Petrolífero``), alineadas al índice de ``df``. Imputa nulls igual
+    que en el fit.
+    """
+    mat = encoder.transform(df[cols].fillna(CATEGORICAL_NA_FILL))
+    names = encoder.get_feature_names_out(cols)
+    return pd.DataFrame(mat, columns=names, index=df.index)
+
+
+def onehot_encode_dataset(
+    df: pd.DataFrame, cols: list[str] = BASIC_CATEGORICAL_FEATURES
+) -> tuple[pd.DataFrame, OneHotEncoder]:
+    """Pipeline de one-hot: ajusta en train + transforma todo ``df``.
+
+    Reemplaza las columnas categóricas por sus columnas one-hot (deja claves,
+    numéricas, ``split`` y ``y_next`` intactas, con ``y_next`` al final).
+    Devuelve ``(df_encoded, encoder)``; el encoder se puede reusar para
+    transformar nuevos datos con las mismas columnas.
+    """
+    enc = fit_onehot_encoder(df, cols)
+    dummies = transform_onehot(df, enc, cols)
+    base = df.drop(columns=[*cols, "y_next"])
+    out = pd.concat([base, dummies, df["y_next"]], axis=1)
+    return out, enc
