@@ -10,7 +10,7 @@ fastapi==0.135.1
 h11==0.16.0
 idna==3.11
 limits==5.8.0
-packaging==26.0
+packaging==24.2
 prometheus-fastapi-instrumentator==7.0.0
 prometheus_client==0.24.1
 psycopg2-binary==2.9.12
