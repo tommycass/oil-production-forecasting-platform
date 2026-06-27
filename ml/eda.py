@@ -423,3 +423,134 @@ def model_input_plan(df: pd.DataFrame) -> pd.DataFrame:
         by=["uso_modelo", "rol", "columna"],
         key=lambda s: s.map(orden) if s.name == "uso_modelo" else s,
     )
+
+
+def numeric_model_features(df: pd.DataFrame) -> list[str]:
+    """Features de entrada **numéricas** (uso_modelo == 'input' y dtype numérico).
+
+    Incluye las medidas/atributos continuos y el eje temporal (``anio``/``mes``).
+    No incluye el target.
+    """
+    return [
+        c for c in df.columns
+        if MODEL_INPUT_ROLE.get(c, ("",))[0] == "input"
+        and pd.api.types.is_numeric_dtype(df[c])
+    ]
+
+
+def categorical_model_features(df: pd.DataFrame) -> list[str]:
+    """Features de entrada **categóricas** (uso_modelo == 'input' y no numéricas)."""
+    return [
+        c for c in df.columns
+        if MODEL_INPUT_ROLE.get(c, ("",))[0] == "input"
+        and not pd.api.types.is_numeric_dtype(df[c])
+    ]
+
+
+# --- Correlación de las features candidatas -------------------------------
+
+def numeric_correlation(
+    df: pd.DataFrame,
+    cols: list[str] | None = None,
+    *,
+    include_target: bool = True,
+    method: str = "pearson",
+) -> pd.DataFrame:
+    """Matriz de correlación de las features numéricas (con el target adelante).
+
+    ``method`` puede ser ``"pearson"`` (lineal) o ``"spearman"`` (de rango, más
+    robusto a la fuerte asimetría de las medidas de producción).
+    """
+    if cols is None:
+        cols = numeric_model_features(df)
+    if include_target and TARGET not in cols:
+        cols = [TARGET] + cols
+    num = df[cols].apply(pd.to_numeric, errors="coerce")
+    return num.corr(method=method)
+
+
+def plot_numeric_correlation(
+    df: pd.DataFrame,
+    cols: list[str] | None = None,
+    *,
+    include_target: bool = True,
+    method: str = "pearson",
+):
+    """Heatmap anotado de la matriz de correlación de las features numéricas."""
+    corr = numeric_correlation(df, cols, include_target=include_target, method=method)
+    k = len(corr)
+    fig, ax = plt.subplots(figsize=(0.85 * k + 2.5, 0.75 * k + 2))
+    im = ax.imshow(corr.values, vmin=-1, vmax=1, cmap="RdBu_r")
+    ax.set_xticks(range(k))
+    ax.set_xticklabels(corr.columns, rotation=45, ha="right", fontsize=8)
+    ax.set_yticks(range(k))
+    ax.set_yticklabels(corr.index, fontsize=8)
+    for i in range(k):
+        for j in range(k):
+            v = corr.iloc[i, j]
+            ax.text(
+                j, i, f"{v:.2f}", ha="center", va="center", fontsize=7,
+                color="white" if abs(v) > 0.55 else "#222",
+            )
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_title(f"Correlación {method} — features numéricas (train)", fontsize=11)
+    fig.tight_layout()
+    return fig
+
+
+def categorical_target_correlation(
+    df: pd.DataFrame,
+    cols: list[str] | None = None,
+    *,
+    target: str = TARGET,
+) -> pd.DataFrame:
+    """Correlación de cada categoría one-hot con el target.
+
+    Para cada feature categórica de entrada se hace one-hot (``pd.get_dummies``)
+    y se calcula la correlación de cada dummy 0/1 con el target continuo
+    (correlación punto-biserial). Devuelve una tabla larga
+    ``feature / categoria / pct_filas / corr_target`` ordenada por |corr|.
+    """
+    if cols is None:
+        cols = categorical_model_features(df)
+    y = pd.to_numeric(df[target], errors="coerce")
+    recs = []
+    for col in cols:
+        dummies = pd.get_dummies(df[col], prefix=col, prefix_sep="=").astype(float)
+        corr = dummies.corrwith(y)
+        freq = dummies.mean() * 100
+        for cat in corr.index:
+            recs.append(
+                {
+                    "feature": col,
+                    "categoria": cat.split("=", 1)[1],
+                    "pct_filas": round(freq[cat], 1),
+                    "corr_target": round(corr[cat], 3),
+                }
+            )
+    out = pd.DataFrame(recs).dropna(subset=["corr_target"])
+    order = out["corr_target"].abs().sort_values(ascending=False).index
+    return out.loc[order].reset_index(drop=True)
+
+
+def plot_categorical_target_correlation(
+    df: pd.DataFrame,
+    cols: list[str] | None = None,
+    *,
+    target: str = TARGET,
+    top: int = 25,
+):
+    """Barras de las ``top`` categorías one-hot con mayor |correlación| con el target."""
+    tbl = categorical_target_correlation(df, cols, target=target).head(top)
+    labels = tbl["feature"] + "=" + tbl["categoria"].astype(str)
+    colors = ["#d65f5f" if v < 0 else "#4c78a8" for v in tbl["corr_target"]]
+    fig, ax = plt.subplots(figsize=(7.5, 0.33 * len(tbl) + 1.2))
+    ax.barh(range(len(tbl)), tbl["corr_target"], color=colors, edgecolor="white", linewidth=0.3)
+    ax.set_yticks(range(len(tbl)))
+    ax.set_yticklabels([str(lbl)[:42] for lbl in labels], fontsize=7.5)
+    ax.invert_yaxis()
+    ax.axvline(0, color="#999", linewidth=0.8)
+    ax.set_xlabel(f"correlación con {target}", fontsize=9)
+    ax.set_title(f"Top {top} categorías (one-hot) por |correlación| con {target} — train", fontsize=10)
+    fig.tight_layout()
+    return fig

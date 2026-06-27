@@ -14,6 +14,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 # store, este origen se reemplaza por una lectura del store (mismo contrato).
 DATA_CSV = PROJECT_ROOT / "data" / "_explore" / "produccion_full.csv"
 
+# Dataset básico ya procesado (features del mes t + target t+1). Es un derivado
+# local del crudo: vive bajo data/ (gitignoreado por data/.gitignore) para no
+# versionarlo ni tocar el original.
+DATASET_BASICO_CSV = PROJECT_ROOT / "data" / "processed" / "dataset_basico.csv"
+
 TARGET = "prod_pet"  # m³ de petróleo (ADR-028)
 
 # --- Split temporal de 3 vías (ADR-028, Opción A) ---
