@@ -9,26 +9,27 @@ El baseline cumple dos funciones:
 1. **Vara de éxito:** un modelo de ML solo se justifica si **supera** al baseline. Si una regresión o un modelo de árboles no le gana a una regla trivial, no aporta valor y agrega complejidad innecesaria.
 2. **Sentido de negocio:** la regla baseline debe ser interpretable por un operador, no una caja negra. Representa "qué pasaría si no hubiera modelo".
 
-El EDA (`notebooks/02_outliers_correlaciones.ipynb`) ya mostró que la producción es **fuertemente autocorrelacionada**: el valor del mes actual correlaciona **0,95** con el del mes siguiente, y la media móvil de 3 meses **0,90**. Esto anticipa que una regla autoregresiva simple será un baseline difícil de superar.
+El EDA (`notebooks/01_outliers_correlaciones.ipynb`) ya mostró que la producción es **fuertemente autocorrelacionada**: el valor del mes actual correlaciona **0,95** con el del mes siguiente, y la media móvil de 3 meses **0,90**. Esto anticipa que una regla autoregresiva simple será un baseline difícil de superar.
 
 ## Análisis de Alternativas
 
-Se evaluaron reglas deterministas, todas calculadas sobre el universo petrolero y medidas en el conjunto de **test** del ADR-028 (meses 2024-12 a 2026-04; 63.330 ejemplos; media del target ≈ 641 m³):
+Se evaluaron reglas deterministas sobre el **dataset unificado** (`build_basic_dataset`: universo petrolero train-only + target por merge de calendario, ADR-031), las mismas que comen los modelos. Se miden en **val** (comparación directa con los modelos, ADR-034) y en **test** (vara de éxito final). Cifras de `python -m ml.baseline`:
 
-| Baseline | Regla | MAE (m³) | RMSE (m³) |
-|---|---|---|---|
-| Media global | ŷ = media de producción en train | 675,9 | 1351,6 |
-| Naive estacional | ŷ(t+1) = y(t−11) (mismo mes, año anterior) | 354,9 | 954,2 |
-| Media móvil 3m | ŷ(t+1) = promedio de los últimos 3 meses | 193,6 | 556,2 |
-| **Persistencia (naive)** | **ŷ(t+1) = y(t) (último valor observado)** | **176,4** | **546,4** |
+| Baseline | Regla | val MAE | val RMSE | test MAE | test RMSE |
+|---|---|---|---|---|---|
+| Naive estacional | ŷ(t+1) = prod_pet(t−11) (mismo mes, año anterior) | 280,4 | 778,2 | 154,4 | 403,3 |
+| Media móvil 3m | ŷ(t+1) = media de {t, t−1, t−2} | 103,5 | 311,6 | 64,7 | 191,8 |
+| **Persistencia (naive)** | **ŷ(t+1) = prod_pet(t)** | **81,8** | **250,6** | **53,9** | **166,2** |
 
-- **Media global:** ignora por completo la historia del pozo. Sirve solo como cota inferior de calidad (cualquier cosa razonable debe ganarle). Es el peor.
-- **Naive estacional:** captura estacionalidad pero **ignora la declinación** del pozo, por lo que en pozos que caen fuerte sobreestima. Rinde peor que las reglas basadas en meses recientes.
-- **Media móvil 3m:** suaviza el ruido; muy competitiva.
-- **Persistencia:** la más simple posible y la **mejor**. Coherente con la alta autocorrelación observada.
-- **Regla de declinación (Arps / tasa de declinación):** considerada como alternativa "de negocio" más sofisticada (ŷ = y(t)·(1 − tasa)). Se descartó **como baseline** porque requiere estimar una tasa por pozo, lo que ya la convierte en un mini-modelo y le quita el rol de referencia trivial. Queda como posible feature/idea para el modelo, no como baseline.
+(unidades en m³; n ≈ 47.900 en val y 48.100 en test.)
 
-> **Actualización (alineación con ADR-031/033):** la tabla de arriba corresponde al **frame exploratorio inicial** (universo full-history + target por `shift`, ya **retirado**) medido en test. `ml/baseline.py` se realineó al **dataset unificado** (`build_basic_dataset`: universo train-only + target por merge de calendario) y ahora reporta en **val y test**, igual que los modelos (ADR-034), para que sean comparables. Las cifras exactas se recalculan con `python -m ml.baseline`; sobre el dataset unificado la **persistencia en val ≈ RMSE 250,6 / R² 0,881** (referencia que usa el notebook 04). El **orden y la conclusión no cambian**: la persistencia sigue siendo el baseline primario a superar.
+- **Media global** (ŷ = media de train): ignora por completo la historia del pozo; cota inferior trivial de calidad. No se incluye en la tabla por estar muy lejos de las demás.
+- **Naive estacional:** captura estacionalidad pero **ignora la declinación** del pozo (sobreestima en pozos que caen) y pierde cobertura (necesita 12 meses de historia). Es el peor de los tres.
+- **Media móvil 3m:** suaviza el ruido, pero al promediar 3 meses **se rezaga** frente a la persistencia en una serie tan autocorrelacionada.
+- **Persistencia:** la más simple posible y la **mejor** en val y test. Coherente con la alta autocorrelación observada (corr 0,95 con el mes siguiente).
+- **Regla de declinación (Arps / tasa de declinación):** alternativa "de negocio" más sofisticada (ŷ = y(t)·(1 − tasa)). Se descartó **como baseline** porque requiere estimar una tasa por pozo, lo que ya la convierte en un mini-modelo y le quita el rol de referencia trivial. Queda como posible feature/idea para el modelo, no como baseline.
+
+> La persistencia en val (RMSE 250,6 / R² 0,881) coincide exactamente con la que reporta el notebook 04, confirmando que baselines y modelos corren sobre el mismo dataset y split.
 
 ## Decisión
 

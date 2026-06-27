@@ -6,9 +6,9 @@
 
 El ADR-031 dejó el dataset básico con las **medidas crudas del mes t** (`prod_pet`, `prod_gas`, `prod_agua`, `tef`, `profundidad`, coords) y el calendario del target (`mes`), y **prometió** documentar aparte *"el diseño de features avanzadas (lags múltiples, medias móviles, agregados por entidad)"*. Este ADR registra ese diseño.
 
-El objetivo es darle al modelo señal **predictiva y leak-free** más allá del último valor observado. El EDA (`notebooks/02_outliers_correlaciones.ipynb`) mostró que la producción es fuertemente autocorrelacionada (corr 0,95 con el mes siguiente) y que declina con el tiempo: hay estructura temporal (nivel, tendencia, estacionalidad, agotamiento) y espacial (pozos vecinos de un mismo reservorio) que conviene capturar.
+El objetivo es darle al modelo señal **predictiva y leak-free** más allá del último valor observado. El EDA (`notebooks/01_outliers_correlaciones.ipynb`) mostró que la producción es fuertemente autocorrelacionada (corr 0,95 con el mes siguiente) y que declina con el tiempo: hay estructura temporal (nivel, tendencia, estacionalidad, agotamiento) y espacial (pozos vecinos de un mismo reservorio) que conviene capturar.
 
-Las features se implementan **una función por feature** en `ml/features.py` y se agregan en `build_basic_dataset` (`ml/dataset.py`) **antes** del merge del target. Se validaron en `notebooks/03_feature_engineering.ipynb`.
+Las features se implementan **una función por feature** en `ml/features.py` y se agregan en `build_basic_dataset` (`ml/dataset.py`) **antes** del merge del target. Se validaron en `notebooks/02_feature_engineering.ipynb`.
 
 Doble restricción anti-leakage (igual que ADR-031):
 - **Futuro→pasado:** una feature de la fila del mes t solo puede usar datos de t o anteriores.

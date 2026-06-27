@@ -6,7 +6,7 @@
 
 Las 22 features candidatas (ADR-031 §4) incluyen **14 variables categóricas** (`tipoextraccion`, `tipoestado`, `tipopozo`, `empresa`, `formprod`, `formacion`, `areapermisoconcesion`, `areayacimiento`, `cuenca`, `provincia`, `proyecto`, `clasificacion`, `subclasificacion`, `sub_tipo_recurso`). Los modelos tabulares no consumen strings, así que hay que **codificarlas a números**, y hacerlo (a) **sin leakage** y (b) de forma **robusta a categorías nuevas**: la cuenca incorpora operadoras y áreas con el tiempo, así que en val/test aparecen valores que no estaban en train.
 
-La implementación es reutilizable en `ml/dataset.py` (`fit_onehot_encoder`, `transform_onehot`, `onehot_encode_dataset`) y se valida en `notebooks/03_feature_engineering.ipynb`.
+La implementación es reutilizable en `ml/dataset.py` (`fit_onehot_encoder`, `transform_onehot`, `onehot_encode_dataset`) y se valida en `notebooks/02_feature_engineering.ipynb`.
 
 ### Evidencia
 
