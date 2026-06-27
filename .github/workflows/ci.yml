@@ -65,7 +65,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r api/requirements.txt
+        run: |
+          pip install -r api/requirements.txt
+          pip install -r api/requirements-dev.txt
 
       - name: Run ML serving tests
         run: pytest api/tests/test_predict.py -v
