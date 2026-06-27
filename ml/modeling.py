@@ -5,20 +5,28 @@ Funciones reutilizables para:
   categóricas ajustado en train, vía ``ml.dataset.onehot_encode_dataset``),
 - **preprocesar** (imputación de NaN y normalización) **ajustando siempre en
   train** y aplicando a val/test (anti-leakage val→train),
-- entrenar y evaluar (RMSE, R²) modelos comparables sobre val.
+- entrenar y evaluar (RMSE, R²) modelos comparables sobre val,
+- **tunear hiperparámetros con CV temporal** (expanding window por mes), sin
+  leakage entre folds.
 
 Se entrena en ``train`` y se compara en ``val`` (ADR-028); ``test`` queda intacto.
 Métricas: RMSE (m³) y R² (varianza explicada).
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import r2_score, root_mean_squared_error
+from sklearn.model_selection import ParameterGrid, cross_val_score
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from tqdm.auto import tqdm
 from xgboost import XGBRegressor
 
 from ml import dataset
@@ -147,3 +155,187 @@ def train_eval_models(
 
     tabla = pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
     return tabla, entrenados
+
+
+# --- Búsqueda de hiperparámetros con CV temporal ---------------------------
+
+def time_series_folds(periodos, n_splits: int = 4) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Folds de CV que respetan el orden temporal (expanding window), a nivel de
+    **mes**, para un panel (varios pozos por mes).
+
+    Estilo ``TimeSeriesSplit`` pero sobre los meses únicos: en cada fold el bloque
+    de validación es **posterior** a todos los meses de entrenamiento, así nunca
+    se entrena con datos del futuro respecto de lo que se valida (anti-leakage
+    futuro→pasado). Como el imputador/scaler van dentro del ``Pipeline``,
+    GridSearchCV los reajusta **solo con el tramo de train de cada fold** → tampoco
+    hay leakage de estadísticos entre folds.
+
+    Devuelve una lista de ``(train_idx, val_idx)`` con índices **posicionales**
+    (alineados con el orden de las filas de ``X``).
+    """
+    periodos = np.asarray(periodos)
+    meses = np.sort(np.unique(periodos))
+    bloques = np.array_split(meses, n_splits + 1)
+    folds = []
+    train_meses = bloques[0]
+    for i in range(1, n_splits + 1):
+        val_meses = bloques[i]
+        tr_idx = np.where(np.isin(periodos, train_meses))[0]
+        va_idx = np.where(np.isin(periodos, val_meses))[0]
+        folds.append((tr_idx, va_idx))
+        train_meses = np.concatenate([train_meses, val_meses])  # ventana creciente
+    return folds
+
+
+def train_search_arrays(
+    ds_enc: pd.DataFrame, feature_cols: list[str]
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Arrays de train (ordenados por periodo) para la búsqueda: ``(X, y, periodos)``.
+
+    Se pasan como numpy para que los índices posicionales de los folds coincidan
+    exactamente con las filas de ``X``.
+    """
+    tr = ds_enc[(ds_enc.split == "train") & ds_enc[TARGET_COL].notna()].sort_values("periodo")
+    return tr[feature_cols].to_numpy(), tr[TARGET_COL].to_numpy(), tr["periodo"].to_numpy()
+
+
+def build_pipeline(estimator, scale: bool) -> Pipeline:
+    """Pipeline imputación (mediana) [+ escalado] + modelo.
+
+    Que el preprocesamiento viva en el ``Pipeline`` es lo que evita el leakage
+    entre folds: GridSearchCV lo reajusta solo con el train de cada fold.
+    """
+    steps = [("imputer", SimpleImputer(strategy="median"))]
+    if scale:
+        steps.append(("scaler", StandardScaler()))
+    steps.append(("model", estimator))
+    return Pipeline(steps)
+
+
+def search_spaces(random_state: int = 42) -> dict:
+    """Espacios de búsqueda por modelo. ``ridge`` tunea la lambda L2 (``alpha``);
+    los árboles, sus hiperparámetros principales. Grids chicos a propósito
+    (ampliables) para que la corrida sea manejable.
+
+    ``search_n_jobs``: para los árboles (que ya paralelizan internamente con
+    ``n_jobs=-1``) se deja en 1 para no sobre-suscribir CPU; para ridge, -1.
+    """
+    return {
+        "ridge": {
+            "estimator": Ridge(),
+            "scale": True,
+            "search_n_jobs": -1,
+            "grid": {"model__alpha": [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]},
+        },
+        "random_forest": {
+            "estimator": RandomForestRegressor(n_jobs=-1, random_state=random_state),
+            "scale": False,
+            "search_n_jobs": 1,
+            "grid": {
+                "model__n_estimators": [300],
+                "model__max_depth": [None, 16],
+                "model__min_samples_leaf": [5, 20],
+                "model__max_features": ["sqrt", 0.3],
+            },
+        },
+        "xgboost": {
+            "estimator": XGBRegressor(
+                tree_method="hist", n_jobs=-1, random_state=random_state
+            ),
+            "scale": False,
+            "search_n_jobs": 1,
+            "grid": {
+                "model__n_estimators": [400, 800],
+                "model__learning_rate": [0.03, 0.05],
+                "model__max_depth": [4, 6, 8],
+                "model__subsample": [0.8],
+                "model__colsample_bytree": [0.8],
+            },
+        },
+    }
+
+
+def tune_model(
+    spec: dict, X_train: np.ndarray, y_train: np.ndarray,
+    periodos_train: np.ndarray, n_splits: int = 4,
+    nombre: str = "modelo", progress: bool = True,
+) -> SimpleNamespace:
+    """Grid search con CV temporal para un modelo, con **barra de progreso**.
+
+    Recorre cada combinación de ``spec["grid"]`` y la evalúa con ``cross_val_score``
+    sobre los folds temporales (RMSE promedio); la barra (``tqdm``) avanza una vez
+    por combinación y muestra el mejor RMSE hasta el momento. Reentrena el mejor
+    estimador en **todo** train.
+
+    Devuelve un objeto con ``best_params_``, ``best_score_`` (= -RMSE de CV) y
+    ``best_estimator_`` (Pipeline ajustado), compatible con el resto del módulo.
+    """
+    folds = time_series_folds(periodos_train, n_splits=n_splits)
+    combos = list(ParameterGrid(spec["grid"]))
+    n_jobs = spec.get("search_n_jobs", 1)
+
+    resultados, mejor_rmse = [], np.inf
+    barra = tqdm(combos, desc=f"{nombre} ({len(combos)} combos)", disable=not progress)
+    for params in barra:
+        pipe = build_pipeline(clone(spec["estimator"]), spec["scale"]).set_params(**params)
+        scores = cross_val_score(
+            pipe, X_train, y_train, cv=folds,
+            scoring="neg_root_mean_squared_error", n_jobs=n_jobs,
+        )
+        rmse = float(-scores.mean())
+        resultados.append({"params": params, "cv_rmse": rmse})
+        mejor_rmse = min(mejor_rmse, rmse)
+        barra.set_postfix(rmse=f"{rmse:.2f}", mejor=f"{mejor_rmse:.2f}")
+
+    best = min(resultados, key=lambda r: r["cv_rmse"])
+    best_estimator = build_pipeline(clone(spec["estimator"]), spec["scale"]).set_params(**best["params"])
+    best_estimator.fit(X_train, y_train)
+    return SimpleNamespace(
+        best_params_=best["params"],
+        best_score_=-best["cv_rmse"],
+        best_estimator_=best_estimator,
+        cv_results_=resultados,
+    )
+
+
+def tune_all(
+    ds_enc: pd.DataFrame, feature_cols: list[str], n_splits: int = 4,
+    progress: bool = True,
+) -> tuple[pd.DataFrame, dict]:
+    """Tunea ridge, random_forest y xgboost con CV temporal sobre train.
+
+    Cada modelo muestra su propia barra de progreso. Devuelve ``(tabla_cv,
+    searches)``: la tabla con el RMSE de CV y los mejores hiperparámetros de cada
+    modelo, y el dict de resultados de búsqueda.
+    """
+    X_tr, y_tr, periodos = train_search_arrays(ds_enc, feature_cols)
+    searches, filas = {}, []
+    for nombre, spec in search_spaces().items():
+        search = tune_model(
+            spec, X_tr, y_tr, periodos, n_splits=n_splits,
+            nombre=nombre, progress=progress,
+        )
+        searches[nombre] = search
+        filas.append({
+            "modelo": nombre,
+            "cv_rmse": -search.best_score_,
+            "best_params": search.best_params_,
+        })
+    tabla = pd.DataFrame(filas).sort_values("cv_rmse").reset_index(drop=True)
+    return tabla, searches
+
+
+def eval_searches_on_val(
+    searches: dict, ds_enc: pd.DataFrame, feature_cols: list[str],
+) -> pd.DataFrame:
+    """Evalúa el mejor estimador de cada búsqueda sobre **val** (held-out, intacto
+    durante el tuning) más la persistencia. Tabla comparativa ordenada por val_rmse.
+    """
+    _, _, X_val, y_val = split_train_val(ds_enc, feature_cols)
+    X_val = X_val.to_numpy()
+    filas = []
+    for nombre, search in searches.items():
+        pred = search.best_estimator_.predict(X_val)
+        filas.append({"modelo": nombre, **evaluate(y_val, pred)})
+    filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds_enc)})
+    return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
