@@ -28,18 +28,20 @@ Se evaluaron reglas deterministas, todas calculadas sobre el universo petrolero 
 - **Persistencia:** la más simple posible y la **mejor**. Coherente con la alta autocorrelación observada.
 - **Regla de declinación (Arps / tasa de declinación):** considerada como alternativa "de negocio" más sofisticada (ŷ = y(t)·(1 − tasa)). Se descartó **como baseline** porque requiere estimar una tasa por pozo, lo que ya la convierte en un mini-modelo y le quita el rol de referencia trivial. Queda como posible feature/idea para el modelo, no como baseline.
 
+> **Actualización (alineación con ADR-031/033):** la tabla de arriba corresponde al **frame exploratorio inicial** (universo full-history + target por `shift`, ya **retirado**) medido en test. `ml/baseline.py` se realineó al **dataset unificado** (`build_basic_dataset`: universo train-only + target por merge de calendario) y ahora reporta en **val y test**, igual que los modelos (ADR-034), para que sean comparables. Las cifras exactas se recalculan con `python -m ml.baseline`; sobre el dataset unificado la **persistencia en val ≈ RMSE 250,6 / R² 0,881** (referencia que usa el notebook 04). El **orden y la conclusión no cambian**: la persistencia sigue siendo el baseline primario a superar.
+
 ## Decisión
 
 Adoptar la **persistencia (naive forecast: ŷ(t+1) = y(t))** como **baseline primario**, reportando **media móvil 3m** y **naive estacional** como referencias secundarias.
 
-- **Umbral de éxito:** el modelo de ML deberá **superar MAE = 176,4 m³** (y RMSE = 546,4 m³) en el conjunto de test para considerarse que aporta valor.
+- **Umbral de éxito:** el modelo de ML deberá **superar a la persistencia en RMSE en val** (≈ 250,6 m³ sobre el dataset unificado) y confirmarlo en test. La métrica primaria de comparación es **RMSE** (ADR-034); las cifras exactas del baseline se obtienen con `python -m ml.baseline`.
 - **Interpretación de negocio:** la persistencia equivale al supuesto operativo por defecto — *"el pozo seguirá produciendo lo mismo que el último mes"*. Es el punto de comparación natural para cualquier decisión.
 - **Implementación:** el baseline se calcula de forma determinista (sin entrenamiento) y se registra en MLflow como un "run" más, con las mismas métricas y el mismo split que los modelos, para comparación directa.
 
 ## Consecuencias
 
 **Positivas:**
-- Queda un **criterio objetivo y cuantificado** para decidir si un modelo aporta valor (MAE < 176,4).
+- Queda un **criterio objetivo** para decidir si un modelo aporta valor (superar a la persistencia en RMSE sobre val/test).
 - El baseline es **interpretable** y tiene sentido de negocio inmediato.
 - Al loguearse en MLflow con el mismo split, la comparación modelo-vs-baseline es directa y reproducible (insumo para el video).
 
@@ -50,4 +52,4 @@ Adoptar la **persistencia (naive forecast: ŷ(t+1) = y(t))** como **baseline pri
 
 ---
 
-> Relacionado: ADR-028 (encuadre y validación). El **algoritmo** del modelo que intentará superar este baseline se documentará en un ADR aparte.
+> Relacionado: ADR-028 (encuadre y validación), ADR-031/033 (dataset y features), ADR-030 (MLflow). El **algoritmo** del modelo que intenta superar este baseline se documenta en **ADR-034**.

@@ -34,7 +34,7 @@ El target se arma uniendo el panel consigo mismo desplazado un mes (`periodo + 1
 - **Motivo:** si un pozo tiene un **hueco** en su serie mensual, un `shift(-1)` por fila tomaría el siguiente mes *disponible* (t+k con k≠1) como si fuera t+1, generando un par feature/target con horizonte equivocado. El *merge* por calendario garantiza que `y_next` sea **siempre exactamente** el mes siguiente; las filas sin mes siguiente real se descartan.
 - Verificado en el notebook: el 100% de los pares tienen gap = 1 mes y `y_next` coincide con el `prod_pet` real del mes objetivo.
 
-> Nota: el `add_target` previo de `ml/dataset.py` (usado por `build_modeling_frame`) usa `shift(-1)`; queda como deuda a alinear si ese pipeline se sigue usando.
+> Resuelto: el pipeline heredado `build_modeling_frame` (universo full-history + target por `shift(-1)`) se **retiró** de `ml/dataset.py`. `baseline.py` y el modelado usan ahora únicamente `build_basic_dataset` (universo train-only + target por merge), por lo que baselines y modelos son comparables sobre el mismo dataset.
 
 ### 3. Universo petrolero definido **solo con train** (refina ADR-028 §3)
 
@@ -69,9 +69,9 @@ Se reusa el criterio de fechas del ADR-028 (`TRAIN_END`, `VAL_END`) etiquetando 
 
 **Negativas / trade-offs:**
 - El universo train-only **no predice pozos que recién aparecen en val/test** (~1.224 pozos quedan fuera). Es el costo correcto de no usar el futuro para seleccionar; pozos nuevos se incorporan al reentrenar (mover `TRAIN_END`).
-- Queda una **inconsistencia** entre `build_basic_dataset` (universo train-only, target por merge) y el `build_modeling_frame`/`load_production` heredados (universo full-history, target por `shift`); alinearlos es deuda técnica.
+- Para mantener la coherencia hubo que **retirar** el pipeline heredado (`build_modeling_frame`/`load_production`, universo full-history + target por `shift`) y realinear `baseline.py`: las cifras de baseline del ADR-029 se recalculan sobre el dataset unificado.
 - Al excluir `anio`, el modelo no tiene una feature de **tendencia macro** explícita; se asume que el lag de `prod_pet` la captura. Si el modelado mostrara una tendencia no capturada, la vía correcta es una feature de **antigüedad/elapsed-time del pozo** (dentro de rango), no el año calendario.
 
 ---
 
-> Relacionados: **ADR-028** (encuadre del problema y split), **ADR-032** (encoding de categóricas), **ADR-029** (baselines). El diseño de features avanzadas (lags múltiples, medias móviles, agregados por entidad) se documentará al avanzar el modelado.
+> Relacionados: **ADR-028** (encuadre del problema y split), **ADR-032** (encoding de categóricas), **ADR-029** (baselines), **ADR-033** (diseño de las features derivadas: lags, ventanas, vecinos), **ADR-034** (algoritmo y validación temporal).
