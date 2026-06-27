@@ -92,8 +92,13 @@ def build_modeling_frame() -> pd.DataFrame:
 BASIC_NUMERIC_FEATURES = [
     "prod_pet", "prod_gas", "prod_agua", "tef",
     "profundidad", "coordenadax", "coordenaday",
-    "anio", "mes",
+    "mes",
 ]
+# Nota: `anio` NO entra como feature. Sus valores en val/test (2024–2026) caen
+# fuera del rango de train (≤2023) → extrapolación (sobre todo en árboles, que no
+# extrapolan), y la tendencia que aportaría ya la captura el lag de prod_pet. Se
+# carga igual para construir `periodo` y derivar el mes objetivo. `mes` sí entra:
+# es cíclico y sus valores (1–12) están todos cubiertos por train.
 BASIC_CATEGORICAL_FEATURES = [
     "tipoextraccion", "tipoestado", "tipopozo",
     "empresa", "formprod", "formacion",
@@ -106,10 +111,16 @@ BASIC_CATEGORICAL_FEATURES = [
 def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
     """Dataset básico para el forecast t+1, ya procesado **anti-leakage**.
 
-    Cada fila es ``(pozo, mes t)``: **todos los features son del mes t** y el
-    target (``y_next``) es la producción de petróleo del **mes siguiente (t+1)**.
-    Por construcción ningún feature usa información del mes que se predice, y
+    Cada fila es ``(pozo, mes t)``: las **medidas son del mes t** y el target
+    (``y_next``) es la producción de petróleo del **mes siguiente (t+1)**. Por
+    construcción ninguna medida usa información del mes que se predice, y
     ``prod_pet`` del mes t queda como "producción de petróleo del mes anterior".
+
+    **Calendario: ``mes`` corresponde al mes objetivo (t+1)**, no al mes de las
+    medidas. La fecha del mes a predecir se conoce de antemano (no es leakage) y
+    es la señal útil de estacionalidad del mes que se pronostica. ``anio`` **no**
+    es feature (extrapolación fuera del rango de train); solo se usa para derivar
+    ``periodo``.
 
     El target se arma por **merge de calendario** (``periodo + 1 mes``), no por
     ``shift(-1)`` de filas: si un pozo tiene un hueco en su serie mensual, no se
@@ -121,11 +132,13 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
     val/test. Split por ``periodo`` (ADR-028).
     """
     feats = BASIC_NUMERIC_FEATURES + BASIC_CATEGORICAL_FEATURES
-    usecols = ["idpozo", *dict.fromkeys(feats)]  # idpozo + features (anio/mes incluidos)
+    # anio se incluye en la carga (no es feature) porque hace falta para periodo
+    usecols = list(dict.fromkeys(["idpozo", "anio", "mes", *feats]))
     df = pd.read_csv(path, usecols=usecols, encoding="utf-8-sig", low_memory=False)
 
     for c in BASIC_NUMERIC_FEATURES:
         df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["anio"] = pd.to_numeric(df["anio"], errors="coerce")  # solo para construir periodo
     df["periodo"] = pd.to_datetime(dict(year=df.anio, month=df.mes, day=1))
 
     # universo petrolero definido SOLO con train (anti-leakage de selección):
@@ -148,6 +161,12 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
     out = df.merge(nxt, on=["idpozo", "periodo"], how="inner")
 
     out["periodo_objetivo"] = out["periodo"] + pd.DateOffset(months=1)
+
+    # mes = mes del MES OBJETIVO (t+1). Es conocido de antemano (no es leakage) y
+    # captura la estacionalidad del mes que se predice; a diferencia de las
+    # medidas, que sí deben ser del mes t.
+    out["mes"] = out["periodo_objetivo"].dt.month
+
     out = add_split(out)  # split por el mes de los features (periodo), ADR-028
 
     cols = (

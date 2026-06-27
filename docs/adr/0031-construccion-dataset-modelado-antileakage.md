@@ -19,12 +19,13 @@ La construcción vive en `ml/dataset.py` (`build_basic_dataset`) y se exploró/v
 
 ### 1. Encuadre temporal: features del mes `t`, target del mes `t+1`
 
-Cada fila es `(pozo, mes t)`. **Todos los features corresponden al mes `t`** y el target `y_next` es `prod_pet` del **mes `t+1`**.
+Cada fila es `(pozo, mes t)`. **Las medidas corresponden al mes `t`** y el target `y_next` es `prod_pet` del **mes `t+1`**.
 
-- Por construcción, ningún feature usa información del mes que se predice. `prod_pet` del mes `t` entra como feature (= "producción de petróleo del mes anterior"), igual que `prod_agua`, `prod_gas`, `tef`, etc. del mes `t`.
-- `anio`/`mes` quedan como el mes de los features (`t`); para estacionalidad se recomienda codificar `mes` de forma cíclica (sin/cos) en el modelado.
+- Por construcción, ninguna medida usa información del mes que se predice. `prod_pet` del mes `t` entra como feature (= "producción de petróleo del mes anterior"), igual que `prod_agua`, `prod_gas`, `tef`, etc. del mes `t`.
+- **Excepción — calendario:** `mes` corresponde al **mes objetivo (`t+1`)**, no al mes de las medidas. La fecha del mes a predecir se conoce de antemano (es determinística), así que **no es leakage** y es la señal útil: captura la estacionalidad del mes que se pronostica, no la del mes anterior. Se recomienda codificar `mes` de forma cíclica (sin/cos) en el modelado.
+- **`anio` se excluye como feature.** Sus valores en val/test (2024–2026) caen **fuera del rango de train** (≤2023) → extrapolación, problemática sobre todo para modelos de árboles (que no extrapolan). El criterio no es la ciclicidad (`profundidad`/coords tampoco lo son y se usan), sino el rango fuera de muestra; además la tendencia macro que aportaría `anio` ya la captura el lag de `prod_pet`. Se sigue cargando solo para construir `periodo`.
 
-**Alternativa descartada:** usar features del mismo mes que el target → leakage directo (no se conoce la producción del mes a predecir al momento de predecir).
+**Alternativa descartada:** usar las medidas del mismo mes que el target → leakage directo (no se conoce la producción del mes a predecir al momento de predecir). En cambio el calendario (`mes`) del target sí es conocido y se usa.
 
 ### 2. Target por *merge* de calendario, no por `shift(-1)` de filas
 
@@ -48,7 +49,7 @@ El universo de pozos (con `prod_pet > 0` en algún mes) se calcula **únicamente
 
 A partir del EDA se clasificó cada columna cruda en `input` / `feature_engineering` / `descartar` (curado en `ml.eda.MODEL_INPUT_ROLE`):
 
-- **22 candidatas a input**: 6 numéricas (`prod_gas`, `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday`), 2 temporales (`anio`, `mes`) y 14 categóricas; más `prod_pet` que entra como lag.
+- **Candidatas a input**: 6 numéricas (`prod_gas`, `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday`), las temporales (`anio`, `mes`) y 14 categóricas; más `prod_pet` que entra como lag. En el dataset final se **excluye `anio`** (ver §1), quedando `mes` como única feature de calendario.
 - **`feature_engineering`** (no entran crudas, sirven de clave): `idpozo`, `idempresa`, `idarea*`.
 - **Descartadas**: identificadores legibles (`sigla`), metadata de carga (`fechaingreso`, `fecha_data`, `idusuario`, `rectificado`, `habilitado`, `observaciones`), casi vacías (`vida_util`, `observaciones`), constantes/casi-constantes (`iny_co2`, `iny_otro`, `tipo_de_recurso`, `iny_agua`, `iny_gas`).
 
@@ -69,7 +70,7 @@ Se reusa el criterio de fechas del ADR-028 (`TRAIN_END`, `VAL_END`) etiquetando 
 **Negativas / trade-offs:**
 - El universo train-only **no predice pozos que recién aparecen en val/test** (~1.224 pozos quedan fuera). Es el costo correcto de no usar el futuro para seleccionar; pozos nuevos se incorporan al reentrenar (mover `TRAIN_END`).
 - Queda una **inconsistencia** entre `build_basic_dataset` (universo train-only, target por merge) y el `build_modeling_frame`/`load_production` heredados (universo full-history, target por `shift`); alinearlos es deuda técnica.
-- `anio` como feature implica cuidado con la **extrapolación** (predecir años fuera del rango de train).
+- Al excluir `anio`, el modelo no tiene una feature de **tendencia macro** explícita; se asume que el lag de `prod_pet` la captura. Si el modelado mostrara una tendencia no capturada, la vía correcta es una feature de **antigüedad/elapsed-time del pozo** (dentro de rango), no el año calendario.
 
 ---
 
