@@ -95,7 +95,7 @@ jobs:
 
       - name: Verify container health
         run: |
-          docker run -d --name test-api -p 8000:8000 -e API_KEY=abcdef12345 oil-forecast-api:latest
+          docker run -d --name test-api -p 8000:8000 -e API_KEY=abcdef12345 -e MLFLOW_TRACKING_URI=sqlite:///test_mlflow.db oil-forecast-api:latest
           sleep 3
           curl --fail http://localhost:8000/health || (docker logs test-api && exit 1)
           docker stop test-api && docker rm test-api
