@@ -183,15 +183,31 @@ def fit_onehot_encoder(
     """Ajusta un ``OneHotEncoder`` usando **solo las filas de train** (anti-leakage).
 
     Las categorías (y por ende las columnas resultantes) se aprenden únicamente
-    de train. Las categorías que aparezcan solo en val/test se ignoran al
-    transformar (``handle_unknown="ignore"`` → fila todo-cero para esa feature),
-    así no se crean columnas a partir de datos del futuro. Los nulls se imputan
-    a ``CATEGORICAL_NA_FILL`` antes de ajustar.
+    de train. Además, **cada feature lleva una categoría explícita
+    ``CATEGORICAL_NA_FILL`` ("DESCONOCIDO")** como fallback: a esa columna se
+    mapean los nulls y, en ``transform``, cualquier categoría no vista en train
+    (p. ej. una empresa nueva que aparece en val/test). Así una categoría
+    desconocida no rompe el modelo ni queda en un todo-cero implícito, sino que
+    se marca de forma explícita e inspeccionable.
+
+    El fallback se aprende de train donde haya nulls (p. ej. ``tipoestado``); en
+    features sin nulls en train su columna queda en 0 sobre train y solo se
+    activa con desconocidos posteriores. No se crean columnas a partir de
+    categorías del futuro (anti-leakage).
 
     Requiere que ``df`` tenga la columna ``split`` (la crea ``build_basic_dataset``).
     """
     train = df.loc[df["split"] == "train", cols].fillna(CATEGORICAL_NA_FILL)
-    enc = OneHotEncoder(handle_unknown="ignore", sparse_output=False, dtype="uint8")
+    # vocabulario = categorías de train + "DESCONOCIDO" garantizado por feature
+    categories = []
+    for c in cols:
+        cats = sorted(train[c].unique().tolist())
+        if CATEGORICAL_NA_FILL not in cats:
+            cats.append(CATEGORICAL_NA_FILL)
+        categories.append(cats)
+    enc = OneHotEncoder(
+        categories=categories, handle_unknown="ignore", sparse_output=False, dtype="uint8"
+    )
     enc.fit(train)
     return enc
 
@@ -201,11 +217,16 @@ def transform_onehot(
 ) -> pd.DataFrame:
     """Aplica un encoder ya ajustado y devuelve un DataFrame de dummies 0/1.
 
-    Las columnas son exactamente las que el encoder vio en train (nombres tipo
-    ``tipopozo_Petrolífero``), alineadas al índice de ``df``. Imputa nulls igual
-    que en el fit.
+    Las columnas son las que el encoder fijó en el fit (categorías de train +
+    ``DESCONOCIDO``), con nombres tipo ``tipopozo_Petrolífero``, alineadas al
+    índice de ``df``. Los nulls y las **categorías no vistas en train** se
+    mapean a la columna ``<feature>_DESCONOCIDO`` (fallback explícito).
     """
-    mat = encoder.transform(df[cols].fillna(CATEGORICAL_NA_FILL))
+    X = df[cols].copy()
+    for i, c in enumerate(cols):
+        conocidas = set(encoder.categories_[i])
+        X[c] = X[c].where(X[c].isin(conocidas), CATEGORICAL_NA_FILL)
+    mat = encoder.transform(X)
     names = encoder.get_feature_names_out(cols)
     return pd.DataFrame(mat, columns=names, index=df.index)
 
