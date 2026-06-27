@@ -1,13 +1,14 @@
 """Entrenamiento y comparación de modelos para el forecast de ``prod_pet`` (t+1).
 
 Funciones reutilizables para:
-- armar la matriz de features ``X`` / target ``y`` desde el dataset (one-hot de
-  categóricas ajustado en train, vía ``ml.dataset.onehot_encode_dataset``),
-- **preprocesar** (imputación de NaN y normalización) **ajustando siempre en
-  train** y aplicando a val/test (anti-leakage val→train),
-- entrenar y evaluar (RMSE, R²) modelos comparables sobre val,
-- **tunear hiperparámetros con CV temporal** (expanding window por mes), sin
-  leakage entre folds.
+- armar la matriz de features ``X`` (crudas: numéricas + categóricas) y el target ``y``,
+- **entrenar y evaluar** (RMSE, R²) modelos comparables sobre val,
+- **tunear hiperparámetros con CV temporal** (expanding window por mes).
+
+Todo el preprocesamiento (**one-hot, imputación de NaN y normalización**) vive
+**dentro de un ``Pipeline``** (``build_pipeline``): así se **ajusta solo con el
+train de cada fold** durante la cross-validation y solo con train en la evaluación
+final → sin leakage val/test→train en ningún estadístico aprendido.
 
 Se entrena en ``train`` y se compara en ``val`` (ADR-028); ``test`` queda intacto.
 Métricas: RMSE (m³) y R² (varianza explicada).
@@ -18,14 +19,15 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
-from sklearn.base import clone
+from sklearn.base import BaseEstimator, TransformerMixin, clone
+from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.linear_model import Ridge
 from sklearn.metrics import make_scorer, mean_squared_error, r2_score
 from sklearn.model_selection import ParameterGrid, cross_val_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from tqdm.auto import tqdm
 from xgboost import XGBRegressor
 
@@ -42,23 +44,27 @@ NEEDS_SCALING = {"reg_lineal"}
 # --- Matriz de features y split --------------------------------------------
 
 def build_feature_matrix(ds: pd.DataFrame | None = None) -> tuple[pd.DataFrame, list[str]]:
-    """Devuelve ``(ds_encoded, feature_cols)``: el dataset con las categóricas
-    en one-hot (ajustado en train) y la lista de columnas que son features.
+    """Devuelve ``(ds, feature_cols)``: el dataset con las features **crudas**
+    (numéricas + categóricas sin codificar) y la lista de columnas que son features.
 
-    Si no se pasa ``ds``, se construye con ``ml.dataset.build_basic_dataset``.
+    El one-hot NO se hace acá: vive en el ``Pipeline`` (``build_pipeline``) para
+    poder ajustarlo por fold durante la CV. Si no se pasa ``ds``, se construye con
+    ``ml.dataset.build_basic_dataset``.
     """
     if ds is None:
         ds = dataset.build_basic_dataset()
-    ds_enc, _ = dataset.onehot_encode_dataset(ds)
-    feature_cols = [c for c in ds_enc.columns if c not in KEYS + [TARGET_COL]]
-    return ds_enc, feature_cols
+    feature_cols = [c for c in ds.columns if c not in KEYS + [TARGET_COL]]
+    return ds, feature_cols
 
 
 def split_train_val(
-    ds_enc: pd.DataFrame, feature_cols: list[str]
+    ds: pd.DataFrame, feature_cols: list[str]
 ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
-    """Separa en (X_train, y_train, X_val, y_val) según la columna ``split``."""
-    usable = ds_enc[ds_enc[TARGET_COL].notna()]
+    """Separa en (X_train, y_train, X_val, y_val) según la columna ``split``.
+
+    Devuelve ``X`` como DataFrame con las columnas crudas (el ``Pipeline`` se
+    encarga del one-hot/imputación/escalado, ajustando en train)."""
+    usable = ds[ds[TARGET_COL].notna()]
     tr = usable[usable.split == "train"]
     va = usable[usable.split == "val"]
     return (
@@ -67,42 +73,92 @@ def split_train_val(
     )
 
 
-# --- Preprocesamiento (siempre fit en train) -------------------------------
+# --- Preprocesamiento: one-hot con fallback, dentro del Pipeline -----------
 
-def impute_train_val(
-    X_train: pd.DataFrame, X_val: pd.DataFrame, strategy: str = "median"
-) -> tuple[np.ndarray, np.ndarray, SimpleImputer]:
-    """Imputa NaN ajustando el estadístico **solo en train** (anti-leakage).
+class OneHotDESC(BaseEstimator, TransformerMixin):
+    """One-hot con fallback explícito ``DESCONOCIDO`` (ADR-032), apto para usar
+    como paso de un ``Pipeline`` / ``ColumnTransformer``.
 
-    Necesario para RandomForest y regresión lineal (no toman NaN). Devuelve las
-    matrices imputadas (float32) y el imputador ajustado (reutilizable en test).
+    A diferencia de ``ml.dataset.fit_onehot_encoder`` (que filtra ``split=="train"``),
+    aprende el vocabulario en ``fit`` con **todas las filas que recibe** — que dentro
+    de la cross-validation son las del **train de cada fold**. En ``transform``, los
+    nulos y las **categorías no vistas** se mapean a la columna ``<feature>_DESCONOCIDO``.
+    Así el one-hot también se ajusta por fold (sin leakage val→train en el vocabulario).
     """
-    imp = SimpleImputer(strategy=strategy).fit(X_train)
-    Xtr = imp.transform(X_train).astype("float32")
-    Xva = imp.transform(X_val).astype("float32")
-    return Xtr, Xva, imp
+
+    FILL = dataset.CATEGORICAL_NA_FILL  # "DESCONOCIDO"
+
+    def fit(self, X, y=None):
+        X = pd.DataFrame(X)
+        self.columns_ = list(X.columns)
+        categories = []
+        for c in self.columns_:
+            cats = sorted(X[c].fillna(self.FILL).unique().tolist())
+            if self.FILL not in cats:
+                cats.append(self.FILL)
+            categories.append(cats)
+        self.known_ = [set(c) for c in categories]
+        self.encoder_ = OneHotEncoder(
+            categories=categories, handle_unknown="ignore",
+            sparse_output=False, dtype="uint8",
+        ).fit(X[self.columns_].fillna(self.FILL))
+        return self
+
+    def transform(self, X):
+        X = pd.DataFrame(X)[self.columns_].copy()
+        for i, c in enumerate(self.columns_):
+            X[c] = X[c].where(X[c].isin(self.known_[i]), self.FILL)
+        return self.encoder_.transform(X)
+
+    def get_feature_names_out(self, input_features=None):
+        return self.encoder_.get_feature_names_out(self.columns_)
 
 
-def normalize_train_val(
-    X_train: np.ndarray, X_val: np.ndarray
-) -> tuple[np.ndarray, np.ndarray, StandardScaler]:
-    """Estandariza (media 0, desvío 1) ajustando **solo en train**. Para la
-    regresión lineal (sensible a la escala de las features). Devuelve las
-    matrices escaladas y el scaler ajustado.
+def _split_cols(feature_cols: list[str]) -> tuple[list[str], list[str]]:
+    """Separa ``feature_cols`` en (numéricas, categóricas) según ADR-031/032."""
+    cat = [c for c in feature_cols if c in dataset.BASIC_CATEGORICAL_FEATURES]
+    num = [c for c in feature_cols if c not in dataset.BASIC_CATEGORICAL_FEATURES]
+    return num, cat
 
-    Importante: ajustar en train y aplicar a val/test evita el leakage de
-    estadísticos (media/desvío) de val/test hacia el entrenamiento.
+
+def build_pipeline(estimator, scale: bool, feature_cols: list[str]) -> Pipeline:
+    """Pipeline de preprocesamiento + modelo, con **todo lo aprendido fit en train**.
+
+    - numéricas → imputación por **mediana**;
+    - categóricas → **one-hot con fallback ``DESCONOCIDO``** (``OneHotDESC``);
+    - opcional → **estandarización** (para la regresión lineal/ridge);
+    - modelo.
+
+    Que el ``ColumnTransformer`` (one-hot + imputación) y el ``StandardScaler``
+    vivan en el ``Pipeline`` es lo que garantiza que, en la CV, **los tres se
+    reajusten solo con el train de cada fold** (anti-leakage val→train).
     """
-    scaler = StandardScaler().fit(X_train)
-    return scaler.transform(X_train).astype("float32"), scaler.transform(X_val).astype("float32"), scaler
+    num_cols, cat_cols = _split_cols(feature_cols)
+    prep = ColumnTransformer(
+        transformers=[
+            ("num", SimpleImputer(strategy="median"), num_cols),
+            ("cat", OneHotDESC(), cat_cols),
+        ],
+        remainder="drop",
+    )
+    steps = [("prep", prep)]
+    if scale:
+        steps.append(("scaler", StandardScaler()))
+    steps.append(("model", estimator))
+    return Pipeline(steps)
 
 
 # --- Modelos y evaluación --------------------------------------------------
 
 def get_models(random_state: int = 42) -> dict:
-    """Modelos a comparar, con hiperparámetros razonables para un primer barrido."""
+    """Modelos a comparar, con hiperparámetros razonables para un primer barrido.
+
+    El comparador lineal es ``Ridge`` (no ``LinearRegression`` pelada): con ~380
+    dummies colineales del one-hot, la regresión sin regularizar es numéricamente
+    inestable; una L2 chica la estabiliza. Es la misma familia que se tunea.
+    """
     return {
-        "reg_lineal": LinearRegression(),
+        "reg_lineal": Ridge(alpha=1.0, random_state=random_state),
         "random_forest": RandomForestRegressor(
             n_estimators=100, max_features="sqrt", min_samples_leaf=5,
             n_jobs=-1, random_state=random_state,
@@ -133,10 +189,10 @@ def evaluate(y_true, y_pred) -> dict[str, float]:
     }
 
 
-def persistence_val(ds_enc: pd.DataFrame) -> dict[str, float]:
+def persistence_val(ds: pd.DataFrame) -> dict[str, float]:
     """Baseline de persistencia en val: ŷ(t+1) = prod_pet(t). Referencia a batir
     (ADR-029); ``prod_pet`` en el dataset es justo la producción del mes t."""
-    va = ds_enc[(ds_enc.split == "val") & ds_enc[TARGET_COL].notna()]
+    va = ds[(ds.split == "val") & ds[TARGET_COL].notna()]
     return evaluate(va[TARGET_COL], va["prod_pet"])
 
 
@@ -145,23 +201,20 @@ def train_eval_models(
     X_val: pd.DataFrame, y_val: pd.Series,
     models: dict | None = None,
 ) -> tuple[pd.DataFrame, dict]:
-    """Entrena cada modelo en train y lo evalúa en val.
+    """Entrena cada modelo (dentro de su ``Pipeline``) en train y lo evalúa en val.
 
-    Preprocesa una sola vez: matriz **imputada** (para árboles) y matriz
-    **imputada + normalizada** (para los modelos en ``NEEDS_SCALING``). Devuelve
-    ``(tabla_resultados ordenada por val_rmse, modelos_entrenados)``.
+    Cada modelo se envuelve en ``build_pipeline`` (one-hot + imputación [+ escalado])
+    ajustado **solo en train**. Devuelve ``(tabla ordenada por val_rmse, pipelines)``.
     """
     models = models or get_models()
-
-    Xtr_i, Xva_i, _ = impute_train_val(X_train, X_val)
-    Xtr_s, Xva_s, _ = normalize_train_val(Xtr_i, Xva_i)
+    feature_cols = list(X_train.columns)
 
     filas, entrenados = [], {}
     for nombre, modelo in models.items():
-        Xtr, Xva = (Xtr_s, Xva_s) if nombre in NEEDS_SCALING else (Xtr_i, Xva_i)
-        modelo.fit(Xtr, y_train)
-        filas.append({"modelo": nombre, **evaluate(y_val, modelo.predict(Xva))})
-        entrenados[nombre] = modelo
+        pipe = build_pipeline(clone(modelo), nombre in NEEDS_SCALING, feature_cols)
+        pipe.fit(X_train, y_train)
+        filas.append({"modelo": nombre, **evaluate(y_val, pipe.predict(X_val))})
+        entrenados[nombre] = pipe
 
     tabla = pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
     return tabla, entrenados
@@ -176,9 +229,9 @@ def time_series_folds(periodos, n_splits: int = 4) -> list[tuple[np.ndarray, np.
     Estilo ``TimeSeriesSplit`` pero sobre los meses únicos: en cada fold el bloque
     de validación es **posterior** a todos los meses de entrenamiento, así nunca
     se entrena con datos del futuro respecto de lo que se valida (anti-leakage
-    futuro→pasado). Como el imputador/scaler van dentro del ``Pipeline``,
-    GridSearchCV los reajusta **solo con el tramo de train de cada fold** → tampoco
-    hay leakage de estadísticos entre folds.
+    futuro→pasado). Como el preprocesamiento (one-hot, imputación, escalado) va
+    dentro del ``Pipeline``, ``cross_val_score`` lo reajusta **solo con el tramo de
+    train de cada fold** → tampoco hay leakage de estadísticos entre folds.
 
     Devuelve una lista de ``(train_idx, val_idx)`` con índices **posicionales**
     (alineados con el orden de las filas de ``X``).
@@ -198,28 +251,21 @@ def time_series_folds(periodos, n_splits: int = 4) -> list[tuple[np.ndarray, np.
 
 
 def train_search_arrays(
-    ds_enc: pd.DataFrame, feature_cols: list[str]
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Arrays de train (ordenados por periodo) para la búsqueda: ``(X, y, periodos)``.
+    ds: pd.DataFrame, feature_cols: list[str]
+) -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    """Datos de train (ordenados por periodo) para la búsqueda: ``(X, y, periodos)``.
 
-    Se pasan como numpy para que los índices posicionales de los folds coincidan
-    exactamente con las filas de ``X``.
+    ``X`` es un DataFrame con las columnas **crudas** (el one-hot lo hace el
+    ``Pipeline`` por fold); ``y`` y ``periodos`` van como numpy. El orden de filas
+    es el mismo en los tres, para que los índices posicionales de los folds
+    coincidan exactamente con las filas de ``X``.
     """
-    tr = ds_enc[(ds_enc.split == "train") & ds_enc[TARGET_COL].notna()].sort_values("periodo")
-    return tr[feature_cols].to_numpy(), tr[TARGET_COL].to_numpy(), tr["periodo"].to_numpy()
-
-
-def build_pipeline(estimator, scale: bool) -> Pipeline:
-    """Pipeline imputación (mediana) [+ escalado] + modelo.
-
-    Que el preprocesamiento viva en el ``Pipeline`` es lo que evita el leakage
-    entre folds: GridSearchCV lo reajusta solo con el train de cada fold.
-    """
-    steps = [("imputer", SimpleImputer(strategy="median"))]
-    if scale:
-        steps.append(("scaler", StandardScaler()))
-    steps.append(("model", estimator))
-    return Pipeline(steps)
+    tr = (
+        ds[(ds.split == "train") & ds[TARGET_COL].notna()]
+        .sort_values("periodo")
+        .reset_index(drop=True)
+    )
+    return tr[feature_cols], tr[TARGET_COL].to_numpy(), tr["periodo"].to_numpy()
 
 
 def search_spaces(random_state: int = 42) -> dict:
@@ -266,39 +312,43 @@ def search_spaces(random_state: int = 42) -> dict:
 
 
 def tune_model(
-    spec: dict, X_train: np.ndarray, y_train: np.ndarray,
+    spec: dict, X_train: pd.DataFrame, y_train: np.ndarray,
     periodos_train: np.ndarray, n_splits: int = 4,
     nombre: str = "modelo", progress: bool = True,
 ) -> SimpleNamespace:
     """Grid search con CV temporal para un modelo, con **barra de progreso**.
 
     Recorre cada combinación de ``spec["grid"]`` y la evalúa con ``cross_val_score``
-    sobre los folds temporales (RMSE promedio); la barra (``tqdm``) avanza una vez
-    por combinación y muestra el mejor RMSE hasta el momento. Reentrena el mejor
-    estimador en **todo** train.
+    sobre los folds temporales (RMSE promedio); el ``Pipeline`` (one-hot +
+    imputación [+ escalado] + modelo) se reajusta **por fold**. La barra (``tqdm``)
+    avanza una vez por combinación y muestra el mejor RMSE hasta el momento.
+    Reentrena el mejor estimador en **todo** train.
 
     Devuelve un objeto con ``best_params_``, ``best_score_`` (= -RMSE de CV) y
     ``best_estimator_`` (Pipeline ajustado), compatible con el resto del módulo.
     """
     folds = time_series_folds(periodos_train, n_splits=n_splits)
+    feature_cols = list(X_train.columns)
     combos = list(ParameterGrid(spec["grid"]))
     n_jobs = spec.get("search_n_jobs", 1)
 
     resultados, mejor_rmse = [], np.inf
     barra = tqdm(combos, desc=f"{nombre} ({len(combos)} combos)", disable=not progress)
     for params in barra:
-        pipe = build_pipeline(clone(spec["estimator"]), spec["scale"]).set_params(**params)
+        pipe = build_pipeline(clone(spec["estimator"]), spec["scale"], feature_cols).set_params(**params)
         scores = cross_val_score(
             pipe, X_train, y_train, cv=folds,
             scoring=RMSE_SCORER, n_jobs=n_jobs,
         )
-        rmse = float(-scores.mean())
-        resultados.append({"params": params, "cv_rmse": rmse})
-        mejor_rmse = min(mejor_rmse, rmse)
-        barra.set_postfix(rmse=f"{rmse:.2f}", mejor=f"{mejor_rmse:.2f}")
+        cv_rmse = float(-scores.mean())
+        resultados.append({"params": params, "cv_rmse": cv_rmse})
+        mejor_rmse = min(mejor_rmse, cv_rmse)
+        barra.set_postfix(rmse=f"{cv_rmse:.2f}", mejor=f"{mejor_rmse:.2f}")
 
     best = min(resultados, key=lambda r: r["cv_rmse"])
-    best_estimator = build_pipeline(clone(spec["estimator"]), spec["scale"]).set_params(**best["params"])
+    best_estimator = build_pipeline(
+        clone(spec["estimator"]), spec["scale"], feature_cols
+    ).set_params(**best["params"])
     best_estimator.fit(X_train, y_train)
     return SimpleNamespace(
         best_params_=best["params"],
@@ -309,7 +359,7 @@ def tune_model(
 
 
 def tune_all(
-    ds_enc: pd.DataFrame, feature_cols: list[str], n_splits: int = 4,
+    ds: pd.DataFrame, feature_cols: list[str], n_splits: int = 4,
     progress: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """Tunea ridge, random_forest y xgboost con CV temporal sobre train.
@@ -318,7 +368,7 @@ def tune_all(
     searches)``: la tabla con el RMSE de CV y los mejores hiperparámetros de cada
     modelo, y el dict de resultados de búsqueda.
     """
-    X_tr, y_tr, periodos = train_search_arrays(ds_enc, feature_cols)
+    X_tr, y_tr, periodos = train_search_arrays(ds, feature_cols)
     searches, filas = {}, []
     for nombre, spec in search_spaces().items():
         search = tune_model(
@@ -336,23 +386,22 @@ def tune_all(
 
 
 def eval_searches_on_val(
-    searches: dict, ds_enc: pd.DataFrame, feature_cols: list[str],
+    searches: dict, ds: pd.DataFrame, feature_cols: list[str],
 ) -> pd.DataFrame:
     """Evalúa el mejor estimador de cada búsqueda sobre **val** (held-out, intacto
     durante el tuning) más la persistencia. Tabla comparativa ordenada por val_rmse.
     """
-    _, _, X_val, y_val = split_train_val(ds_enc, feature_cols)
-    X_val = X_val.to_numpy()
+    _, _, X_val, y_val = split_train_val(ds, feature_cols)
     filas = []
     for nombre, search in searches.items():
         pred = search.best_estimator_.predict(X_val)
         filas.append({"modelo": nombre, **evaluate(y_val, pred)})
-    filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds_enc)})
+    filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds)})
     return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
 
 
 def eval_searches_train_val(
-    searches: dict, ds_enc: pd.DataFrame, feature_cols: list[str],
+    searches: dict, ds: pd.DataFrame, feature_cols: list[str],
 ) -> pd.DataFrame:
     """Toma la **mejor config** de cada búsqueda y mide RMSE/R² en **train y val**.
 
@@ -361,14 +410,13 @@ def eval_searches_train_val(
     es mucho mejor que val, el modelo memoriza. Incluye la persistencia en ambos
     splits como referencia. Ordena por ``val_rmse``.
     """
-    X_tr, y_tr, X_va, y_va = split_train_val(ds_enc, feature_cols)
-    X_tr_n, X_va_n = X_tr.to_numpy(), X_va.to_numpy()
+    X_tr, y_tr, X_va, y_va = split_train_val(ds, feature_cols)
 
     filas = []
     for nombre, search in searches.items():
         est = search.best_estimator_
-        m_tr = evaluate(y_tr, est.predict(X_tr_n))
-        m_va = evaluate(y_va, est.predict(X_va_n))
+        m_tr = evaluate(y_tr, est.predict(X_tr))
+        m_va = evaluate(y_va, est.predict(X_va))
         filas.append({
             "modelo": nombre,
             "train_rmse": m_tr["val_rmse"], "train_r2": m_tr["val_r2"],
@@ -376,7 +424,7 @@ def eval_searches_train_val(
         })
 
     # persistencia (ŷ = prod_pet(t)) en cada split, como referencia
-    usable = ds_enc[ds_enc[TARGET_COL].notna()]
+    usable = ds[ds[TARGET_COL].notna()]
     p_tr = evaluate(*_persistencia(usable, "train"))
     p_va = evaluate(*_persistencia(usable, "val"))
     filas.append({

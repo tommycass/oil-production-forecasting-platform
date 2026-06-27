@@ -19,7 +19,7 @@ Comparación en **val** (entrenando en train), con preprocesamiento ajustado sol
 | Modelo | val RMSE (m³) | val R² | Comentario |
 |---|---|---|---|
 | **XGBoost** (gradient boosting) | **237,3** | **0,894** | mejor; captura no-linealidades e interacciones |
-| Regresión lineal / Ridge (L2) | 244,4 | 0,887 | fuerte y barata; supera la persistencia |
+| Regresión lineal / Ridge (L2) | 245,4 | 0,886 | fuerte y barata; supera la persistencia |
 | Persistencia (baseline, ADR-029) | 250,6 | 0,881 | referencia a batir |
 | Random Forest | 257,3 | 0,875 | por debajo del baseline con esta config |
 
@@ -37,7 +37,7 @@ El tuning de hiperparámetros necesita validación cruzada, pero **al ser serie 
 - **`KFold` aleatorio (descartado):** baraja las filas, así que algunos folds entrenarían con meses **posteriores** a los que validan → **leakage futuro→pasado**. Da métricas optimistas e irreales.
 - **CV temporal *expanding window* por mes (elegido):** `modeling.time_series_folds` arma folds donde el bloque de validación es siempre **posterior** a todo el train del fold (estilo `TimeSeriesSplit`, pero a nivel de mes para respetar el panel pozo×mes). Nunca se entrena con el futuro de lo que se valida.
 
-Además, el **preprocesamiento se mete dentro de un `Pipeline`** (imputación + escalado) para que el `GridSearchCV` lo **reajuste solo con el train de cada fold**. La alternativa (imputar/escalar todo el train antes de la CV) filtraría estadísticos entre folds (leakage val→train dentro de la búsqueda).
+Además, **todo el preprocesamiento que aprende de los datos vive dentro de un `Pipeline`** — **one-hot** (con fallback `DESCONOCIDO`, vía `ColumnTransformer` + `OneHotDESC`), **imputación** por mediana y **escalado** — para que la CV lo **reajuste solo con el train de cada fold**. La alternativa (encodear/imputar/escalar todo el train antes de la CV) filtraría estadísticos —incluido el **vocabulario de categorías**— entre folds (leakage val→train dentro de la búsqueda). Verificado: en cada fold, las categorías que solo aparecen en su tramo de validación **no** entran al vocabulario del fold (caen en `DESCONOCIDO`).
 
 ### C. Codificación del target
 
