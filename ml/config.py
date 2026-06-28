@@ -4,6 +4,7 @@ Las fechas de corte del split temporal salen del ADR-028 (Opción A), y el
 universo y el target del mismo ADR. Centralizar acá evita que baseline.py y
 train.py se desincronicen.
 """
+import os
 from pathlib import Path
 import pandas as pd
 
@@ -27,6 +28,6 @@ VAL_END = pd.Timestamp("2024-11-01")
 # Backend SQLite para el tracking local (el file store quedó deprecado en 2026).
 # Los artefactos (modelos) van a ./mlartifacts. La infra "de verdad" de MLflow
 # (docker-compose) es responsabilidad del Rol 3; acá usamos tracking local.
-MLFLOW_TRACKING_URI = f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}"
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}")
 MLFLOW_ARTIFACT_URI = f"file:{PROJECT_ROOT / 'mlartifacts'}"
 EXPERIMENT_NAME = "produccion-forecast"

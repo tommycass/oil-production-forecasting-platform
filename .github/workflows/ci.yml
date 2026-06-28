@@ -53,9 +53,31 @@ jobs:
       - name: Run pipeline tests
         run: pytest data_pipeline/tests/ -v
 
+  test-ml:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r api/requirements.txt
+          pip install -r api/requirements-dev.txt
+
+      - name: Run ML serving tests
+        run: pytest api/tests/test_predict.py -v
+        env:
+          API_KEY: abcdef12345
+          MLFLOW_TRACKING_URI: "sqlite:///test_mlflow.db"
+
   build:
     runs-on: ubuntu-latest
-    needs: [test, test-pipeline]
+    needs: [test, test-pipeline, test-ml]
     
     steps:
       - uses: actions/checkout@v4
@@ -73,7 +95,7 @@ jobs:
 
       - name: Verify container health
         run: |
-          docker run -d --name test-api -p 8000:8000 -e API_KEY=abcdef12345 oil-forecast-api:latest
+          docker run -d --name test-api -p 8000:8000 -e API_KEY=abcdef12345 -e MLFLOW_TRACKING_URI=sqlite:///test_mlflow.db oil-forecast-api:latest
           sleep 3
           curl --fail http://localhost:8000/health || (docker logs test-api && exit 1)
           docker stop test-api && docker rm test-api
