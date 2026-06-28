@@ -8,7 +8,7 @@ La consigna de la Fase 3 exige una **plataforma de tracking de experimentos** qu
 - **Parámetros** del modelo y del experimento (algoritmo, hiperparámetros, definición del split).
 - **Métricas** de evaluación (RMSE y R²; MAE en los baselines) sobre val y test.
 - El **modelo entrenado** como artefacto.
-- Un **registry** para versionar modelos (v1, v2, …) y marcar el "campeón" con stages **Staging → Production** (tarea 1.5 del rol), que luego consume la API de inferencia (Rol 3).
+- Un **registry** para versionar modelos (v1, v2, …) y marcar el "campeón" con stages **Staging → Production**, que luego consume la API de inferencia.
 
 Hay que elegir la herramienta que cumpla esto, en coherencia con la filosofía del resto del proyecto (open-source, self-hosted, datos on-premise; ver ADR-003).
 
@@ -27,7 +27,7 @@ Se decide usar **MLflow**, self-hosteado, por los siguientes motivos:
 - **Model Registry incluido:** cubre directamente el requisito de versionar modelos y promoverlos por stages (Staging → Production), sin sumar otra herramienta.
 - **Integración con el stack existente:** Python-native, `mlflow.sklearn` con autolog, backend en **Postgres** (ya presente en el proyecto) y artefactos en disco/almacenamiento de objetos. Se sirve por Docker, como el resto de los componentes.
 - **Sin costo** y sin cuotas externas.
-- **Camino de desarrollo a producción claro:** en local se usa un backend **SQLite** (`ml/config.py`) para iterar rápido; el despliegue "de verdad" (servidor de tracking sobre Postgres + Docker) queda a cargo del Rol 3, sin cambiar el código de los experimentos.
+- **Camino de desarrollo a producción claro:** en local se usa un backend **SQLite** (`ml/config.py`) para iterar rápido; el despliegue "de verdad" (servidor de tracking sobre Postgres + Docker) se hace aparte, sin cambiar el código de los experimentos.
 
 ## Consecuencias
 

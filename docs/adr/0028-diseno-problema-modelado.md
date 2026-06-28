@@ -5,7 +5,7 @@
 
 La Fase 3 integra un **modelo predictivo** a la plataforma. El endpoint `/forecast` hoy devuelve datos mock (ADR-009) y la capa Gold ya expone `gold.fact_produccion_mensual` con grano (pozo, mes). Antes de entrenar cualquier modelo, hay que decidir y documentar **cómo se encuadra el problema en términos de Machine Learning**: qué se predice, sobre qué universo de datos, con qué métrica se evalúa y —sobre todo— cómo se separan los datos para validar sin filtrar información del futuro (*leakage* temporal).
 
-Estas decisiones son transversales: condicionan el feature store (Rol 2), el script de entrenamiento y el registry (Rol 1) y la API de inferencia (Rol 3). Por eso se fijan en un único ADR de diseño antes de arrancar la implementación.
+Estas decisiones son transversales: condicionan el feature store, el script de entrenamiento, el registry y la API de inferencia. Por eso se fijan en un único ADR de diseño antes de arrancar la implementación.
 
 ### Evidencia del EDA
 
@@ -27,7 +27,7 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 - **Modelos secuenciales (LSTM/RNN):** potentes para series, pero con costo de implementación, datos y cómputo desproporcionado para el alcance del TP.
 - **Regresión tabular global (elegida):** cada fila (pozo, mes) es un ejemplo; el target es la producción del **mes siguiente**; **un único modelo** aprende de todos los pozos usando features autoregresivas (lags) + atributos.
 
-**Decisión:** encuadrar el problema como **regresión supervisada tabular con un modelo global**, horizonte de **1 mes (t+1)**. Escala a miles de pozos, aprovecha el feature store (Rol 2), usa atributos estáticos y permite que un pozo con poca historia se beneficie de patrones aprendidos en otros.
+**Decisión:** encuadrar el problema como **regresión supervisada tabular con un modelo global**, horizonte de **1 mes (t+1)**. Escala a miles de pozos, aprovecha el feature store, usa atributos estáticos y permite que un pozo con poca historia se beneficie de patrones aprendidos en otros.
 
 ### 2. Target y grano
 
@@ -90,4 +90,4 @@ Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**.
 
 ---
 
-> Decisiones relacionadas que se documentarán en ADRs aparte: **algoritmo concreto** (lineal vs. árboles vs. boosting) y **plataforma de tracking de experimentos** (MLflow vs. Weights & Biases). El diseño de **features** y del **feature store** se acuerda con el Rol 2.
+> Decisiones relacionadas que se documentarán en ADRs aparte: **algoritmo concreto** (lineal vs. árboles vs. boosting), **plataforma de tracking de experimentos** (MLflow vs. Weights & Biases) y el diseño de **features** y del **feature store**.

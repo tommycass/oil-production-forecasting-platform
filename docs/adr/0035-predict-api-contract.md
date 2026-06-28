@@ -8,7 +8,7 @@
 
 ## Contexto
 
-Se necesita un endpoint que exponga el modelo de producción (Rol 1, MLflow registry) a consumidores HTTP: dashboards, scripts de análisis y el equipo de operaciones. Hay que decidir:
+Se necesita un endpoint que exponga el modelo de producción (del MLflow registry) a consumidores HTTP: dashboards, scripts de análisis y el equipo de operaciones. Hay que decidir:
 
 1. Método HTTP: `GET` con query params vs `POST` con body.
 2. Granularidad: predicción de un pozo a la vez vs batch (N pozos en un request).

@@ -6,7 +6,7 @@
 
 El ADR-034 fijó la **metodología** (regresión tabular, comparación en val con CV temporal) y, sobre la comparación **sin tunear**, anticipó a **XGBoost** como mejor candidato. Con el **tuning de hiperparámetros** (CV temporal, random search) los resultados **cambian**, así que hay que fijar formalmente **cuál modelo va a producción** y con qué **criterio se promueve**, en base a la evidencia tuneada del notebook `03_modeling.ipynb` (§4).
 
-Esta es la tarea **1.5** del Rol 1 (definir el modelo campeón y el criterio de promoción). La **mecánica** del registry (versionado, stages Staging→Production, recarga en la API) la implementa el **Rol 3** (ADR-037 servidor MLflow, ADR-038 estrategia de serving); acá se decide **qué** se promueve y **cuándo**.
+Acá se decide **qué** modelo va a producción y con qué **criterio se promueve**. La **mecánica** del registry (versionado, stages Staging→Production, recarga en la API) se documenta aparte (ADR-037 servidor MLflow, ADR-038 estrategia de serving).
 
 ## Análisis de Alternativas
 
@@ -49,14 +49,14 @@ Este ADR **refina la elección preliminar del ADR-034** (XGBoost sobre números 
 
 **Positivas:**
 - Decisión **respaldada por evidencia** tuneada en val, con criterio de promoción **objetivo** y reproducible.
-- Encadena con el registry/serving del Rol 3: el campeón es lo que se marca `Production` y la API sirve.
+- Encadena con el registry/serving: el campeón es lo que se marca `Production` y la API sirve.
 
 **Negativas / trade-offs:**
-- Random Forest es **más pesado para servir** que XGBoost o un lineal (400 árboles, profundidad hasta 16 → más memoria/latencia); el Rol 3 debe tenerlo en cuenta al desplegar.
+- Random Forest es **más pesado para servir** que XGBoost o un lineal (400 árboles, profundidad hasta 16 → más memoria/latencia); hay que tenerlo en cuenta al desplegar.
 - El **gap train→val** de RF indica sobreajuste: hay margen para más regularización (más `min_samples_leaf`, `max_depth` más acotado) en próximos reentrenos.
 - La **confirmación en `test`** ya se ejecutó una vez (RMSE 154,4 / R² 0,874, supera la persistencia); en sucesivos reentrenos, test debe seguir usándose con moderación para no "ajustar a test".
-- Que el campeón pueda cambiar entre reentrenos exige que la **comparación esté automatizada** (encaja con el job de retrain del Rol 2).
+- Que el campeón pueda cambiar entre reentrenos exige que la **comparación esté automatizada** (encaja con el job de retrain).
 
 ---
 
-> Relacionados: **ADR-034** (algoritmo y validación temporal, que este ADR refina), **ADR-029** (baseline / vara de éxito), **ADR-039** (preprocesamiento), **ADR-030** (MLflow), **ADR-037** (servidor MLflow) y **ADR-038** (serving), donde el Rol 3 implementa el registry y la promoción.
+> Relacionados: **ADR-034** (algoritmo y validación temporal, que este ADR refina), **ADR-029** (baseline / vara de éxito), **ADR-039** (preprocesamiento), **ADR-030** (MLflow), **ADR-037** (servidor MLflow) y **ADR-038** (serving), donde se implementan el registry y la promoción.

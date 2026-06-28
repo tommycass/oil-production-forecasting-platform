@@ -16,7 +16,7 @@ Doble restricción anti-leakage (igual que ADR-031):
 
 ## Features elegidas
 
-Cada fila es `(pozo, mes t)`; el target es `prod_pet(t+1)`. Todas las columnas de origen salen de la capa **Gold** (`fact_produccion_mensual` para las medidas mensuales; `dim_pozo` para los atributos estáticos como coordenadas) — el contrato exacto se coordina con el Rol 2 al materializarlas en el feature store.
+Cada fila es `(pozo, mes t)`; el target es `prod_pet(t+1)`. Todas las columnas de origen salen de la capa **Gold** (`fact_produccion_mensual` para las medidas mensuales; `dim_pozo` para los atributos estáticos como coordenadas) — el contrato exacto se define al materializarlas en el feature store.
 
 | Feature | Columna(s) Gold | Cálculo (sobre la serie del pozo) | Qué captura |
 |---|---|---|---|
@@ -66,20 +66,20 @@ Adoptar las **7 features derivadas** de la tabla, implementadas como funciones m
 - **Vecinos espaciales** por k-vecinos de coordenadas, promediando producción del mes t.
 - Los `NaN` de las features de historia (primeros meses de cada pozo) se **imputan en el Pipeline de entrenamiento, no acá** (las de volumen/lags con **0 + flag `*_isna`**; ver ADR-039 para el esquema por feature).
 
-Cada feature queda documentada (origen Gold + cálculo) como **contrato hacia el Rol 2**, que las materializará en el feature store para que entrenamiento e inferencia las calculen igual (evitar *training-serving skew*).
+Cada feature queda documentada (origen Gold + cálculo) como **contrato del feature store**, donde se materializan para que entrenamiento e inferencia las calculen igual (evitar *training-serving skew*).
 
 ## Consecuencias
 
 **Positivas:**
 - Señal temporal y espacial **leak-free** en las dos direcciones críticas, auditada en el notebook `02_feature_engineering.ipynb` (p. ej. `prod_vecinos_mean` coincide con el promedio manual de los k-vecinos en el mes t y difiere del de t+1).
 - Features **interpretables** y baratas de calcular; reproducibles (funciones puras).
-- Tabla origen→cálculo lista como **contrato** para el feature store del Rol 2.
+- Tabla origen→cálculo lista como **contrato** para el feature store.
 
 **Negativas / trade-offs:**
 - Las features de historia (lag12, acum6, roll3) generan **`NaN` en los primeros meses** de cada pozo; se resuelven con imputación en el Pipeline, pero reducen la señal al inicio de la serie.
 - `prod_vecinos_mean` asume que la **cercanía geográfica** implica reservorio compartido; no siempre es cierto (pozos cercanos en formaciones distintas).
 - El conjunto de features es **acotado a propósito** (baseline de modelado); curvas de declinación, antigüedad explícita e interacciones quedan como mejoras futuras.
-- Hay que mantener la **paridad de cálculo** con el feature store del Rol 2: si una feature se computa distinto en inferencia, aparece skew.
+- Hay que mantener la **paridad de cálculo** con el feature store: si una feature se computa distinto en inferencia, aparece skew.
 
 ---
 

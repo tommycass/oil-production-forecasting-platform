@@ -58,7 +58,7 @@ Además, **todo el preprocesamiento que aprende de los datos vive dentro de un `
 **Positivas:**
 - Decisión de algoritmo **respaldada por evidencia** (tabla en val) y no por preferencia.
 - Tuning **sin leakage temporal** (CV expanding-window + Pipeline por fold), defendible para serie temporal.
-- Criterio de promoción **objetivo** (batir la persistencia en RMSE), encadenable con el registry y el serving del Rol 3.
+- Criterio de promoción **objetivo** (batir la persistencia en RMSE), encadenable con el registry y el serving.
 
 **Negativas / trade-offs:**
 - XGBoost es **menos interpretable** que la regresión lineal; se mitiga manteniendo Ridge como comparador y, a futuro, importancias/SHAP.
