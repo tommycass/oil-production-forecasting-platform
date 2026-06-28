@@ -1,6 +1,6 @@
-# Handoff Rol 1 → MLflow: experiment tracking (1.4) y model registry (1.5)
+# Handoff Rol 1 → Rol 3: experiment tracking (1.4) y model registry (1.5)
 
-**De:** Rol 1 (ML Engineer) · **Para:** quien implemente MLflow
+**De:** Rol 1 (ML Engineer) · **Para:** Rol 3 (Serving + CI/CD + deploy del modelo)
 **Objetivo:** que `train.py` registre cada corrida en MLflow (params, métricas, versión de datos, modelo) y que el campeón se versione y promueva a Production con un criterio definido.
 
 El modelado y la decisión del campeón **ya están**; falta **enchufar MLflow** alrededor. El código de entrenamiento ya devuelve todo lo necesario para loguear (el "gancho").
