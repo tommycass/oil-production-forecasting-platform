@@ -71,8 +71,8 @@ Decisiones de diseño asociadas:
 **Contexto del cambio.** La decisión original (Alternativa A: reproducir las features en dbt SQL) se tomó cuando las features eran 6 autoregresivas simples (`lag1/2/3`, `roll3`, `antiguedad`, `tef_lag1`) que calzaban en SQL. Al integrar el trabajo de modelado (Rol 1), el modelo campeón (ADR-040) pasó a usar **~29 features** que incluyen ingeniería **en Python**: medias/lags **por calendario** (`prod_pet_roll3/delta1/lag12/acum6`), `water_cut`, y `prod_vecinos_mean` (media de los k pozos vecinos por **KNN** sobre coordenadas). Reproducir eso en SQL es impráctico (KNN) y, sobre todo, **se desincronizaría** de `ml/features.py` (reintroduciendo el training-serving skew que el store debe evitar). Además se detectó que el training calculaba features en pandas sin pasar por el store y la inferencia leía columnas viejas → **desalineación de tres puntas**.
 
 **Decisión revisada.** El feature store **materializa la salida del pipeline de features de `ml/`** (única fuente de verdad), en vez de reimplementarlo en dbt:
-- Un **asset de Dagster** (Rol 2) ejecuta el pipeline de features de ML y escribe `features.feat_produccion_pozo_mensual` con las columnas que consume el modelo.
-- **Una sola definición de features** vive en `ml/` (idealmente una función `build_serving_features()` que reusan tanto el training como la materialización del store) → cero skew por construcción.
+- Un **asset de Dagster** (Rol 2, `feature_store`) ejecuta el pipeline de features de ML (importa `ml.features.add_engineered_features` + las listas `ml.dataset.BASIC_*`) y escribe `features.feat_produccion_pozo_mensual` con las columnas que consume el modelo, leyendo de `bronze.produccion`.
+- **Una sola definición de features** vive en `ml/` y la materialización la **reusa por import** (no la reimplementa) → cero skew por construcción. Validado: paridad exacta contra `build_basic_dataset` (0 diferencias).
 - Las categóricas siguen **crudas** (encoding en el `Pipeline` del modelo, ADR-039).
 - La API (Rol 3) lee las **mismas** columnas del store.
 

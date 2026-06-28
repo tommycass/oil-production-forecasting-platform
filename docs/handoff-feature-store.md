@@ -1,38 +1,27 @@
-# Handoff — feature store realineado (Fase 3)
+# Handoff — feature store materializado (Fase 3)
 
 > **De:** Rol 2 (Feature Store + Orquestación). **Para:** Rol 1 (entrenamiento) y Rol 3 (inferencia).
-> Acompaña al contrato [docs/feature-store.md](feature-store.md) y a [ADR-036](adr/0036-feature-store.md) (ver la sección *Revisión*).
+> Acompaña al contrato [docs/feature-store.md](feature-store.md) y a [ADR-036](adr/0036-feature-store.md) (sección *Revisión*). Responde al handoff de Rol 1 en [docs/handoffs/rol2-feature-store.md](handoffs/rol2-feature-store.md).
 
-## Por qué este handoff
+## Qué hicimos
 
-Al integrar el modelado se detectó una **desalineación de tres puntas** en las features:
-- **Training (Rol 1):** `train.py` → `build_basic_dataset` calcula **~29 features** en pandas desde el CSV (`ml/features.py`), sin pasar por el store.
-- **Store (Rol 2):** la tabla daba **6** features viejas (`lag1/2/3`, `roll3`, `antiguedad`, `tef_lag1`).
-- **Inferencia (Rol 3):** `feature_reader.py` lee esas 6 del store y se las pasa al modelo, que espera 29 → **inferencia rota + skew**.
+Materializamos el feature store con **exactamente las features del modelo** (las 29), **reusando el código de `ml/`** como pide el handoff de Rol 1 (única fuente de verdad → cero skew):
 
-**Solución acordada:** el store **materializa el pipeline de features de `ml/`** (única fuente de verdad). Un asset de Dagster (Rol 2) corre ese pipeline y escribe `features.feat_produccion_pozo_mensual`; training e inferencia leen lo mismo. Para que esto cierre sin skew, necesitamos coordinar lo siguiente.
+- Un asset de Dagster (`feature_store`) corre el pipeline de features (`data_pipeline/orchestration/feature_store_build.py`, que importa `ml.features.add_engineered_features` y las listas `ml.dataset.BASIC_*`) y escribe `features.feat_produccion_pozo_mensual`.
+- **Fuente:** `bronze.produccion` (crudo, mismas columnas que el CSV del training; gobernado en el DW).
+- **Paridad validada (§8 del handoff de Rol 1):** comparado contra `build_basic_dataset` sobre la misma muestra → **0 diferencias** en las 29 features ni en `y_next` (6353 filas etiquetadas). Materialización a Postgres OK (33 columnas, tipos correctos).
+- **Reemplaza** el modelo dbt anterior del store (las 6 features viejas): el store ahora lo produce este asset Python.
+- **Diferencia con training:** el target va por **left-join**, así se conserva la **última fila de cada pozo** (`y_next` NULL) para que la API pueda predecir el mes siguiente. El training usa las filas con `y_next` no nulo (idéntico a `build_basic_dataset`).
 
-## Pedido a Rol 1 (Rol 1.2 — features)
+## Pendiente de Rol 1
 
-1. **Exponer `ml.dataset.build_serving_features()`** (o equivalente): features por `(idpozo, periodo)` **sin target ni split**, sobre **todos los meses** y los pozos con historia (no el universo train-only, que es para entrenar). Debe:
-   - reutilizar `features.add_engineered_features` y las listas `BASIC_NUMERIC_FEATURES` / `BASIC_CATEGORICAL_FEATURES` (las mismas que usa el modelo);
-   - devolver las columnas: claves (`idpozo`, `periodo`, `periodo_objetivo`) + las 29 features (8 numéricas + 7 engineered + 14 categóricas crudas);
-   - **idealmente** que `build_basic_dataset` la reutilice (le agrega target + split encima), para que training y serving compartan **una sola** definición.
-2. **Agregar `ml/requirements.txt`** (`mlflow`, `scikit-learn`, `pandas`, `numpy`, …): el venv que corre el training y la materialización del store lo necesita (hoy falta).
+1. **Agregar `ml/requirements.txt`** (`mlflow`, `scikit-learn`, `pandas`, `numpy`, …): el venv del daemon que materializa el store y corre el training lo necesita (hoy falta).
+2. **Cuando quieras, conectá el training al store:** podés seguir usando `build_basic_dataset` (mismas features, ya validado) o leer `features.feat_produccion_pozo_mensual` (filas con `y_next` no nulo). Si cambiás la lista de features en `ml/`, el asset la toma automáticamente (importa tus listas) — solo avisanos para re-materializar y que C ajuste el reader.
 
-Con eso, el asset de materialización (Rol 2) llama a `build_serving_features()` y escribe el store; el training puede seguir usando `build_basic_dataset` (mismas features) o leer el store.
+## Pendiente de Rol 3 (inferencia)
 
-## Pedido a Rol 3 (inferencia)
-
-`api/app/services/feature_reader.py` hoy lee **6 columnas viejas** (`lag1, lag2, lag3, roll3, antiguedad, tef_lag1`) que **dejan de existir**. Actualizar a las **columnas del modelo** (las 29 del contrato):
+`api/app/services/feature_reader.py` hoy lee **6 columnas viejas** (`lag1, lag2, lag3, roll3, antiguedad, tef_lag1`) que **ya no existen**. Actualizar a las **29 columnas del modelo** (ver lista en [docs/feature-store.md](feature-store.md)):
 
 - **Lookup:** por `idpozo` + `periodo` del **mes base** `t` (= primer día de `mes_objetivo − 1 mes`), no por la columna `mes`.
-- **Devolver todas las features** (numéricas + engineered + categóricas **crudas**) y pasárselas al `Pipeline` del modelo `Production` (el Pipeline hace el one-hot/imputación internamente).
-- ⚠️ **`mes` es el mes del target (`t+1`)**, no el del mes base (así lo define `build_basic_dataset`). Por eso el lookup va por `periodo`.
-
-La lista exacta de columnas está en [docs/feature-store.md](feature-store.md) (fuente de verdad: `ml.dataset.BASIC_*` + `ml.features.ENGINEERED_FEATURES`).
-
-## Estado (Rol 2)
-
-- Contrato y ADR actualizados a esta dirección.
-- Asset de materialización: pendiente de que Rol 1 exponga `build_serving_features()` (sin eso no se puede correr ni validar end-to-end). El modelo dbt actual del store se reemplaza recién cuando la materialización esté validada (para no dejar el store sin tabla).
+- **Devolver todas las features** (numéricas + engineered + categóricas **crudas**) y pasárselas al `Pipeline` del modelo `Production` (el Pipeline hace one-hot/imputación internamente).
+- ⚠️ `mes` es el mes del **target** (`t+1`), no el del mes base; por eso el lookup va por `periodo`.

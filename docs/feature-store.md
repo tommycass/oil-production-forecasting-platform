@@ -43,7 +43,7 @@ La **fuente de verdad** de la lista es el código de ML: `ml.dataset.BASIC_NUMER
 ## Cómo consumir
 
 ### Rol 1 — entrenamiento
-El pipeline de `ml/` es la **fuente de las features**; el store es su materialización. Para evitar duplicar lógica, conviene una función compartida `ml.dataset.build_serving_features()` (features por `(pozo, mes)` **sin target/split**) que: (a) use el asset de materialización del store, y (b) la reutilice `build_basic_dataset` (que le agrega target + split). Así training y serving comparten **una sola** definición de features.
+El store **materializa el pipeline de `ml/`** (el asset `feature_store` reusa `ml.features.add_engineered_features` + las listas `ml.dataset.BASIC_*`), con **paridad validada** contra `build_basic_dataset` (0 diferencias). El training puede seguir usando `build_basic_dataset` (mismas features) o leer el store (filas con `y_next` no nulo). Como la lista de features sale del código de `ml/`, cambiarla ahí re-materializa el store sin reescribir nada. Pendiente: `ml/requirements.txt` (para el venv del daemon).
 
 ### Rol 3 — inferencia (`POST /api/v1/predict`)
 Dado `(idpozo, mes_objetivo)`: leer la fila del **mes base** `t` (`periodo = primer día de mes_objetivo − 1 mes`) y pasar **todas las columnas de features** (las 29) al modelo `Production` de MLflow. **No recalcular features.** ⚠️ `feature_reader.py` hoy lee solo 6 columnas viejas (`lag1/lag2/lag3/roll3/antiguedad/tef_lag1`) que **ya no existen**: debe actualizarse a las columnas de arriba. Si no hay fila para ese pozo/mes, devolver el error de contrato definido por Rol 3.
