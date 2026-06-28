@@ -47,9 +47,9 @@ Además, **todo el preprocesamiento que aprende de los datos vive dentro de un `
 ## Decisión
 
 1. **Modelo campeón: XGBoost** (gradient boosting), por mejor RMSE/R² en val y por manejar no-linealidades, interacciones y NaN. Se mantiene la **regresión Ridge** como comparador simple e interpretable.
-2. **Validación/tuning con CV temporal** (*expanding window* por mes) + **`Pipeline`** que reajusta el preprocesamiento por fold. Se tunea con `GridSearchCV`:
+2. **Validación/tuning con CV temporal** (*expanding window* por mes) + **`Pipeline`** que reajusta el preprocesamiento por fold. Se tunea con **random search** (`ParameterSampler`): cada hiperparámetro es una lista de valores con sentido (3–5) y se muestrean **`n_iter` configuraciones** por modelo (controla el tiempo), evaluando cada una con `cross_val_score`:
    - Ridge: la `alpha` (lambda L2).
-   - Random Forest y XGBoost: hiperparámetros principales (profundidad, learning rate, n_estimators, etc.).
+   - Random Forest y XGBoost: profundidad (acotada, sin `None`), learning rate, n_estimators, min_samples_leaf / min_child_weight, subsample, etc.
    Los hiperparámetros finales salen de esta búsqueda; el scoring es **RMSE** (`neg`).
 3. **Criterio de promoción (model registry, MLflow):** un modelo pasa a *Staging→Production* solo si **supera a la persistencia en RMSE en val** y lo confirma en `test`. El run, los params, las métricas y el modelo quedan registrados en MLflow (ADR-030) para comparación y reproducibilidad.
 
@@ -63,7 +63,7 @@ Además, **todo el preprocesamiento que aprende de los datos vive dentro de un `
 **Negativas / trade-offs:**
 - XGBoost es **menos interpretable** que la regresión lineal; se mitiga manteniendo Ridge como comparador y, a futuro, importancias/SHAP.
 - El margen sobre la persistencia es **acotado** (autocorrelación alta): hay que demostrar que la ganancia justifica la complejidad de servir un modelo de boosting.
-- El grid search con CV temporal es **más caro** que un split simple (varios folds × combinaciones), sobre todo para Random Forest.
+- El tuning con CV temporal es **más caro** que un split simple (varios folds × `n_iter` configuraciones), sobre todo para Random Forest; el random search con `n_iter` acota ese costo.
 - La elección queda atada al dataset/split de los ADR-028/031; si cambian, hay que re-tunear y recomparar.
 
 ---

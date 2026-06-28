@@ -23,7 +23,7 @@ from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import Ridge
 from sklearn.metrics import make_scorer, mean_squared_error, r2_score
-from sklearn.model_selection import ParameterGrid, cross_val_score
+from sklearn.model_selection import ParameterGrid, ParameterSampler, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
@@ -260,9 +260,12 @@ def train_search_arrays(
 
 
 def search_spaces(random_state: int = 42) -> dict:
-    """Espacios de búsqueda por modelo. ``ridge`` tunea la lambda L2 (``alpha``);
-    los árboles, sus hiperparámetros principales. Grids chicos a propósito
-    (ampliables) para que la corrida sea manejable.
+    """Espacios de búsqueda por modelo para **random search** (``ParameterSampler``).
+
+    Cada hiperparámetro es una **lista de valores elegidos a mano** (3–5 según el
+    caso, en rangos con sentido); ``tune_model`` **muestrea ``n_iter``** combinaciones
+    de la grilla, así se explora sin enumerar todo. ``ridge`` tunea la lambda L2
+    (``alpha``); los árboles, sus hiperparámetros principales.
 
     ``search_n_jobs``: para los árboles (que ya paralelizan internamente con
     ``n_jobs=-1``) se deja en 1 para no sobre-suscribir CPU; para ridge, -1.
@@ -272,19 +275,18 @@ def search_spaces(random_state: int = 42) -> dict:
             "estimator": Ridge(),
             "scale": True,
             "search_n_jobs": -1,
-            "grid": {"model__alpha": [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]},
+            "space": {"model__alpha": [0.1, 1.0, 10.0, 100.0, 1000.0]},
         },
         "random_forest": {
             "estimator": RandomForestRegressor(n_jobs=-1, random_state=random_state),
             "scale": False,
             "search_n_jobs": 1,
-            "grid": {
-                "model__n_estimators": [300],
-                # profundidad alta pero ACOTADA: sin límite (None) gana por
-                # sobreajuste (gran gap train→val) y da un modelo pesado de servir.
-                "model__max_depth": [16, 24, 32],
-                "model__min_samples_leaf": [5, 20],
-                "model__max_features": ["sqrt", 0.3],
+            "space": {
+                "model__n_estimators": [200, 300, 400],
+                # profundidad alta pero ACOTADA (sin None: gana por sobreajuste).
+                "model__max_depth": [12, 16, 24, 32],
+                "model__min_samples_leaf": [2, 5, 10, 20],
+                "model__max_features": ["sqrt", 0.3, 0.5],
             },
         },
         "xgboost": {
@@ -293,12 +295,13 @@ def search_spaces(random_state: int = 42) -> dict:
             ),
             "scale": False,
             "search_n_jobs": 1,
-            "grid": {
-                "model__n_estimators": [400, 800],
-                "model__learning_rate": [0.03, 0.05],
-                "model__max_depth": [4, 6, 8],
-                "model__subsample": [0.8],
-                "model__colsample_bytree": [0.8],
+            "space": {
+                "model__n_estimators": [300, 500, 800],
+                "model__learning_rate": [0.01, 0.03, 0.05, 0.1],
+                "model__max_depth": [3, 4, 6, 8],
+                "model__min_child_weight": [1, 5, 10],
+                "model__subsample": [0.7, 0.8, 1.0],
+                "model__colsample_bytree": [0.7, 0.8, 1.0],
             },
         },
     }
@@ -306,27 +309,31 @@ def search_spaces(random_state: int = 42) -> dict:
 
 def tune_model(
     spec: dict, X_train: pd.DataFrame, y_train: np.ndarray,
-    periodos_train: np.ndarray, n_splits: int = 4,
-    nombre: str = "modelo", progress: bool = True,
+    periodos_train: np.ndarray, n_splits: int = 4, n_iter: int = 20,
+    nombre: str = "modelo", progress: bool = True, random_state: int = 42,
 ) -> SimpleNamespace:
-    """Grid search con CV temporal para un modelo, con **barra de progreso**.
+    """Random search con CV temporal para un modelo, con **barra de progreso**.
 
-    Recorre cada combinación de ``spec["grid"]`` y la evalúa con ``cross_val_score``
-    sobre los folds temporales (RMSE promedio); el ``Pipeline`` (one-hot +
-    imputación [+ escalado] + modelo) se reajusta **por fold**. La barra (``tqdm``)
-    avanza una vez por combinación y muestra el mejor RMSE hasta el momento.
-    Reentrena el mejor estimador en **todo** train.
+    Muestrea ``n_iter`` configuraciones de ``spec["space"]`` (``ParameterSampler``)
+    y evalúa cada una con ``cross_val_score`` sobre los folds temporales (RMSE
+    promedio); el ``Pipeline`` (one-hot + imputación [+ escalado] + modelo) se
+    reajusta **por fold**. La barra (``tqdm``) avanza una vez por configuración y
+    muestra el mejor RMSE hasta el momento. Reentrena el mejor estimador en **todo**
+    train. ``n_iter`` controla cuántas configuraciones se prueban (y el tiempo).
 
     Devuelve un objeto con ``best_params_``, ``best_score_`` (= -RMSE de CV) y
     ``best_estimator_`` (Pipeline ajustado), compatible con el resto del módulo.
     """
     folds = time_series_folds(periodos_train, n_splits=n_splits)
     feature_cols = list(X_train.columns)
-    combos = list(ParameterGrid(spec["grid"]))
+    # muestrea n_iter combos de la grilla discreta; si la grilla es más chica que
+    # n_iter, se prueban todas (capear evita el warning de ParameterSampler).
+    n_eff = min(n_iter, len(ParameterGrid(spec["space"])))
+    combos = list(ParameterSampler(spec["space"], n_iter=n_eff, random_state=random_state))
     n_jobs = spec.get("search_n_jobs", 1)
 
     resultados, mejor_rmse = [], np.inf
-    barra = tqdm(combos, desc=f"{nombre} ({len(combos)} combos)", disable=not progress)
+    barra = tqdm(combos, desc=f"{nombre} ({len(combos)} configs)", disable=not progress)
     for params in barra:
         pipe = build_pipeline(clone(spec["estimator"]), spec["scale"], feature_cols).set_params(**params)
         scores = cross_val_score(
@@ -353,19 +360,19 @@ def tune_model(
 
 def tune_all(
     ds: pd.DataFrame, feature_cols: list[str], n_splits: int = 4,
-    progress: bool = True,
+    n_iter: int = 20, progress: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
-    """Tunea ridge, random_forest y xgboost con CV temporal sobre train.
+    """Tunea ridge, random_forest y xgboost con random search + CV temporal.
 
-    Cada modelo muestra su propia barra de progreso. Devuelve ``(tabla_cv,
-    searches)``: la tabla con el RMSE de CV y los mejores hiperparámetros de cada
-    modelo, y el dict de resultados de búsqueda.
+    ``n_iter`` configuraciones por modelo (controla el tiempo). Cada modelo muestra
+    su barra de progreso. Devuelve ``(tabla_cv, searches)``: la tabla con el RMSE de
+    CV y los mejores hiperparámetros de cada modelo, y el dict de búsquedas.
     """
     X_tr, y_tr, periodos = train_search_arrays(ds, feature_cols)
     searches, filas = {}, []
     for nombre, spec in search_spaces().items():
         search = tune_model(
-            spec, X_tr, y_tr, periodos, n_splits=n_splits,
+            spec, X_tr, y_tr, periodos, n_splits=n_splits, n_iter=n_iter,
             nombre=nombre, progress=progress,
         )
         searches[nombre] = search
