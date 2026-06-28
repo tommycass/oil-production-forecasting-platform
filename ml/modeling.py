@@ -134,25 +134,25 @@ def get_models(random_state: int = RANDOM_STATE) -> dict:
 
 
 # Mejores hiperparámetros registrados (del tuning con CV temporal, notebook
-# 03_modeling §4.1 / ADR-037). Si no se tunea, se usan estos en vez de defaults
+# 03_modeling §4.1 / ADR-040). Si no se tunea, se usan estos en vez de defaults
 # arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
 # ahora se mantienen acá como "últimos mejores registrados".)
 BEST_PARAMS = {
-    "ridge": {"alpha": 1000.0},
+    "ridge": {"alpha": 1128.8378916846884},
     "random_forest": {
-        "n_estimators": 300, "max_depth": None,
-        "max_features": 0.3, "min_samples_leaf": 5,
+        "n_estimators": 400, "max_depth": 16,
+        "max_features": 0.5, "min_samples_leaf": 2,
     },
     "xgboost": {
-        "n_estimators": 400, "learning_rate": 0.05, "max_depth": 4,
-        "subsample": 0.8, "colsample_bytree": 0.8,
+        "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
+        "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
     },
 }
 
 
 def make_estimator(name: str, params: dict | None = None, random_state: int = RANDOM_STATE):
     """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[name]`` si
-    no se pasan): los **últimos mejores hiperparámetros registrados** (ADR-037)."""
+    no se pasan): los **últimos mejores hiperparámetros registrados** (ADR-040)."""
     params = BEST_PARAMS[name] if params is None else params
     if name == "ridge":
         return Ridge(**params)

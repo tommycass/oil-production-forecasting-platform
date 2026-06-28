@@ -18,10 +18,10 @@ Comparación en **val** (entrenando en train), con preprocesamiento ajustado sol
 
 | Modelo | val RMSE (m³) | val R² | Comentario |
 |---|---|---|---|
-| **XGBoost** (gradient boosting) | **237,3** | **0,894** | mejor; captura no-linealidades e interacciones |
-| Regresión lineal / Ridge (L2) | 245,4 | 0,886 | fuerte y barata; supera la persistencia |
+| **XGBoost** (gradient boosting) | **238,5** | **0,893** | mejor; captura no-linealidades e interacciones |
+| Regresión lineal / Ridge (L2) | 242,8 | 0,889 | fuerte y barata; supera la persistencia |
 | Persistencia (baseline, ADR-029) | 250,6 | 0,881 | referencia a batir |
-| Random Forest | 257,3 | 0,875 | por debajo del baseline con esta config |
+| Random Forest | 251,9 | 0,880 | por debajo del baseline con esta config |
 
 - **Regresión lineal / Ridge:** simple, interpretable y rápida; con ~380 dummies ralas conviene **regularización L2** (Ridge) para controlar varianza. Compite bien, pero no modela interacciones ni no-linealidades.
 - **Random Forest:** maneja no-linealidades sin escalado, pero con muchas dummies ralas + `max_features="sqrt"` + hojas grandes **promedia de más** y queda por debajo del baseline; mejora con tuning, pero parte en desventaja.

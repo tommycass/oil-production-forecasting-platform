@@ -10,10 +10,10 @@ son filas ``periodo <= TRAIN_END`` (pasado).
 transformar (clip / log1p) los volúmenes de producción **empeora** el modelo lineal
 y es **neutro** para los árboles (transformación monótona): en RMSE sobre un target
 de cola pesada, los pozos grandes dominan el error y su producción extrema **es
-señal**, no ruido (ADR-036). Los **errores de dato** (producción negativa) se
+señal**, no ruido (ADR-039). Los **errores de dato** (producción negativa) se
 **descartan** en ``ml.dataset.build_basic_dataset``, no se imputan.
 
-Tratamiento de NaN por grupo de features (ADR-036):
+Tratamiento de NaN por grupo de features (ADR-039):
 
 | Grupo             | Features                                                     | NaN              |
 |-------------------|-------------------------------------------------------------|------------------|

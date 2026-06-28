@@ -1,4 +1,4 @@
-# Título: ADR-036: Preprocesamiento de datos (NaN por feature, outliers y errores)
+# Título: ADR-039: Preprocesamiento de datos (NaN por feature, outliers y errores)
 
 **Estado:** Propuesta
 
@@ -70,4 +70,4 @@ Se midió el efecto sobre la **regresión lineal** (los árboles son invariantes
 
 ---
 
-> Relacionados: **ADR-031/033** (dataset y features que se preprocesan), **ADR-032** (one-hot con `DESCONOCIDO`), **ADR-034** (CV temporal: por qué el preprocesamiento va en el `Pipeline`), **ADR-037** (modelo a producción que consume este preprocesamiento).
+> Relacionados: **ADR-031/033** (dataset y features que se preprocesan), **ADR-032** (one-hot con `DESCONOCIDO`), **ADR-034** (CV temporal: por qué el preprocesamiento va en el `Pipeline`), **ADR-040** (modelo a producción que consume este preprocesamiento).

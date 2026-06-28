@@ -6,7 +6,7 @@ futuro). Permite probar distintos algoritmos e hiperparámetros (con/sin tuning 
 **CV temporal**, ADR-034) y guarda el ``Pipeline`` entrenado en disco.
 
 Todo el preprocesamiento (imputación/flags, log1p, clip, one-hot, escalado) vive en
-el ``Pipeline`` y se ajusta **solo con train / el train de cada fold** (ADR-036).
+el ``Pipeline`` y se ajusta **solo con train / el train de cada fold** (ADR-039).
 
 **No loguea en MLflow:** el tracking de experimentos (1.4) y el model registry (1.5)
 quedan a cargo del Rol 3. ``train()`` devuelve ``(pipeline, métricas)`` como gancho
@@ -30,7 +30,7 @@ from ml import modeling
 from ml.config import PROJECT_ROOT
 
 MODELS_DIR = PROJECT_ROOT / "models"
-# Campeón según la comparación TUNEADA en val (notebook 03_modeling §4.1, ADR-037):
+# Campeón según la comparación TUNEADA en val (notebook 03_modeling §4.1, ADR-040):
 # random_forest (val RMSE 226.8 / R² 0.903) supera a xgboost, ridge y la persistencia.
 # Ojo: xgboost ganaba SIN tunear, pero tuneado lo supera random_forest.
 CHAMPION = "random_forest"
@@ -39,7 +39,7 @@ MODELOS = ("ridge", "random_forest", "xgboost")
 
 def _untuned_estimator(name: str):
     """Estimador sin tunear: usa los **mejores hiperparámetros registrados**
-    (``modeling.BEST_PARAMS``, ADR-037), no defaults arbitrarios."""
+    (``modeling.BEST_PARAMS``, ADR-040), no defaults arbitrarios."""
     return modeling.make_estimator(name)
 
 
@@ -100,7 +100,7 @@ def _print_info(info: dict) -> None:
 
 def train_final(model_name: str = CHAMPION, params: dict | None = None):
     """Entrena el modelo final en **dev (train+val)** con los mejores
-    hiperparámetros registrados (``BEST_PARAMS``, ADR-037) y lo evalúa **una vez en
+    hiperparámetros registrados (``BEST_PARAMS``, ADR-040) y lo evalúa **una vez en
     test**. Es la confirmación final del campeón; no re-tunea. Devuelve ``(pipe, info)``.
     """
     ds, feats = modeling.build_feature_matrix()

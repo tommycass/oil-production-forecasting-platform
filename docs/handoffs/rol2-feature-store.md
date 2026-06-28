@@ -70,7 +70,7 @@ Son la parte crítica. Si se rompen, el modelo entrena con información que no t
 3. **`mes` es el mes del target (`t+1`)**, no el de las medidas. Es la única excepción "del futuro" y es válida porque la fecha a predecir se conoce de antemano (determinística, no es leakage).
 4. **Target por merge de calendario** (`periodo + 1 mes`), no por `shift(-1)`: garantiza que `y_next` sea siempre exactamente el mes siguiente.
 5. **Universo train-only.** El conjunto de pozos = los que tienen `prod_pet > 0` en algún mes **≤ TRAIN_END** (`2023-07-01`). No definir el universo con todo el histórico (metería pozos que recién producen en val/test → leakage de selección).
-6. **Descartar producción negativa.** Filas con `prod_pet`/`prod_gas`/`prod_agua < 0` son errores de dato → se eliminan (ADR-036).
+6. **Descartar producción negativa.** Filas con `prod_pet`/`prod_gas`/`prod_agua < 0` son errores de dato → se eliminan (ADR-039).
 
 ---
 
@@ -97,7 +97,7 @@ El **preprocesamiento** vive dentro del `Pipeline` del modelo (`ml/preprocessing
 
 - **Imputación de NaN** (0+flag en volúmenes/variación, mediana en físicas/operativa, `DESCONOCIDO` en categóricas).
 - **One-hot** de las categóricas (con fallback `DESCONOCIDO`).
-- (No hay clipping de outliers ni transformación del target — decidido con evidencia, ADR-036.)
+- (No hay clipping de outliers ni transformación del target — decidido con evidencia, ADR-039.)
 
 → El store materializa las **features crudas** (las 29 + `y_next`). El modelo se encarga del resto. Así, si Rol 3 sirve el modelo, solo tiene que leer estas mismas features del store y pasárselas al `Pipeline`.
 
@@ -118,7 +118,7 @@ El **preprocesamiento** vive dentro del `Pipeline` del modelo (`ml/preprocessing
 - `ml/features.py` — las 7 features de ingeniería (replicá esta lógica en el store).
 - `ml/dataset.py` — `build_basic_dataset` (universo, drop de negativos, merge del target, split) y las listas `BASIC_NUMERIC_FEATURES` / `BASIC_CATEGORICAL_FEATURES`.
 - `ml/config.py` — `TARGET`, `TRAIN_END`, `VAL_END`.
-- ADR-031 (dataset anti-leakage), ADR-033 (features), ADR-036 (preprocesamiento).
+- ADR-031 (dataset anti-leakage), ADR-033 (features), ADR-039 (preprocesamiento).
 
 ## 8. Cómo validar paridad store ↔ training
 
