@@ -280,7 +280,9 @@ def search_spaces(random_state: int = 42) -> dict:
             "search_n_jobs": 1,
             "grid": {
                 "model__n_estimators": [300],
-                "model__max_depth": [None, 16],
+                # profundidad alta pero ACOTADA: sin límite (None) gana por
+                # sobreajuste (gran gap train→val) y da un modelo pesado de servir.
+                "model__max_depth": [16, 24, 32],
                 "model__min_samples_leaf": [5, 20],
                 "model__max_features": ["sqrt", 0.3],
             },
