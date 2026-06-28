@@ -25,6 +25,10 @@ models:
     semantic:
       +schema: semantic
       +materialized: view
+    # Feature store offline (ADR-031): tabla de features para entrenamiento e inferencia.
+    features:
+      +schema: features
+      +materialized: table
 
 # Data Quality (ADR-016): los resultados se persisten.
 #  - store_failures: las filas que fallan cada test quedan en tablas del esquema dq.
