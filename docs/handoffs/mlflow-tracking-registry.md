@@ -30,6 +30,17 @@ El modelado y la decisión del campeón **ya están**; falta **enchufar MLflow**
 - [ ] **Registrar** el modelo (`registered_model_name="produccion-forecast"`) y **versionar** (v1, v2, …).
 - [ ] **Stages** `Staging → Production`.
 - [ ] **Automatizar la promoción** con el criterio del ADR-040: comparar la métrica del modelo nuevo contra la del Production actual y promover solo si mejora (y supera la persistencia).
+- [ ] **Persistir los hiperparámetros junto a cada versión, de forma estandarizada** (ver §2.1): cada versión del registry debe poder responder "con qué hiperparámetros se entrenó" sin mirar el código.
+
+#### 2.1 — Hiperparámetros versionados (estándar a respetar)
+
+Hoy los mejores hiperparámetros viven **hardcodeados** en `ml/modeling.py` (`BEST_PARAMS`) como "últimos mejores registrados" — es un **placeholder** hasta que exista el registry. El objetivo es que **la fuente de verdad pase a ser el registry**, con los params guardados de forma estandarizada y prolija para cada versión:
+
+- [ ] **Esquema de nombres único y plano:** loguear cada hiperparámetro con `mlflow.log_params(...)` usando **siempre las mismas claves** (las de `BEST_PARAMS[modelo]`: `n_estimators`, `max_depth`, `max_features`, `min_samples_leaf`, …). Así dos versiones se comparan campo a campo en la UI/`search_runs`.
+- [ ] **Atados a la versión, no solo al run:** además de loguearlos en el run, dejarlos accesibles desde la **versión registrada** (tags de la model version o el run linkeado), para que `get_model_version(n)` permita recuperar sus params.
+- [ ] **Dentro del artefacto:** que los params viajen con el modelo serializado (los guarda `mlflow.sklearn.log_model` en el `MLmodel`/pipeline; opcionalmente un `params.json` como artifact legible), así el modelo es **autodescriptivo** aunque se mueva de backend.
+- [ ] **Trazabilidad de origen:** un tag indicando si los params salieron del **tuning** (random search, ADR-034) o son **fijos** (`BEST_PARAMS`), más la `random_state` (ver `config.RANDOM_STATE`) para reproducibilidad.
+- [ ] **Cerrar el loop:** una vez versionados en el registry, `train.py` (modo `tune=False`) debería **leer los params de la última versión `Production`** en lugar de `modeling.BEST_PARAMS`; ahí `BEST_PARAMS` queda solo como fallback/bootstrap inicial.
 
 > El **servidor** MLflow (Docker/infra) es del Rol 3 — ver **ADR-037 (mlflow-server)** y **ADR-038 (serving)**. Coordiná con ellos el backend (Postgres) y el artifact store reales; el código usa `MLFLOW_TRACKING_URI` por env var, así que apuntarlo al servidor no requiere tocar nada.
 
