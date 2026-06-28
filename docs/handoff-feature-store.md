@@ -1,57 +1,38 @@
-# Handoff — consumir el feature store
+# Handoff — feature store realineado (Fase 3)
 
-> **De:** Rol 2 (Feature Store + Orquestación) · **Para:** Rol 1 (entrenamiento) y Rol 3 (inferencia).
-> Acompaña al contrato [docs/feature-store.md](feature-store.md) y a [ADR-031](adr/0031-feature-store.md). El diseño del problema está en [ADR-028](adr/0028-diseno-problema-modelado.md).
+> **De:** Rol 2 (Feature Store + Orquestación). **Para:** Rol 1 (entrenamiento) y Rol 3 (inferencia).
+> Acompaña al contrato [docs/feature-store.md](feature-store.md) y a [ADR-036](adr/0036-feature-store.md) (ver la sección *Revisión*).
 
-El feature store ya está implementado: la tabla **`features.feat_produccion_pozo_mensual`** (dbt, esquema `features` del DW) reproduce **exacto** las features de `ml/dataset.py` (verificado 1-a-1 contra pandas). El objetivo es que entrenamiento e inferencia lean **las mismas** features para evitar el *training-serving skew* (RNF Fase 3): la feature se calcula **una sola vez** en el store.
+## Por qué este handoff
 
-## Rol 1 — entrenamiento (`ml/dataset.py`)
+Al integrar el modelado se detectó una **desalineación de tres puntas** en las features:
+- **Training (Rol 1):** `train.py` → `build_basic_dataset` calcula **~29 features** en pandas desde el CSV (`ml/features.py`), sin pasar por el store.
+- **Store (Rol 2):** la tabla daba **6** features viejas (`lag1/2/3`, `roll3`, `antiguedad`, `tef_lag1`).
+- **Inferencia (Rol 3):** `feature_reader.py` lee esas 6 del store y se las pasa al modelo, que espera 29 → **inferencia rota + skew**.
 
-`ml/dataset.py` deja de leer el CSV y de calcular features: ahora **lee la tabla**. Las columnas tienen los **mismos nombres** (`lag1/lag2/lag3/roll3/antiguedad/tef_lag1/y_next`), así que el modelo no cambia; solo el origen de los datos.
+**Solución acordada:** el store **materializa el pipeline de features de `ml/`** (única fuente de verdad). Un asset de Dagster (Rol 2) corre ese pipeline y escribe `features.feat_produccion_pozo_mensual`; training e inferencia leen lo mismo. Para que esto cierre sin skew, necesitamos coordinar lo siguiente.
 
-```python
-# ml/config.py — DATA_CSV queda deprecado; sumar:
-import os
-def pg_url():
-    return (f"postgresql+psycopg2://{os.getenv('POSTGRES_USER','oil')}:"
-            f"{os.getenv('POSTGRES_PASSWORD','oil')}@{os.getenv('POSTGRES_HOST','localhost')}:"
-            f"{os.getenv('POSTGRES_PORT','5432')}/{os.getenv('POSTGRES_DB','oil_dw')}")
-FEATURE_TABLE = "features.feat_produccion_pozo_mensual"
+## Pedido a Rol 1 (Rol 1.2 — features)
 
-# ml/dataset.py
-from sqlalchemy import create_engine
+1. **Exponer `ml.dataset.build_serving_features()`** (o equivalente): features por `(idpozo, periodo)` **sin target ni split**, sobre **todos los meses** y los pozos con historia (no el universo train-only, que es para entrenar). Debe:
+   - reutilizar `features.add_engineered_features` y las listas `BASIC_NUMERIC_FEATURES` / `BASIC_CATEGORICAL_FEATURES` (las mismas que usa el modelo);
+   - devolver las columnas: claves (`idpozo`, `periodo`, `periodo_objetivo`) + las 29 features (8 numéricas + 7 engineered + 14 categóricas crudas);
+   - **idealmente** que `build_basic_dataset` la reutilice (le agrega target + split encima), para que training y serving compartan **una sola** definición.
+2. **Agregar `ml/requirements.txt`** (`mlflow`, `scikit-learn`, `pandas`, `numpy`, …): el venv que corre el training y la materialización del store lo necesita (hoy falta).
 
-def load_features():
-    df = pd.read_sql(f"select * from {FEATURE_TABLE}", create_engine(pg_url()),
-                     parse_dates=["periodo"])
-    return df.sort_values(["idpozo", "periodo"]).reset_index(drop=True)
+Con eso, el asset de materialización (Rol 2) llama a `build_serving_features()` y escribe el store; el training puede seguir usando `build_basic_dataset` (mismas features) o leer el store.
 
-def add_baselines(df):                 # se mantiene
-    df["b_persist"] = df["prod_pet"]
-    df["b_ma3"]     = df["roll3"]       # ya viene del store
-    df["b_seas"]    = df.groupby("idpozo")["prod_pet"].shift(11)
-    return df
+## Pedido a Rol 3 (inferencia)
 
-# add_target() y add_features() YA NO HACEN FALTA:
-#   y_next, lag1/2/3, roll3, antiguedad, tef_lag1 vienen del store.
-# add_split() queda IGUAL (usa periodo + TRAIN_END/VAL_END de config).
+`api/app/services/feature_reader.py` hoy lee **6 columnas viejas** (`lag1, lag2, lag3, roll3, antiguedad, tef_lag1`) que **dejan de existir**. Actualizar a las **columnas del modelo** (las 29 del contrato):
 
-def build_modeling_frame():
-    return add_split(add_baselines(load_features()))
-```
+- **Lookup:** por `idpozo` + `periodo` del **mes base** `t` (= primer día de `mes_objetivo − 1 mes`), no por la columna `mes`.
+- **Devolver todas las features** (numéricas + engineered + categóricas **crudas**) y pasárselas al `Pipeline` del modelo `Production` (el Pipeline hace el one-hot/imputación internamente).
+- ⚠️ **`mes` es el mes del target (`t+1`)**, no el del mes base (así lo define `build_basic_dataset`). Por eso el lookup va por `periodo`.
 
-**Notas:**
-- **Universo y anti-leakage ya aplicados** en el store (pozos con `prod_pet>0`; features as-of `t`; `y_next` = `t+1`). No re-filtrar ni recalcular.
-- **Entrenamiento:** usar filas con `y_next IS NOT NULL` (las de `y_next` nulo son la última de cada pozo → para inferencia). `baseline.py` ya hace `y_next.notna()`.
-- **`periodo` es `date`** → el split por `TRAIN_END`/`VAL_END` funciona sin cambios.
-- **Conexión por env vars `POSTGRES_*`** (en local, el container `local-db` oil/oil/oil_dw; en AWS, el RDS). Mismo patrón que `transform/scripts/load_bronze.py`.
-- El store sale de **Gold** (deduplicado, sin los negativos que van a cuarentena), así que los conteos pueden diferir un poco del CSV viejo; el split por fecha (ADR-028) es reproducible igual.
-- **¿Feature nueva?** Pedímela y la agrego al store (con bump de `feature_set_version`); no la recalcules en pandas, para no reintroducir skew.
+La lista exacta de columnas está en [docs/feature-store.md](feature-store.md) (fuente de verdad: `ml.dataset.BASIC_*` + `ml.features.ENGINEERED_FEATURES`).
 
-## Rol 3 — inferencia (`POST /api/v1/predict`)
+## Estado (Rol 2)
 
-Dado `(idpozo, mes_objetivo)`: leer la fila del **mes base** `t = mes_objetivo - 1` de `features.feat_produccion_pozo_mensual`, tomar las columnas de features y pasarlas al modelo marcado `Production` en MLflow. **No recalcular features.** Si no hay fila para ese pozo/mes (pozo sin historia), devolver el error de contrato que definas.
-
-## Columnas disponibles
-
-Claves: `idpozo`, `anio`, `mes`, `periodo` (date), `trimestre`. Estáticas: `profundidad`, `formacion`, `tipopozo`, `clasificacion`, `cuenca`, `provincia`, `operadora`. Medidas de `t`: `prod_pet`, `prod_gas`, `tef`. Features: `lag1`, `lag2`, `lag3`, `roll3`, `antiguedad`, `tef_lag1`. Target: `y_next`. Metadata: `feature_set_version`, `computed_at`. (Detalle de cada una en el contrato.)
+- Contrato y ADR actualizados a esta dirección.
+- Asset de materialización: pendiente de que Rol 1 exponga `build_serving_features()` (sin eso no se puede correr ni validar end-to-end). El modelo dbt actual del store se reemplaza recién cuando la materialización esté validada (para no dejar el store sin tabla).
