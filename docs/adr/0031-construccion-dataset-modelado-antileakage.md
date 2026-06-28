@@ -10,8 +10,8 @@ La construcción vive en `ml/dataset.py` (`build_basic_dataset`) y se exploró/v
 
 ### Evidencia del EDA / construcción
 
-- Dataset básico resultante: **319.560 filas**, **3.018 pozos**, rango de meses de features **2006-01 → 2026-03**.
-- Split (por mes de los features): **train 223.621 / val 47.883 / test 48.056**.
+- Dataset básico resultante: **319.554 filas** (tras descartar 6 filas con producción negativa, ADR-039), **3.018 pozos**, rango de meses de features **2006-01 → 2026-03**.
+- Split (por mes de los features): **train 223.615 / val 47.883 / test 48.056**.
 - El **~25%** de los targets (`y_next`) es **0** (meses de pozos petroleros parados): predecir 0 es parte del problema.
 - Las medidas de producción son muy asimétricas (cola larga + masa en 0), confirmado en los histogramas del notebook.
 
@@ -22,7 +22,7 @@ La construcción vive en `ml/dataset.py` (`build_basic_dataset`) y se exploró/v
 Cada fila es `(pozo, mes t)`. **Las medidas corresponden al mes `t`** y el target `y_next` es `prod_pet` del **mes `t+1`**.
 
 - Por construcción, ninguna medida usa información del mes que se predice. `prod_pet` del mes `t` entra como feature (= "producción de petróleo del mes anterior"), igual que `prod_agua`, `prod_gas`, `tef`, etc. del mes `t`.
-- **Excepción — calendario:** `mes` corresponde al **mes objetivo (`t+1`)**, no al mes de las medidas. La fecha del mes a predecir se conoce de antemano (es determinística), así que **no es leakage** y es la señal útil: captura la estacionalidad del mes que se pronostica, no la del mes anterior. Se recomienda codificar `mes` de forma cíclica (sin/cos) en el modelado.
+- **Excepción — calendario:** `mes` corresponde al **mes objetivo (`t+1`)**, no al mes de las medidas. La fecha del mes a predecir se conoce de antemano (es determinística), así que **no es leakage** y es la señal útil: captura la estacionalidad del mes que se pronostica, no la del mes anterior. Hoy `mes` entra como **entero** (passthrough en el `Pipeline`); codificarlo de forma **cíclica** (sin/cos) queda como posible mejora.
 - **`anio` se excluye como feature.** Sus valores en val/test (2024–2026) caen **fuera del rango de train** (≤2023) → extrapolación, problemática sobre todo para modelos de árboles (que no extrapolan). El criterio no es la ciclicidad (`profundidad`/coords tampoco lo son y se usan), sino el rango fuera de muestra; además la tendencia macro que aportaría `anio` ya la captura el lag de `prod_pet`. Se sigue cargando solo para construir `periodo`.
 
 **Alternativa descartada:** usar las medidas del mismo mes que el target → leakage directo (no se conoce la producción del mes a predecir al momento de predecir). En cambio el calendario (`mes`) del target sí es conocido y se usa.

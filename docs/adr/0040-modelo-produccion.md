@@ -4,7 +4,7 @@
 
 ## Contexto
 
-El ADR-034 fijó la **metodología** (regresión tabular, comparación en val con CV temporal) y, sobre la comparación **sin tunear**, anticipó a **XGBoost** como mejor candidato. Con el **tuning de hiperparámetros** (CV temporal, grid search) los resultados **cambian**, así que hay que fijar formalmente **cuál modelo va a producción** y con qué **criterio se promueve**, en base a la evidencia tuneada del notebook `03_modeling.ipynb` (§4).
+El ADR-034 fijó la **metodología** (regresión tabular, comparación en val con CV temporal) y, sobre la comparación **sin tunear**, anticipó a **XGBoost** como mejor candidato. Con el **tuning de hiperparámetros** (CV temporal, random search) los resultados **cambian**, así que hay que fijar formalmente **cuál modelo va a producción** y con qué **criterio se promueve**, en base a la evidencia tuneada del notebook `03_modeling.ipynb` (§4).
 
 Esta es la tarea **1.5** del Rol 1 (definir el modelo campeón y el criterio de promoción). La **mecánica** del registry (versionado, stages Staging→Production, recarga en la API) la implementa el **Rol 3** (ADR-037 servidor MLflow, ADR-038 estrategia de serving); acá se decide **qué** se promueve y **cuándo**.
 

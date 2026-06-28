@@ -49,8 +49,9 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 **Alternativas de métrica:** MAE / RMSE / MAPE / sMAPE. **Alternativas de target:** crudo / `log1p` / con capeo de outliers.
 
 **Decisión:**
-- **Métrica principal: MAE** (error absoluto medio, en m³, interpretable y **robusto a outliers**), reportando **RMSE** en paralelo (penaliza más los errores grandes). Se **descarta MAPE/sMAPE** como métrica principal por la gran proporción de ceros y valores chicos, que la vuelven inestable.
-- Dado el fuerte sesgo de `prod_pet`, se **evaluará en experimentación** transformar el target con **`log1p`** y/o capear outliers extremos. El ADR fija que el sesgo debe tratarse; la transformación concreta se valida con datos y se documentará en el ADR de algoritmo.
+- **Métrica principal: RMSE** (raíz del error cuadrático medio, en m³): penaliza los errores grandes, que es lo que importa en un target de **cola pesada** donde los pozos de mayor producción concentran el error y **son la señal a captar** (coherente con ADR-039). Se reportan **R²** (comparable entre períodos) y **MAE** (referencia interpretable) en paralelo. Se **descarta MAPE/sMAPE** por la gran proporción de ceros y valores chicos, que las vuelven inestables.
+  > La selección de modelo/hiperparámetros se hace por **RMSE en val** (ADR-029/034); el baseline reporta además MAE (ADR-029).
+- Dado el fuerte sesgo de `prod_pet`, se **evaluó** transformar el target con **`log1p`** y/o capear outliers extremos; la evidencia (ADR-039) mostró que **en RMSE los extremos son señal**, así que el target se deja en **escala original** (sin transformar ni capear).
 
 ### 5. Estrategia de validación temporal (split)
 
@@ -79,7 +80,7 @@ Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**.
 - Encuadre **escalable** (un modelo global) y coherente con el feature store y con `/forecast`.
 - Validación **sin leakage temporal** y con un conjunto de test intacto para una estimación honesta del error.
 - Todas las decisiones quedan **ancladas en evidencia del EDA**, no en supuestos.
-- Métrica **robusta** (MAE) acorde a la distribución real del target.
+- Métrica de selección (**RMSE**, con R² y MAE de apoyo) acorde a lo que importa operativamente: acertar en los pozos de mayor producción.
 
 **Negativas / trade-offs:**
 - El target sesgado obliga a **cuidar transformación y métrica**; un modelo ingenuo sobre el target crudo puede dominar por outliers.

@@ -6,7 +6,7 @@
 La consigna de la Fase 3 exige una **plataforma de tracking de experimentos** que haga el entrenamiento **reproducible**: poder volver a un experimento anterior y reconstruir cómo se obtuvo un modelo. Concretamente se necesita registrar, por cada corrida (*run*):
 
 - **Parámetros** del modelo y del experimento (algoritmo, hiperparámetros, definición del split).
-- **Métricas** de evaluación (MAE, RMSE) sobre val y test.
+- **Métricas** de evaluación (RMSE y R²; MAE en los baselines) sobre val y test.
 - El **modelo entrenado** como artefacto.
 - Un **registry** para versionar modelos (v1, v2, …) y marcar el "campeón" con stages **Staging → Production** (tarea 1.5 del rol), que luego consume la API de inferencia (Rol 3).
 

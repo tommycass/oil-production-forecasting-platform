@@ -5,8 +5,9 @@ respetando el split temporal (ADR-028: se entrena con el pasado y se valida con 
 futuro). Permite probar distintos algoritmos e hiperparámetros (con/sin tuning de
 **CV temporal**, ADR-034) y guarda el ``Pipeline`` entrenado en disco.
 
-Todo el preprocesamiento (imputación/flags, log1p, clip, one-hot, escalado) vive en
-el ``Pipeline`` y se ajusta **solo con train / el train de cada fold** (ADR-039).
+Todo el preprocesamiento (imputación de NaN por feature + flags, one-hot, escalado;
+sin clip ni log1p) vive en el ``Pipeline`` y se ajusta **solo con train / el train de
+cada fold** (ADR-039).
 
 **No loguea en MLflow:** el tracking de experimentos (1.4) y el model registry (1.5)
 quedan a cargo del Rol 3. ``train()`` devuelve ``(pipeline, métricas)`` como gancho
