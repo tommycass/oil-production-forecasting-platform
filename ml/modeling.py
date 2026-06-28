@@ -267,6 +267,12 @@ def search_spaces(random_state: int = 42) -> dict:
     de la grilla, así se explora sin enumerar todo. ``ridge`` tunea la lambda L2
     (``alpha``); los árboles, sus hiperparámetros principales.
 
+    **Cuántas iteraciones por modelo:** el campo ``n_iter`` de cada spec. Editalo
+    acá para cambiar cuántas configuraciones prueba *ese* modelo (ridge tiene una
+    grilla chica, así que con 5 ya las cubre todas; los árboles tienen grilla grande
+    y conviene muestrear más). También se puede pisar globalmente pasando ``n_iter``
+    a ``tune_all``/``tune_model``.
+
     ``search_n_jobs``: para los árboles (que ya paralelizan internamente con
     ``n_jobs=-1``) se deja en 1 para no sobre-suscribir CPU; para ridge, -1.
     """
@@ -275,12 +281,14 @@ def search_spaces(random_state: int = 42) -> dict:
             "estimator": Ridge(),
             "scale": True,
             "search_n_jobs": -1,
+            "n_iter": 5,  # grilla de 5: las prueba todas
             "space": {"model__alpha": [0.1, 1.0, 10.0, 100.0, 1000.0]},
         },
         "random_forest": {
             "estimator": RandomForestRegressor(n_jobs=-1, random_state=random_state),
             "scale": False,
             "search_n_jobs": 1,
+            "n_iter": 20,  # grilla de 144: muestrea 20
             "space": {
                 "model__n_estimators": [200, 300, 400],
                 # profundidad alta pero ACOTADA (sin None: gana por sobreajuste).
@@ -295,6 +303,7 @@ def search_spaces(random_state: int = 42) -> dict:
             ),
             "scale": False,
             "search_n_jobs": 1,
+            "n_iter": 25,  # grilla de 1296: muestrea 25
             "space": {
                 "model__n_estimators": [300, 500, 800],
                 "model__learning_rate": [0.01, 0.03, 0.05, 0.1],
@@ -309,7 +318,7 @@ def search_spaces(random_state: int = 42) -> dict:
 
 def tune_model(
     spec: dict, X_train: pd.DataFrame, y_train: np.ndarray,
-    periodos_train: np.ndarray, n_splits: int = 4, n_iter: int = 20,
+    periodos_train: np.ndarray, n_splits: int = 4, n_iter: int | None = None,
     nombre: str = "modelo", progress: bool = True, random_state: int = 42,
 ) -> SimpleNamespace:
     """Random search con CV temporal para un modelo, con **barra de progreso**.
@@ -326,6 +335,8 @@ def tune_model(
     """
     folds = time_series_folds(periodos_train, n_splits=n_splits)
     feature_cols = list(X_train.columns)
+    # n_iter: el del spec por defecto; si se pasa explícito, lo pisa.
+    n_iter = spec.get("n_iter", 20) if n_iter is None else n_iter
     # muestrea n_iter combos de la grilla discreta; si la grilla es más chica que
     # n_iter, se prueban todas (capear evita el warning de ParameterSampler).
     n_eff = min(n_iter, len(ParameterGrid(spec["space"])))
@@ -360,13 +371,14 @@ def tune_model(
 
 def tune_all(
     ds: pd.DataFrame, feature_cols: list[str], n_splits: int = 4,
-    n_iter: int = 20, progress: bool = True,
+    n_iter: int | None = None, progress: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
     """Tunea ridge, random_forest y xgboost con random search + CV temporal.
 
-    ``n_iter`` configuraciones por modelo (controla el tiempo). Cada modelo muestra
-    su barra de progreso. Devuelve ``(tabla_cv, searches)``: la tabla con el RMSE de
-    CV y los mejores hiperparámetros de cada modelo, y el dict de búsquedas.
+    ``n_iter`` controla cuántas configuraciones prueba cada modelo: si es ``None``
+    (default) se usa el del spec de cada modelo (``search_spaces``); si se pasa un
+    número, **pisa** el de todos. Cada modelo muestra su barra de progreso. Devuelve
+    ``(tabla_cv, searches)``: RMSE de CV y mejores hiperparámetros por modelo.
     """
     X_tr, y_tr, periodos = train_search_arrays(ds, feature_cols)
     searches, filas = {}, []
