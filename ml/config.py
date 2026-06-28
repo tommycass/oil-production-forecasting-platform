@@ -22,6 +22,12 @@ DATASET_BASICO_CSV = PROJECT_ROOT / "data" / "processed" / "dataset_basico.csv"
 
 TARGET = "prod_pet"  # m³ de petróleo (ADR-028)
 
+# --- Reproducibilidad ---
+# Semilla única para todo lo aleatorio del modelado (modelos, muestreo de
+# hiperparámetros en el random search). Fijarla acá garantiza que las corridas
+# sean reproducibles; se puede pisar por env var sin tocar código.
+RANDOM_STATE = int(os.getenv("ML_RANDOM_STATE", "42"))
+
 # --- Split temporal de 3 vías (ADR-028, Opción A) ---
 # train: periodo <= TRAIN_END
 # val:   TRAIN_END < periodo <= VAL_END

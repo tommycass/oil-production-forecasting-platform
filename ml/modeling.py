@@ -30,6 +30,7 @@ from tqdm.auto import tqdm
 from xgboost import XGBRegressor
 
 from ml import dataset, preprocessing
+from ml.config import RANDOM_STATE
 
 # columnas que NO son features (claves, target)
 KEYS = ["idpozo", "periodo", "periodo_objetivo", "split"]
@@ -111,7 +112,7 @@ def build_pipeline(estimator, scale: bool, feature_cols: list[str]) -> Pipeline:
 
 # --- Modelos y evaluación --------------------------------------------------
 
-def get_models(random_state: int = 42) -> dict:
+def get_models(random_state: int = RANDOM_STATE) -> dict:
     """Modelos a comparar, con hiperparámetros razonables para un primer barrido.
 
     El comparador lineal es ``Ridge`` (no ``LinearRegression`` pelada): con ~380
@@ -149,7 +150,7 @@ BEST_PARAMS = {
 }
 
 
-def make_estimator(name: str, params: dict | None = None, random_state: int = 42):
+def make_estimator(name: str, params: dict | None = None, random_state: int = RANDOM_STATE):
     """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[name]`` si
     no se pasan): los **últimos mejores hiperparámetros registrados** (ADR-037)."""
     params = BEST_PARAMS[name] if params is None else params
@@ -259,7 +260,7 @@ def train_search_arrays(
     return tr[feature_cols], tr[TARGET_COL].to_numpy(), tr["periodo"].to_numpy()
 
 
-def search_spaces(random_state: int = 42) -> dict:
+def search_spaces(random_state: int = RANDOM_STATE) -> dict:
     """Espacios de búsqueda por modelo para **random search** (``ParameterSampler``).
 
     Cada hiperparámetro es una **lista de valores elegidos a mano** (3–5 según el
@@ -281,16 +282,18 @@ def search_spaces(random_state: int = 42) -> dict:
             "estimator": Ridge(),
             "scale": True,
             "search_n_jobs": -1,
-            "n_iter": 5,  # grilla de 5: las prueba todas
-            "space": {"model__alpha": [0.1, 1.0, 10.0, 100.0, 1000.0]},
+            "n_iter": 20,  # grilla de 20 alphas log-espaciados: prueba las 20
+            # lambda L2: la regularización se mueve por órdenes de magnitud, así
+            # que la grilla es log-espaciada (0.01 → 10000), 20 valores.
+            "space": {"model__alpha": list(np.logspace(-2, 4, 20))},
         },
         "random_forest": {
             "estimator": RandomForestRegressor(n_jobs=-1, random_state=random_state),
             "scale": False,
             "search_n_jobs": 1,
-            "n_iter": 20,  # grilla de 144: muestrea 20
+            "n_iter": 20,  # grilla de 240: muestrea 20
             "space": {
-                "model__n_estimators": [200, 300, 400],
+                "model__n_estimators": [10, 50, 100, 200, 400],
                 # profundidad alta pero ACOTADA (sin None: gana por sobreajuste).
                 "model__max_depth": [12, 16, 24, 32],
                 "model__min_samples_leaf": [2, 5, 10, 20],
@@ -303,11 +306,11 @@ def search_spaces(random_state: int = 42) -> dict:
             ),
             "scale": False,
             "search_n_jobs": 1,
-            "n_iter": 25,  # grilla de 1296: muestrea 25
+            "n_iter": 20,  # grilla de 2160: muestrea 20
             "space": {
-                "model__n_estimators": [300, 500, 800],
+                "model__n_estimators": [10, 50, 100, 200, 400],
                 "model__learning_rate": [0.01, 0.03, 0.05, 0.1],
-                "model__max_depth": [3, 4, 6, 8],
+                "model__max_depth": [12, 16, 24, 32],
                 "model__min_child_weight": [1, 5, 10],
                 "model__subsample": [0.7, 0.8, 1.0],
                 "model__colsample_bytree": [0.7, 0.8, 1.0],
@@ -319,7 +322,7 @@ def search_spaces(random_state: int = 42) -> dict:
 def tune_model(
     spec: dict, X_train: pd.DataFrame, y_train: np.ndarray,
     periodos_train: np.ndarray, n_splits: int = 4, n_iter: int | None = None,
-    nombre: str = "modelo", progress: bool = True, random_state: int = 42,
+    nombre: str = "modelo", progress: bool = True, random_state: int = RANDOM_STATE,
 ) -> SimpleNamespace:
     """Random search con CV temporal para un modelo, con **barra de progreso**.
 
