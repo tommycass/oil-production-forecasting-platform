@@ -93,6 +93,15 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
         .reset_index(drop=True)
     )
 
+    # descartar meses con producción negativa: son errores de dato (la producción
+    # es físicamente >= 0). Se quitan ANTES del feature engineering para que no
+    # contaminen lags/ventanas, y como el target sale de prod_pet del mes siguiente,
+    # un mes negativo descartado tampoco puede ser target (el merge no lo encuentra).
+    prod_cols = ["prod_pet", "prod_gas", "prod_agua"]
+    negativos = (df[prod_cols] < 0).any(axis=1)
+    if negativos.any():
+        df = df[~negativos].reset_index(drop=True)
+
     # features de ingeniería sobre TODA la historia observada (antes del target,
     # para que los lags por calendario sean correctos). Ver ml/features.py.
     df = features.add_engineered_features(df)

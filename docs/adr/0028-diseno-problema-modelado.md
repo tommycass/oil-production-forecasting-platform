@@ -5,7 +5,7 @@
 
 La Fase 3 integra un **modelo predictivo** a la plataforma. El endpoint `/forecast` hoy devuelve datos mock (ADR-009) y la capa Gold ya expone `gold.fact_produccion_mensual` con grano (pozo, mes). Antes de entrenar cualquier modelo, hay que decidir y documentar **cómo se encuadra el problema en términos de Machine Learning**: qué se predice, sobre qué universo de datos, con qué métrica se evalúa y —sobre todo— cómo se separan los datos para validar sin filtrar información del futuro (*leakage* temporal).
 
-Estas decisiones son transversales: condicionan el feature store (Rol 2), el script de entrenamiento y el registry (Rol 1) y la API de inferencia (Rol 3). Por eso se fijan en un único ADR de diseño antes de arrancar la implementación.
+Estas decisiones son transversales: condicionan el feature store, el script de entrenamiento, el registry y la API de inferencia. Por eso se fijan en un único ADR de diseño antes de arrancar la implementación.
 
 ### Evidencia del EDA
 
@@ -27,7 +27,7 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 - **Modelos secuenciales (LSTM/RNN):** potentes para series, pero con costo de implementación, datos y cómputo desproporcionado para el alcance del TP.
 - **Regresión tabular global (elegida):** cada fila (pozo, mes) es un ejemplo; el target es la producción del **mes siguiente**; **un único modelo** aprende de todos los pozos usando features autoregresivas (lags) + atributos.
 
-**Decisión:** encuadrar el problema como **regresión supervisada tabular con un modelo global**, horizonte de **1 mes (t+1)**. Escala a miles de pozos, aprovecha el feature store (Rol 2), usa atributos estáticos y permite que un pozo con poca historia se beneficie de patrones aprendidos en otros.
+**Decisión:** encuadrar el problema como **regresión supervisada tabular con un modelo global**, horizonte de **1 mes (t+1)**. Escala a miles de pozos, aprovecha el feature store, usa atributos estáticos y permite que un pozo con poca historia se beneficie de patrones aprendidos en otros.
 
 ### 2. Target y grano
 
@@ -49,8 +49,9 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 **Alternativas de métrica:** MAE / RMSE / MAPE / sMAPE. **Alternativas de target:** crudo / `log1p` / con capeo de outliers.
 
 **Decisión:**
-- **Métrica principal: MAE** (error absoluto medio, en m³, interpretable y **robusto a outliers**), reportando **RMSE** en paralelo (penaliza más los errores grandes). Se **descarta MAPE/sMAPE** como métrica principal por la gran proporción de ceros y valores chicos, que la vuelven inestable.
-- Dado el fuerte sesgo de `prod_pet`, se **evaluará en experimentación** transformar el target con **`log1p`** y/o capear outliers extremos. El ADR fija que el sesgo debe tratarse; la transformación concreta se valida con datos y se documentará en el ADR de algoritmo.
+- **Métrica principal: RMSE** (raíz del error cuadrático medio, en m³): penaliza los errores grandes, que es lo que importa en un target de **cola pesada** donde los pozos de mayor producción concentran el error y **son la señal a captar** (coherente con ADR-039). Se reportan **R²** (comparable entre períodos) y **MAE** (referencia interpretable) en paralelo. Se **descarta MAPE/sMAPE** por la gran proporción de ceros y valores chicos, que las vuelven inestables.
+  > La selección de modelo/hiperparámetros se hace por **RMSE en val** (ADR-029/034); el baseline reporta además MAE (ADR-029).
+- Dado el fuerte sesgo de `prod_pet`, se **evaluó** transformar el target con **`log1p`** y/o capear outliers extremos; la evidencia (ADR-039) mostró que **en RMSE los extremos son señal**, así que el target se deja en **escala original** (sin transformar ni capear).
 
 ### 5. Estrategia de validación temporal (split)
 
@@ -79,7 +80,7 @@ Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**.
 - Encuadre **escalable** (un modelo global) y coherente con el feature store y con `/forecast`.
 - Validación **sin leakage temporal** y con un conjunto de test intacto para una estimación honesta del error.
 - Todas las decisiones quedan **ancladas en evidencia del EDA**, no en supuestos.
-- Métrica **robusta** (MAE) acorde a la distribución real del target.
+- Métrica de selección (**RMSE**, con R² y MAE de apoyo) acorde a lo que importa operativamente: acertar en los pozos de mayor producción.
 
 **Negativas / trade-offs:**
 - El target sesgado obliga a **cuidar transformación y métrica**; un modelo ingenuo sobre el target crudo puede dominar por outliers.
@@ -89,4 +90,4 @@ Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**.
 
 ---
 
-> Decisiones relacionadas que se documentarán en ADRs aparte: **algoritmo concreto** (lineal vs. árboles vs. boosting) y **plataforma de tracking de experimentos** (MLflow vs. Weights & Biases). El diseño de **features** y del **feature store** se acuerda con el Rol 2.
+> Decisiones relacionadas que se documentarán en ADRs aparte: **algoritmo concreto** (lineal vs. árboles vs. boosting), **plataforma de tracking de experimentos** (MLflow vs. Weights & Biases) y el diseño de **features** y del **feature store**.

@@ -27,7 +27,7 @@ Una columna 0/1 por categoría. Es simple, transparente y sirve para cualquier f
 `fit_onehot_encoder` aprende las categorías **únicamente de las filas `split == "train"`**. Las columnas resultantes son las categorías vistas en train (one-hot **completo sobre train**).
 
 - **Motivo:** dejar que val/test definan columnas metería en el esquema de features información de qué categorías existen en el futuro (leakage). Una categoría que solo aparece en val/test **no** crea su columna.
-- **Variante por fold para el tuning:** en la cross-validation (ADR-034) no alcanza con ajustar el encoder sobre todo train; el vocabulario debe aprenderse **con el train de cada fold**. Para eso, la misma lógica (one-hot + `DESCONOCIDO`) se encapsula en el transformer `OneHotDESC` (`ml/modeling.py`), que va dentro del `Pipeline`/`ColumnTransformer` y se reajusta por fold. `fit_onehot_encoder` (que filtra `split=="train"`) sigue sirviendo para el ajuste único train-vs-resto y para inferencia.
+- **Variante por fold para el tuning:** en la cross-validation (ADR-034) no alcanza con ajustar el encoder sobre todo train; el vocabulario debe aprenderse **con el train de cada fold**. Para eso, la misma lógica (one-hot + `DESCONOCIDO`) se encapsula en el transformer `OneHotDESC` (`ml/preprocessing.py`), que va dentro del `Pipeline`/`ColumnTransformer` y se reajusta por fold. `fit_onehot_encoder` (que filtra `split=="train"`) sigue sirviendo para el ajuste único train-vs-resto y para inferencia.
 
 ### 3. Fallback explícito `DESCONOCIDO` para nulls y categorías no vistas
 

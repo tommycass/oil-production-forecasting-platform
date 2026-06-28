@@ -8,7 +8,7 @@
 
 ## Contexto
 
-Se necesita un endpoint que exponga el modelo de producción (Rol 1, MLflow registry) a consumidores HTTP: dashboards, scripts de análisis y el equipo de operaciones. Hay que decidir:
+Se necesita un endpoint que exponga el modelo de producción (del MLflow registry) a consumidores HTTP: dashboards, scripts de análisis y el equipo de operaciones. Hay que decidir:
 
 1. Método HTTP: `GET` con query params vs `POST` con body.
 2. Granularidad: predicción de un pozo a la vez vs batch (N pozos en un request).
@@ -106,4 +106,4 @@ Hereda el middleware de API key (`X-API-Key`) y el rate limiter de slowapi (conf
 
 **Negativas:**
 - El endpoint hace una consulta a Postgres (feature store) por cada request, lo que agrega latencia de DB. Para el volumen esperado (consultas puntuales, no bulk) esto es aceptable. Si el volumen crece, se puede agregar caché en memoria por (idpozo, anio, mes).
-- La predición unitaria no es óptima para el batch scoring del backlog completo de pozos. Ese caso de uso debe usar el script de entrenamiento/scoring directo (`ml/baseline.py` o el futuro `train.py`), no la API REST.
+- La predición unitaria no es óptima para el batch scoring del backlog completo de pozos. Ese caso de uso debe usar el script de entrenamiento/scoring directo (`ml/train.py` / `ml/baseline.py`), no la API REST.
