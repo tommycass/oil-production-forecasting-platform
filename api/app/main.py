@@ -1,10 +1,18 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from app.routes import health, wells, forecast, mock_error
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi.errors import RateLimitExceeded
+
 from app.core.rate_limit import limiter
 from app.core.security import APIKeyMiddleware
+from app.routes import health, wells, forecast, mock_error
+from app.routes import predict as predict_route
+from app.services.model_loader import MODEL_LOADER
+
+logger = logging.getLogger(__name__)
 
 tags_metadata = [
     {
@@ -16,10 +24,28 @@ tags_metadata = [
         "description": "Daily production forecast per well for a date range.",
     },
     {
+        "name": "ML",
+        "description": "ML-powered monthly production predictions from the MLflow model registry.",
+    },
+    {
         "name": "Health",
         "description": "Service health check.",
     },
 ]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        MODEL_LOADER.load()
+        MODEL_LOADER.start_polling()
+        logger.info("Modelo cargado y polling iniciado al arrancar")
+    except Exception as exc:
+        logger.warning(
+            "No se pudo cargar el modelo al arrancar: %s. /predict retornará 503.", exc
+        )
+    yield
+
 
 app = FastAPI(
     title="Oil & Gas Forecast API",
@@ -44,6 +70,7 @@ Pass a well ID returned by `/wells` to `/forecast?id_well=<id>`.
 """,
     version="1.0.0",
     openapi_tags=tags_metadata,
+    lifespan=lifespan,
     contact={
         "name": "Oil & Gas Forecast Team",
     },
@@ -75,5 +102,6 @@ app.include_router(health.router)
 app.include_router(wells.router)
 app.include_router(forecast.router)
 app.include_router(mock_error.router)
+app.include_router(predict_route.router)
 
 Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app)

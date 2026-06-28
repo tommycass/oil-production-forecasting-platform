@@ -17,6 +17,7 @@ prod_pozos as (
         max(profundidad)     as profundidad,
         max(tipo_de_recurso) as tipo_de_recurso,
         max(clasificacion)   as clasificacion,
+        max(tipopozo)        as tipopozo,
         max(coordenada_x)    as coordenada_x,
         max(coordenada_y)    as coordenada_y
     from {{ ref('silver_produccion') }}
@@ -32,6 +33,7 @@ combinado as (
         coalesce(c.profundidad, p.profundidad)         as profundidad,
         coalesce(c.tipo_de_recurso, p.tipo_de_recurso) as tipo_de_recurso,
         coalesce(c.clasificacion, p.clasificacion)     as clasificacion,
+        p.tipopozo                                     as tipopozo,
         coalesce(c.coordenada_x, p.coordenada_x)       as coordenada_x,
         coalesce(c.coordenada_y, p.coordenada_y)       as coordenada_y
     from catalogo c
@@ -46,6 +48,7 @@ select
     profundidad,
     tipo_de_recurso,
     clasificacion,
+    tipopozo,
     coordenada_x,
     coordenada_y
 from combinado
@@ -60,5 +63,6 @@ select
     null         as profundidad,
     null         as tipo_de_recurso,
     null         as clasificacion,
+    null         as tipopozo,
     null         as coordenada_x,
     null         as coordenada_y

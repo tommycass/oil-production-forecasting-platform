@@ -28,3 +28,11 @@ monitoring/.slack_webhook
 .dagster/
 dagster_home/
 .tmp_dagster_home_*/
+
+# Notas personales de estudio
+journal-estudio-IS.md
+
+# MLflow (tracking local; no se versiona)
+mlruns/
+mlflow.db
+mlartifacts/

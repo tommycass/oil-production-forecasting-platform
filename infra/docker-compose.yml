@@ -246,7 +246,46 @@ services:
         max-size: "20m"
         max-file: "2"
 
+  # MLflow tracking server + model registry (ADR-032). Perfil "ml".
+  # Backend: Postgres (misma instancia que el DW, base separada mlflow_db).
+  # Artifacts: volumen local con --serve-artifacts (la API descarga vía HTTP, sin montar el volumen).
+  # Uso local: docker compose --profile ml --profile local-db up
+  # Staging/prod: POSTGRES_HOST apunta al RDS; la base mlflow_db debe existir previamente.
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.17.0
+    container_name: oil-mlflow
+    profiles: ["ml"]
+    ports:
+      - "5000:5000"
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-oil}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-oil}
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - MLFLOW_DB_NAME=${MLFLOW_DB_NAME:-mlflow_db}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        pip install psycopg2-binary --quiet
+        exec mlflow server \
+          --host 0.0.0.0 \
+          --port 5000 \
+          --backend-store-uri "postgresql://$$POSTGRES_USER:$$POSTGRES_PASSWORD@$$POSTGRES_HOST:$$POSTGRES_PORT/$$MLFLOW_DB_NAME" \
+          --artifacts-destination /mlartifacts \
+          --serve-artifacts
+    volumes:
+      - mlartifacts:/mlartifacts
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "2"
+
 volumes:
   grafana_dashboards:
   postgres_data:
   dagster_home:
+  mlartifacts:

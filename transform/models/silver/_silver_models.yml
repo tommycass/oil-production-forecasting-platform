@@ -52,6 +52,13 @@ models:
           - dbt_expectations.expect_column_values_to_be_between:
               min_value: 0
               config: { severity: warn, tags: ['dq:validity'] }
+      - name: tipopozo
+        description: >
+          Tipo de pozo (Petrolífero/Gasífero/Inyección/Sumidero). Atributo categórico
+          que alimenta dim_pozo y el feature store (Fase 3). Puede ser nulo.
+        data_tests:
+          - dbt_expectations.expect_column_to_exist:
+              config: { severity: warn, tags: ['dq:schema'] }
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           combination_of_columns: ['idpozo', 'anio', 'mes']

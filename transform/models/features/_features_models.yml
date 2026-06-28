@@ -1,0 +1,45 @@
+version: 2
+
+models:
+  - name: feat_produccion_pozo_mensual
+    description: >
+      Feature store offline (Fase 3, Rol 2). Una fila por (idpozo, anio, mes) sobre el
+      universo petrolero (pozos con al menos un mes de prod_pet > 0). Features
+      autoregresivas as-of el mes t (anti-leakage) + atributos estáticos del pozo +
+      target y_next (prod_pet de t+1). Reproduce ml/dataset.py para servir las mismas
+      features a entrenamiento (Rol 1) e inferencia (Rol 3). Contrato: docs/feature-store.md.
+    columns:
+      - name: idpozo
+        description: "Identificador del pozo (parte de la clave de la feature row)."
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+      - name: anio
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+      - name: mes
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+      - name: periodo
+        description: "Primer día del mes t (date). Usado por el split temporal del modelo."
+        data_tests:
+          - not_null:
+              config: { severity: error, tags: ['dq:completeness'] }
+      - name: antiguedad
+        description: "Meses de historia del pozo hasta t (0-based, = pandas cumcount)."
+        data_tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              config: { severity: error, tags: ['dq:validity'] }
+      - name: y_next
+        description: >
+          Target: prod_pet del mes siguiente (t+1). NULL en el último mes de cada pozo
+          (sin observar aún): esas filas se usan para inferencia, no para entrenamiento.
+      - name: feature_set_version
+        description: "Versión del contrato de features (para reproducibilidad)."
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: ['idpozo', 'anio', 'mes']
+          config: { severity: error, tags: ['dq:uniqueness'] }
