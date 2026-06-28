@@ -2,9 +2,9 @@
 
 Plataforma Predictiva de Producción de Hidrocarburos — Trabajo Integrador de Ingeniería de Software.
 
-El sistema integra datos reales de producción de hidrocarburos (datos.gob.ar) en una **plataforma de datos** sobre arquitectura Medallion: ingesta orquestada con **Dagster**, transformación con **dbt** (Bronze → Silver → Gold con modelo estrella), checks de **calidad de datos** persistidos, exploración para usuarios de negocio en **Metabase** (BI) y linaje/gobierno en **DataHub**. Por encima, expone una **API REST** que sirve esos datos, con infraestructura reproducible con Docker, pipeline de **CI/CD** y monitoreo con **Prometheus y Grafana**.
+El sistema integra datos reales de producción de hidrocarburos (datos.gob.ar) en una **plataforma de datos** sobre arquitectura Medallion: ingesta orquestada con **Dagster**, transformación con **dbt** (Bronze → Silver → Gold con modelo estrella), checks de **calidad de datos** persistidos, exploración para usuarios de negocio en **Metabase** (BI) y linaje/gobierno en **DataHub**. Por encima, expone una **API REST** que sirve esos datos, con infraestructura reproducible con Docker, pipeline de **CI/CD** y monitoreo con **Prometheus y Grafana**. Sobre la capa Gold se entrena un **modelo de Machine Learning** que pronostica la producción de petróleo del mes siguiente, con tracking de experimentos en **MLflow** y servido por la API desde el model registry.
 
-> **Fase 1** construyó la API, la infraestructura (Docker/AWS), el CI/CD y el monitoreo. **Fase 2** (esta entrega) agrega la integración de datos: pipeline Medallion, DW dimensional, calidad de datos, BI y gobierno. La arquitectura de datos se describe en [Arquitectura de datos](#arquitectura-de-datos).
+> **Fase 1** construyó la API, la infraestructura (Docker/AWS), el CI/CD y el monitoreo. **Fase 2** agregó la integración de datos: pipeline Medallion, DW dimensional, calidad de datos, BI y gobierno. **Fase 3** (esta entrega) suma el **Machine Learning**: feature store, pipeline de entrenamiento, tracking/registry con MLflow y un endpoint de inferencia. Ver [Arquitectura de datos](#arquitectura-de-datos) y [Machine Learning — Forecast de producción](#machine-learning--forecast-de-producción-fase-3).
 
 ---
 
@@ -48,9 +48,12 @@ oil-production-forecasting-platform/
 │   │   │   ├── health.py           # GET /health
 │   │   │   ├── wells.py            # GET /api/v1/wells
 │   │   │   ├── forecast.py         # GET /api/v1/forecast
+│   │   │   ├── predict.py          # POST /api/v1/predict (inferencia ML, Fase 3)
 │   │   │   └── mock_error.py       # GET /mock-500 (testing)
 │   │   ├── schemas/                # Schemas Pydantic (request/response)
-│   │   ├── services/               # Lógica de negocio y generación de datos mock
+│   │   ├── services/               # Lógica de negocio + serving ML
+│   │   │   ├── model_loader.py     # Carga el modelo del registry MLflow (stage Production)
+│   │   │   └── feature_reader.py   # Lee features del feature store para inferencia
 │   │   ├── __init__.py
 │   │   └── main.py                 # Punto de entrada de la aplicación FastAPI
 │   ├── tests/                      # Tests unitarios y de integración (pytest)
@@ -83,13 +86,27 @@ oil-production-forecasting-platform/
 │   │   ├── bronze/                 # dbt sources de bronze.* (entrada del modelo)
 │   │   ├── silver/                 # Limpieza, tipado, dedup + cuarentena de rechazos
 │   │   ├── gold/                   # Modelo estrella: fact_produccion_mensual + 4 dims
-│   │   └── semantic/               # Vistas semánticas sobre Gold para BI (ADR-027)
+│   │   ├── semantic/               # Vistas semánticas sobre Gold para BI (ADR-027)
+│   │   └── features/               # Feature store offline (Fase 3, ADR-036)
+│   │       └── feat_produccion_pozo_mensual.sql  # 1 fila por (pozo, mes) + target
 │   ├── macros/
 │   │   └── log_dq_results.sql      # Persiste los checks de calidad en dq.dq_results
 │   ├── scripts/
 │   │   ├── load_bronze.py          # Puente parquet → bronze.* (Postgres)
 │   │   └── seed_sample_bronze.py   # Bronze de muestra para pruebas/bootstrap
 │   └── tests/                      # Tests dbt singulares (p. ej. freshness)
+│
+├── ml/                             # Zona ML Engineer (Fase 3): modelado + entrenamiento
+│   ├── config.py                   # Target, split temporal, semilla, config MLflow
+│   ├── dataset.py                  # build_basic_dataset (universo, features, target, split)
+│   ├── features.py                 # Features derivadas (lags, ventanas, vecinos) anti-leakage
+│   ├── preprocessing.py            # Imputación por feature + one-hot, dentro del Pipeline
+│   ├── modeling.py                 # Modelos, tuning con CV temporal (random search)
+│   ├── train.py                    # Entrenamiento/evaluación (leer → entrenar → evaluar)
+│   ├── baseline.py                 # Baselines deterministas (persistencia, etc.)
+│   └── tracking.py                 # Helper de setup de MLflow
+│
+├── notebooks/                      # EDA, feature engineering y comparación de modelos
 │
 ├── docs/
 │   ├── consigna-fase1.md
@@ -452,6 +469,99 @@ y el [runbook del Data Engineer](docs/runbooks/data-engineer.md)).
 
 ---
 
+## Machine Learning — Forecast de producción (Fase 3)
+
+Sobre la capa Gold se entrena un modelo que **pronostica la producción de petróleo
+(`prod_pet`, m³) de un pozo para el mes siguiente (t+1)**. El flujo completo va de las
+features (materializadas en un feature store) al entrenamiento con tracking en MLflow y
+al servido por la API desde el model registry.
+
+### Problema y validación
+
+- **Target:** `prod_pet` del mes `t+1`. **Grano:** una fila por **(pozo, mes)**.
+- **Métrica:** **RMSE** (m³) como métrica de selección —penaliza los errores grandes,
+  que dominan en un target de cola pesada—, con **R²** y **MAE** de apoyo.
+- **Split temporal de 3 vías** (sin mezclar fechas): se entrena con el pasado, se
+  elige modelo/hiperparámetros en `val` y se mide una sola vez en `test`.
+- **Baseline a batir:** la **persistencia** (`ŷ(t+1) = prod_pet(t)`); un modelo solo se
+  promueve si la supera. Ver [ADR-028](docs/adr/0028-diseno-problema-modelado.md) y
+  [ADR-029](docs/adr/0029-modelo-baseline.md).
+
+### Feature store y features
+
+El **feature store offline** es un modelo dbt sobre Gold
+(`transform/models/features/feat_produccion_pozo_mensual.sql`): una fila por
+`(idpozo, anio, mes)` con las mismas features que consume el entrenamiento, para que
+**train e inferencia calculen lo mismo** (evita *training-serving skew*). Las features
+incluyen autoregresivas del pozo (lags, medias móviles, acumulados, delta, estacional),
+`water_cut`, actividad y promedio de **pozos vecinos** por coordenadas, más atributos
+estáticos y categóricos. Todas son **anti-leakage** (lags por calendario, nunca usan el
+mes a predecir). Ver [ADR-033](docs/adr/0033-feature-engineering.md) y
+[ADR-036](docs/adr/0036-feature-store.md); contrato en `docs/feature-store.md`.
+
+### Entrenamiento y modelo campeón
+
+El pipeline (`ml/`) sigue **leer features → entrenar → evaluar**. Todo el preprocesamiento
+aprendido (imputación de NaN por feature + flags, one-hot con fallback `DESCONOCIDO`,
+escalado) vive dentro de un **`Pipeline` de scikit-learn**, así se reajusta **solo con el
+train de cada fold** durante la validación cruzada (anti-leakage). El tuning usa **CV
+temporal** (*expanding window* por mes) + **random search** con semilla fija
+(reproducible). Se comparan **Ridge, Random Forest y XGBoost**. Ver
+[ADR-034](docs/adr/0034-algoritmo-modelo-validacion-temporal.md),
+[ADR-039](docs/adr/0039-preprocesamiento-datos.md) y
+[ADR-040](docs/adr/0040-modelo-produccion.md).
+
+**Campeón: Random Forest tuneado** (`n_estimators=400, max_depth=16, max_features=0.5,
+min_samples_leaf=2`):
+
+| Conjunto | RMSE | R² |
+|---|---|---|
+| val (tuneado) | 229,9 | 0,900 |
+| **test** (dev→test, evaluación única) | **154,4** | **0,874** |
+| persistencia (test) | 166,2 | 0,854 |
+
+Supera al baseline en val y en test → cumple el criterio de promoción.
+
+**Correr el entrenamiento** (requiere acceso a la fuente de datos / feature store):
+
+```bash
+# entrenar el campeón y evaluar en val (tunea por defecto)
+python -m ml.train --model random_forest
+
+# entrenamiento final (dev = train+val) + evaluación única en test
+python -m ml.train --final
+
+# comparar modelos y baselines
+python -m ml.train --compare
+python -m ml.baseline
+```
+
+### Tracking y registry (MLflow)
+
+Los experimentos se registran en **MLflow** (servidor en `infra/docker-compose.yml`,
+servicio `mlflow`, con backend Postgres). El **model registry** versiona los modelos y
+marca el campeón con stages **Staging → Production**; el criterio de promoción está en
+[ADR-040](docs/adr/0040-modelo-produccion.md). La plataforma (MLflow vs W&B) se justifica
+en [ADR-030](docs/adr/0030-plataforma-tracking-experimentos.md) y el servidor en
+[ADR-037](docs/adr/0037-mlflow-server.md).
+
+### Inferencia (API)
+
+`POST /api/v1/predict` recibe `idpozo`, `anio`, `mes` (el mes a predecir) y devuelve la
+producción estimada más la **versión del modelo** que la generó. La API **carga el modelo
+en stage `Production`** desde el registry (y se actualiza al promoverse uno nuevo, sin
+reiniciar) y **lee las features del feature store** (no las recalcula). Ver
+[ADR-035](docs/adr/0035-predict-api-contract.md) y
+[ADR-038](docs/adr/0038-serving-strategy.md).
+
+```bash
+curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
+  -d '{"idpozo": 507, "anio": 2026, "mes": 6}' \
+  "<URL_DEL_SERVICIO>/api/v1/predict"
+```
+
+---
+
 ## Endpoints principales
 
 | Método | Endpoint | Descripción | Auth |
@@ -459,6 +569,7 @@ y el [runbook del Data Engineer](docs/runbooks/data-engineer.md)).
 | GET | `/health` | Health check del servicio | No |
 | GET | `/api/v1/wells` | Listado de pozos disponibles | Sí |
 | GET | `/api/v1/forecast` | Pronóstico de producción de un pozo | Sí |
+| POST | `/api/v1/predict` | Predicción ML de producción de petróleo (t+1) de un pozo | Sí |
 
 Documentación interactiva disponible en `/docs` (Swagger UI) y `/redoc` (ReDoc) con el servicio corriendo. Detalle de parámetros y códigos de respuesta en [api/README.md](api/README.md).
 
@@ -562,6 +673,12 @@ Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe rev
 - **pandas / pyarrow** — lectura de los CSV y escritura de la capa Bronze en parquet
 - **requests** — descarga de las fuentes de datos.gob.ar
 
+**Machine Learning (Fase 3)**
+- **scikit-learn** — `Pipeline`, preprocesamiento, Random Forest / Ridge y validación cruzada temporal
+- **XGBoost** — gradient boosting (modelo comparado en el tuning)
+- **MLflow** — tracking de experimentos y model registry (stages Staging → Production)
+- **dbt** — feature store offline sobre Gold (`feat_produccion_pozo_mensual`)
+
 **Infraestructura**
 - **Docker / Docker Compose** — contenerización y orquestación local
 - **AWS ECR** — registro privado de imágenes
@@ -634,3 +751,16 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [025](docs/adr/0025-testing-pipeline-datos.md) | Testing del pipeline de datos | Tests de extracción y DAGs con I/O mockeado (`materialize()`); contratos de idempotencia/particiones/fail-fast |
 | [026](docs/adr/0026-restart-policy-datahub-ec2.md) | Política de reinicio de DataHub en EC2 | `unless-stopped` en los 6 contenedores de larga duración; script idempotente de setup |
 | [027](docs/adr/0027-semantic-layer.md) | Capa semántica sobre Gold | Vistas SQL en esquema `semantic.*` vs. dbt MetricFlow vs. Cube.dev; abstracción del modelo estrella para BI |
+| [028](docs/adr/0028-diseno-problema-modelado.md) | Diseño del problema predictivo | Regresión tabular global vs. forecasting por serie/LSTM; target, grano, métrica (RMSE) y split temporal de 3 vías |
+| [029](docs/adr/0029-modelo-baseline.md) | Modelo baseline | Persistencia vs. media móvil vs. estacional vs. Arps; vara de éxito a superar en RMSE |
+| [030](docs/adr/0030-plataforma-tracking-experimentos.md) | Plataforma de tracking | MLflow vs. Weights & Biases vs. Neptune/Comet vs. solución casera |
+| [031](docs/adr/0031-construccion-dataset-modelado-antileakage.md) | Construcción del dataset (anti-leakage) | Target por merge de calendario vs. `shift`; universo train-only; auditoría de leakage |
+| [032](docs/adr/0032-encoding-categoricas-onehot.md) | Encoding de categóricas | One-hot con fallback `DESCONOCIDO` vs. ordinal/target encoding; ajuste solo en train |
+| [033](docs/adr/0033-feature-engineering.md) | Feature engineering | Lags por calendario vs. `shift`; vecinos por coordenadas vs. por área; features sin parámetros aprendidos |
+| [034](docs/adr/0034-algoritmo-modelo-validacion-temporal.md) | Algoritmo y validación temporal | Lineal vs. árboles vs. boosting; KFold vs. CV temporal; random search con `n_iter` |
+| [035](docs/adr/0035-predict-api-contract.md) | Contrato del endpoint de predicción | GET vs. POST; unitario vs. batch; clave de lookup vs. features explícitas |
+| [036](docs/adr/0036-feature-store.md) | Feature store | Tabla en Postgres (dbt) vs. Feast vs. otra; store offline reutilizando el stack de Fase 2 |
+| [037](docs/adr/0037-mlflow-server.md) | Backend del servidor MLflow | Backend SQLite vs. Postgres; artifact store; servidor containerizado para tracking + registry |
+| [038](docs/adr/0038-serving-strategy.md) | Estrategia de serving del modelo | Redeploy del contenedor vs. recarga/polling del registry; actualización sin downtime |
+| [039](docs/adr/0039-preprocesamiento-datos.md) | Preprocesamiento de datos | Imputación por feature vs. uniforme; clip/log1p vs. sin tratar outliers; descarte de negativos |
+| [040](docs/adr/0040-modelo-produccion.md) | Modelo campeón y criterio de promoción | Random Forest vs. XGBoost vs. Ridge (tuneados); criterio Staging→Production |
