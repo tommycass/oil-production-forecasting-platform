@@ -9,7 +9,7 @@ Estas decisiones son transversales: condicionan el feature store (Rol 2), el scr
 
 ### Evidencia del EDA
 
-El análisis exploratorio (`notebooks/eda_produccion.ipynb`, sobre `data/_explore/produccion_full.csv`) arrojó:
+El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `data/_explore/produccion_full.csv`) arrojó:
 
 - **4.929 pozos**, rango **2006–2026** (244 meses); mediana de **~80 meses de historia por pozo**. El **91%** de los pozos tiene ≥12 meses y el **81%** ≥24 meses.
 - `prod_pet` está **muy sesgada**: mediana **51 m³**, máximo **26.593**, desvío **1.105**. El **35,5%** de los registros es **cero**.

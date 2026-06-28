@@ -1,12 +1,15 @@
 """Baselines deterministas para el forecast de producción (ADR-029).
 
-Calcula y evalúa en el conjunto de **test** (ADR-028) las reglas:
-- persistencia    : ŷ(t+1) = y(t)            <- baseline primario
-- media_movil_3m  : ŷ(t+1) = media últimos 3 meses
-- naive_estacional: ŷ(t+1) = y(t-11)         (mismo mes del año anterior)
+Calcula y evalúa las reglas:
+- persistencia    : ŷ(t+1) = prod_pet(t)        <- baseline primario
+- media_movil_3m  : ŷ(t+1) = media de {t, t-1, t-2}
+- naive_estacional: ŷ(t+1) = prod_pet(t-11)     (mismo mes del año anterior)
 
-Cada baseline se loguea en MLflow como un run, con las mismas métricas y el
-mismo split que tendrán los modelos, para comparación directa.
+Se calculan sobre el **mismo dataset que los modelos** (``build_basic_dataset``,
+universo train-only + target por merge de calendario, ADR-031) y se evalúan en
+**val** (comparación directa con los modelos del notebook 04) y en **test** (vara
+de éxito del ADR-029). Cada baseline se loguea en MLflow como un run, con las
+mismas métricas y el mismo split que los modelos.
 
 Uso:
     python -m ml.baseline            # evalúa y loguea en MLflow
@@ -16,10 +19,12 @@ from __future__ import annotations
 import argparse
 
 import mlflow
-from sklearn.metrics import mean_absolute_error, root_mean_squared_error
+import numpy as np
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 
-from ml.config import EXPERIMENT_NAME
-from ml.dataset import build_modeling_frame
+from ml import features
+from ml.config import EXPERIMENT_NAME, TARGET
+from ml.dataset import build_basic_dataset
 from ml.tracking import setup_mlflow
 
 # nombre legible -> columna de predicción en el dataframe
@@ -29,46 +34,75 @@ BASELINES = {
     "naive_estacional": "b_seas",
 }
 PRIMARY = "persistencia"
+SPLITS = ("val", "test")
+
+
+def _rmse(y_true, y_pred) -> float:
+    """RMSE compatible con cualquier versión de sklearn (sin
+    ``root_mean_squared_error``, que recién existe desde 1.4)."""
+    return float(np.sqrt(mean_squared_error(y_true, y_pred)))
+
+
+def add_basic_baselines(ds):
+    """Agrega las columnas de predicción de los baselines sobre el dataset básico.
+
+    ``prod_pet`` ya es la producción del mes t (persistencia) y ``prod_pet_roll3``
+    es la media de {t, t-1, t-2} (media móvil 3m); el estacional se arma con el lag
+    de calendario de 11 meses (mismo mes del año anterior respecto del target t+1).
+    Todas usan solo información hasta el mes t (anti-leakage).
+    """
+    ds = ds.copy()
+    ds["b_persist"] = ds["prod_pet"]
+    ds["b_ma3"] = ds["prod_pet_roll3"]
+    ds["b_seas"] = features._calendar_lag(ds, TARGET, 11)
+    return ds
 
 
 def evaluate_baselines() -> dict[str, dict]:
-    """Evalúa cada baseline en test. Devuelve {nombre: {mae, rmse, n}}."""
-    df = build_modeling_frame()
-    test = df[(df.split == "test") & df.y_next.notna()]
-
-    results = {}
-    for name, col in BASELINES.items():
-        mask = test[col].notna()
-        y_true = test.loc[mask, "y_next"]
-        y_pred = test.loc[mask, col]
-        results[name] = {
-            "mae": mean_absolute_error(y_true, y_pred),
-            "rmse": root_mean_squared_error(y_true, y_pred),
-            "n": int(mask.sum()),
-        }
+    """Evalúa cada baseline en val y test. Devuelve
+    ``{split: {nombre: {mae, rmse, n}}}``."""
+    ds = add_basic_baselines(build_basic_dataset())
+    results: dict[str, dict] = {}
+    for split in SPLITS:
+        s = ds[(ds.split == split) & ds.y_next.notna()]
+        results[split] = {}
+        for name, col in BASELINES.items():
+            mask = s[col].notna()
+            y_true = s.loc[mask, "y_next"]
+            y_pred = s.loc[mask, col]
+            results[split][name] = {
+                "mae": mean_absolute_error(y_true, y_pred),
+                "rmse": _rmse(y_true, y_pred),
+                "n": int(mask.sum()),
+            }
     return results
 
 
 def _print_table(results: dict[str, dict]) -> None:
-    print(f"\n{'Baseline':20s}{'MAE (m³)':>12s}{'RMSE (m³)':>12s}{'n test':>10s}")
-    print("-" * 54)
-    for name, r in sorted(results.items(), key=lambda kv: kv[1]["mae"], reverse=True):
-        marca = "  <- primario" if name == PRIMARY else ""
-        print(f"{name:20s}{r['mae']:>12.1f}{r['rmse']:>12.1f}{r['n']:>10,}{marca}")
-    print(f"\nUmbral de éxito (ADR-029): el modelo debe superar "
-          f"MAE = {results[PRIMARY]['mae']:.1f} m³")
+    for split in SPLITS:
+        print(f"\n[{split}]  {'Baseline':20s}{'MAE (m³)':>12s}{'RMSE (m³)':>12s}{'n':>10s}")
+        print("-" * 60)
+        r_split = results[split]
+        for name, r in sorted(r_split.items(), key=lambda kv: kv[1]["rmse"], reverse=True):
+            marca = "  <- primario" if name == PRIMARY else ""
+            print(f"{'':6s}{name:20s}{r['mae']:>12.1f}{r['rmse']:>12.1f}{r['n']:>10,}{marca}")
+    prim = results["val"][PRIMARY]
+    print(f"\nVara de éxito (ADR-029): el modelo debe superar la persistencia "
+          f"(val RMSE = {prim['rmse']:.1f} m³, MAE = {prim['mae']:.1f} m³).")
 
 
 def log_to_mlflow(results: dict[str, dict]) -> None:
     setup_mlflow()
-    for name, r in results.items():
+    for name in BASELINES:
         with mlflow.start_run(run_name=f"baseline_{name}"):
             mlflow.set_tag("tipo", "baseline")
             mlflow.set_tag("primario", str(name == PRIMARY))
             mlflow.log_param("regla", name)
-            mlflow.log_metric("test_mae", r["mae"])
-            mlflow.log_metric("test_rmse", r["rmse"])
-            mlflow.log_metric("n_test", r["n"])
+            for split in SPLITS:
+                r = results[split][name]
+                mlflow.log_metric(f"{split}_mae", r["mae"])
+                mlflow.log_metric(f"{split}_rmse", r["rmse"])
+                mlflow.log_metric(f"n_{split}", r["n"])
     print(f"\n✓ Baselines logueados en MLflow (experimento '{EXPERIMENT_NAME}').")
 
 
