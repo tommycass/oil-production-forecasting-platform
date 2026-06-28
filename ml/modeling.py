@@ -71,6 +71,23 @@ def split_train_val(
     )
 
 
+def split_dev_test(
+    ds: pd.DataFrame, feature_cols: list[str]
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+    """Separa en (X_dev, y_dev, X_test, y_test): **dev = train + val** para el
+    entrenamiento final del modelo elegido, y **test** para la evaluación única.
+
+    El preprocesamiento se ajusta sobre dev (test queda fuera), igual que en la CV
+    se ajustaba por fold: ningún estadístico ve test (anti-leakage)."""
+    usable = ds[ds[TARGET_COL].notna()]
+    dev = usable[usable.split.isin(["train", "val"])]
+    te = usable[usable.split == "test"]
+    return (
+        dev[feature_cols], dev[TARGET_COL],
+        te[feature_cols], te[TARGET_COL],
+    )
+
+
 # --- Preprocesamiento + modelo, todo dentro del Pipeline -------------------
 
 def build_pipeline(estimator, scale: bool, feature_cols: list[str]) -> Pipeline:
@@ -113,6 +130,36 @@ def get_models(random_state: int = 42) -> dict:
             n_jobs=-1, random_state=random_state,
         ),
     }
+
+
+# Mejores hiperparámetros registrados (del tuning con CV temporal, notebook
+# 03_modeling §4.1 / ADR-037). Si no se tunea, se usan estos en vez de defaults
+# arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
+# ahora se mantienen acá como "últimos mejores registrados".)
+BEST_PARAMS = {
+    "ridge": {"alpha": 1000.0},
+    "random_forest": {
+        "n_estimators": 300, "max_depth": None,
+        "max_features": 0.3, "min_samples_leaf": 5,
+    },
+    "xgboost": {
+        "n_estimators": 400, "learning_rate": 0.05, "max_depth": 4,
+        "subsample": 0.8, "colsample_bytree": 0.8,
+    },
+}
+
+
+def make_estimator(name: str, params: dict | None = None, random_state: int = 42):
+    """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[name]`` si
+    no se pasan): los **últimos mejores hiperparámetros registrados** (ADR-037)."""
+    params = BEST_PARAMS[name] if params is None else params
+    if name == "ridge":
+        return Ridge(**params)
+    if name == "random_forest":
+        return RandomForestRegressor(n_jobs=-1, random_state=random_state, **params)
+    if name == "xgboost":
+        return XGBRegressor(tree_method="hist", n_jobs=-1, random_state=random_state, **params)
+    raise ValueError(f"modelo desconocido: {name}")
 
 
 def rmse(y_true, y_pred) -> float:

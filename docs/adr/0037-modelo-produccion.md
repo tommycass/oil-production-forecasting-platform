@@ -24,9 +24,21 @@ Comparación **tuneada en val** (entrenando en train, CV temporal para elegir hi
 - **Ridge:** el más interpretable y el de menor gap (no sobreajusta), pero el peor de los modelos; lineal puro no captura interacciones.
 - **Persistencia:** el piso a batir (ADR-029); los tres modelos la superan.
 
+### Confirmación en test
+
+El campeón se entrenó en **dev (train+val, n=271.498)** con esos hiperparámetros y se evaluó **una sola vez en test** (`python -m ml.train --final`):
+
+| | RMSE | R² |
+|---|---|---|
+| dev (train+val) | 162,7 | 0,957 |
+| **test** | **153,0** | **0,876** |
+| persistencia (test) | 166,2 | 0,854 |
+
+**Supera a la persistencia en test** (RMSE 153 vs 166; R² 0,876 vs 0,854). El RMSE absoluto de test es menor que el de val porque el período de test tiene producciones de menor magnitud (la persistencia también baja); el R² (~0,88) es el comparable y se mantiene. El gap dev→test (R² 0,957→0,876) confirma algo de sobreajuste, pero el modelo generaliza y bate el baseline.
+
 ## Decisión
 
-1. **Modelo campeón a producción: Random Forest tuneado**, por tener el **mejor RMSE/R² en val** y superar a la persistencia. Hiperparámetros: `n_estimators=300, max_depth=None, max_features=0.3, min_samples_leaf=5`.
+1. **Modelo campeón a producción: Random Forest tuneado**, por tener el **mejor RMSE/R² en val** y superar a la persistencia (**confirmado en test**: RMSE 153,0 / R² 0,876 vs persistencia 166,2 / 0,854). Hiperparámetros: `n_estimators=300, max_depth=None, max_features=0.3, min_samples_leaf=5`.
 2. **Criterio de promoción (Staging→Production):** un modelo se promueve solo si **supera a la persistencia en RMSE en val** y lo **confirma en `test`** (evaluación única, al promover). Entre modelos candidatos, gana el de **menor val RMSE**.
 3. **El campeón no es fijo:** se **re-evalúa en cada reentreno**. Los grids de tuning son chicos (ADR-034); con grids más amplios **XGBoost podría alcanzar o superar a RF**. La decisión la dicta la métrica en cada corrida, no este ADR de forma permanente.
 4. **Alineación de código:** `ml/train.py` entrena por defecto el campeón (`random_forest`) **tuneado**.
@@ -42,7 +54,7 @@ Este ADR **refina la elección preliminar del ADR-034** (XGBoost sobre números 
 **Negativas / trade-offs:**
 - Random Forest es **más pesado para servir** que XGBoost o un lineal (300 árboles sin límite de profundidad → más memoria/latencia); el Rol 3 debe tenerlo en cuenta al desplegar.
 - El **gap train→val** de RF indica sobreajuste: hay margen para más regularización (más `min_samples_leaf`, `max_depth` acotado) en próximos reentrenos.
-- La **confirmación en `test`** todavía no se ejecutó (se hace una sola vez al promover); el número de val es la base de la decisión, no el definitivo.
+- La **confirmación en `test`** ya se ejecutó una vez (RMSE 153,0 / R² 0,876, supera la persistencia); en sucesivos reentrenos, test debe seguir usándose con moderación para no "ajustar a test".
 - Que el campeón pueda cambiar entre reentrenos exige que la **comparación esté automatizada** (encaja con el job de retrain del Rol 2).
 
 ---
