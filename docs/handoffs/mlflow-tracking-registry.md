@@ -102,4 +102,4 @@ Lo ideal es encapsular esto en `train.py` (p. ej. un flag `--mlflow` o una funci
 - `ml/tracking.py` — `setup_mlflow()`.
 - `ml/baseline.py` — **ejemplo de logging** (params + métricas como runs).
 - `ml/train.py` — `train()` / `train_final()` (el gancho, devuelven `info`).
-- ADR-030 (plataforma), ADR-040 (campeón + criterio de promoción), ADR-037/039 (infra y serving — Rol 3).
+- ADR-030 (plataforma), ADR-040 (campeón + criterio de promoción), ADR-037/038 (infra y serving — Rol 3).
