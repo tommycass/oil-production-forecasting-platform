@@ -19,19 +19,17 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin, clone
-from sklearn.compose import ColumnTransformer
+from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.metrics import make_scorer, mean_squared_error, r2_score
 from sklearn.model_selection import ParameterGrid, cross_val_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
 from xgboost import XGBRegressor
 
-from ml import dataset
+from ml import dataset, preprocessing
 
 # columnas que NO son features (claves, target)
 KEYS = ["idpozo", "periodo", "periodo_objetivo", "split"]
@@ -73,75 +71,21 @@ def split_train_val(
     )
 
 
-# --- Preprocesamiento: one-hot con fallback, dentro del Pipeline -----------
-
-class OneHotDESC(BaseEstimator, TransformerMixin):
-    """One-hot con fallback explícito ``DESCONOCIDO`` (ADR-032), apto para usar
-    como paso de un ``Pipeline`` / ``ColumnTransformer``.
-
-    A diferencia de ``ml.dataset.fit_onehot_encoder`` (que filtra ``split=="train"``),
-    aprende el vocabulario en ``fit`` con **todas las filas que recibe** — que dentro
-    de la cross-validation son las del **train de cada fold**. En ``transform``, los
-    nulos y las **categorías no vistas** se mapean a la columna ``<feature>_DESCONOCIDO``.
-    Así el one-hot también se ajusta por fold (sin leakage val→train en el vocabulario).
-    """
-
-    FILL = dataset.CATEGORICAL_NA_FILL  # "DESCONOCIDO"
-
-    def fit(self, X, y=None):
-        X = pd.DataFrame(X)
-        self.columns_ = list(X.columns)
-        categories = []
-        for c in self.columns_:
-            cats = sorted(X[c].fillna(self.FILL).unique().tolist())
-            if self.FILL not in cats:
-                cats.append(self.FILL)
-            categories.append(cats)
-        self.known_ = [set(c) for c in categories]
-        self.encoder_ = OneHotEncoder(
-            categories=categories, handle_unknown="ignore",
-            sparse_output=False, dtype="uint8",
-        ).fit(X[self.columns_].fillna(self.FILL))
-        return self
-
-    def transform(self, X):
-        X = pd.DataFrame(X)[self.columns_].copy()
-        for i, c in enumerate(self.columns_):
-            X[c] = X[c].where(X[c].isin(self.known_[i]), self.FILL)
-        return self.encoder_.transform(X)
-
-    def get_feature_names_out(self, input_features=None):
-        return self.encoder_.get_feature_names_out(self.columns_)
-
-
-def _split_cols(feature_cols: list[str]) -> tuple[list[str], list[str]]:
-    """Separa ``feature_cols`` en (numéricas, categóricas) según ADR-031/032."""
-    cat = [c for c in feature_cols if c in dataset.BASIC_CATEGORICAL_FEATURES]
-    num = [c for c in feature_cols if c not in dataset.BASIC_CATEGORICAL_FEATURES]
-    return num, cat
-
+# --- Preprocesamiento + modelo, todo dentro del Pipeline -------------------
 
 def build_pipeline(estimator, scale: bool, feature_cols: list[str]) -> Pipeline:
-    """Pipeline de preprocesamiento + modelo, con **todo lo aprendido fit en train**.
+    """Pipeline de preprocesamiento por feature + modelo, con **todo lo aprendido
+    fit en train**.
 
-    - numéricas → imputación por **mediana**;
-    - categóricas → **one-hot con fallback ``DESCONOCIDO``** (``OneHotDESC``);
-    - opcional → **estandarización** (para la regresión lineal/ridge);
-    - modelo.
-
-    Que el ``ColumnTransformer`` (one-hot + imputación) y el ``StandardScaler``
-    vivan en el ``Pipeline`` es lo que garantiza que, en la CV, **los tres se
-    reajusten solo con el train de cada fold** (anti-leakage val→train).
+    El preprocesamiento (``ml.preprocessing.build_preprocessor``: imputación de NaN
+    por feature + flags, one-hot con ``DESCONOCIDO``) y el
+    ``StandardScaler`` opcional viven dentro del ``Pipeline``. Por eso, en la CV,
+    **todos los estadísticos (medianas, percentiles, vocabulario, media/desvío) se
+    reajustan solo con el train de cada fold** (anti-leakage val→train); y el train
+    son filas ``periodo <= TRAIN_END`` (pasado). El escalado solo se agrega para los
+    modelos lineales (``scale=True``); los árboles no lo necesitan.
     """
-    num_cols, cat_cols = _split_cols(feature_cols)
-    prep = ColumnTransformer(
-        transformers=[
-            ("num", SimpleImputer(strategy="median"), num_cols),
-            ("cat", OneHotDESC(), cat_cols),
-        ],
-        remainder="drop",
-    )
-    steps = [("prep", prep)]
+    steps = [("prep", preprocessing.build_preprocessor(feature_cols))]
     if scale:
         steps.append(("scaler", StandardScaler()))
     steps.append(("model", estimator))
