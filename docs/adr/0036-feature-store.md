@@ -62,4 +62,18 @@ Decisiones de diseño asociadas:
 - **ADR-028:** define target, universo y features; este ADR las materializa y persiste.
 - **ADR-024 / ADR-014:** reusa dbt+Postgres y la capa Gold del Medallion.
 - **ADR-017 / ADR-027:** el linaje hasta `features.*` se ingiere en DataHub igual que `semantic.*`; mismo criterio anti-sobreingeniería.
-- **ADR-032 (orquestación del retrain):** el job de retrain refresca este store antes de entrenar.
+- **ADR-041 (orquestación del retrain):** el job de retrain materializa este store antes de entrenar.
+
+---
+
+## Revisión (Fase 3) — materialización del pipeline de ML
+
+**Contexto del cambio.** La decisión original (Alternativa A: reproducir las features en dbt SQL) se tomó cuando las features eran 6 autoregresivas simples (`lag1/2/3`, `roll3`, `antiguedad`, `tef_lag1`) que calzaban en SQL. Al integrar el trabajo de modelado (Rol 1), el modelo campeón (ADR-040) pasó a usar **~29 features** que incluyen ingeniería **en Python**: medias/lags **por calendario** (`prod_pet_roll3/delta1/lag12/acum6`), `water_cut`, y `prod_vecinos_mean` (media de los k pozos vecinos por **KNN** sobre coordenadas). Reproducir eso en SQL es impráctico (KNN) y, sobre todo, **se desincronizaría** de `ml/features.py` (reintroduciendo el training-serving skew que el store debe evitar). Además se detectó que el training calculaba features en pandas sin pasar por el store y la inferencia leía columnas viejas → **desalineación de tres puntas**.
+
+**Decisión revisada.** El feature store **materializa la salida del pipeline de features de `ml/`** (única fuente de verdad), en vez de reimplementarlo en dbt:
+- Un **asset de Dagster** (Rol 2) ejecuta el pipeline de features de ML y escribe `features.feat_produccion_pozo_mensual` con las columnas que consume el modelo.
+- **Una sola definición de features** vive en `ml/` (idealmente una función `build_serving_features()` que reusan tanto el training como la materialización del store) → cero skew por construcción.
+- Las categóricas siguen **crudas** (encoding en el `Pipeline` del modelo, ADR-039).
+- La API (Rol 3) lee las **mismas** columnas del store.
+
+**Consecuencia sobre la Alternativa A original.** Se descarta reproducir las features en dbt SQL (quedaba elegida cuando eran simples). El modelo dbt `feat_produccion_pozo_mensual` se reemplaza por la materialización Python. Se pierde el linaje dbt→DataHub de la tabla de features (aceptable: la lógica vive en `ml/` y el linaje del modelo lo lleva MLflow); se gana **identidad garantizada** entre las features de training e inferencia. Contrato detallado: [docs/feature-store.md](../feature-store.md).
