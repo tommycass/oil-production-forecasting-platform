@@ -2,7 +2,7 @@
 
 **Estado:** Propuesta
 
-> Relacionado con [ADR-001](0001-framework-backend.md) (FastAPI), [ADR-010](0010-api-key-validation-strategy.md) (autenticación), [ADR-033](0033-serving-strategy.md) (estrategia de serving). Este ADR documenta el diseño del contrato HTTP del endpoint `POST /api/v1/predict`.
+> Relacionado con [ADR-001](0001-framework-backend.md) (FastAPI), [ADR-010](0010-api-key-validation-strategy.md) (autenticación), [ADR-039](0039-serving-strategy.md) (estrategia de serving). Este ADR documenta el diseño del contrato HTTP del endpoint `POST /api/v1/predict`.
 
 ---
 

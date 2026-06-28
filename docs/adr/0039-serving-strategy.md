@@ -1,8 +1,8 @@
-# Título: ADR-033: Estrategia de carga y actualización del modelo en la API de inferencia
+# Título: ADR-039: Estrategia de carga y actualización del modelo en la API de inferencia
 
 **Estado:** Propuesta
 
-> Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (MLflow como registry) y [ADR-034](0034-predict-api-contract.md) (contrato del endpoint /predict). Este ADR decide cómo la API carga el modelo desde el registry y cómo detecta y aplica nuevas versiones sin downtime.
+> Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (MLflow como registry) y [ADR-035](0035-predict-api-contract.md) (contrato del endpoint /predict). Este ADR decide cómo la API carga el modelo desde el registry y cómo detecta y aplica nuevas versiones sin downtime.
 
 ---
 
