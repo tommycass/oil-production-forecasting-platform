@@ -13,9 +13,9 @@ quedan a cargo del Rol 3. ``train()`` devuelve ``(pipeline, métricas)`` como ga
 para que ese logging se enchufe sin reescribir el entrenamiento.
 
 Uso:
-    python -m ml.train                       # entrena el campeón (xgboost) y lo guarda
-    python -m ml.train --model ridge         # entrena otro modelo
-    python -m ml.train --tune                # tunea (CV temporal) antes de entrenar
+    python -m ml.train                       # tunea y entrena el campeón (random_forest) y lo guarda
+    python -m ml.train --model xgboost       # tunea/entrena otro modelo
+    python -m ml.train --no-tune             # sin tuning (hiperparámetros por defecto, más rápido)
     python -m ml.train --compare             # compara los 3 modelos sin tunear
     python -m ml.train --no-save
 """
@@ -29,7 +29,10 @@ from ml import modeling
 from ml.config import PROJECT_ROOT
 
 MODELS_DIR = PROJECT_ROOT / "models"
-CHAMPION = "xgboost"
+# Campeón según la comparación TUNEADA en val (notebook 03_modeling §4.1, ADR-037):
+# random_forest (val RMSE 226.8 / R² 0.903) supera a xgboost, ridge y la persistencia.
+# Ojo: xgboost ganaba SIN tunear, pero tuneado lo supera random_forest.
+CHAMPION = "random_forest"
 MODELOS = ("ridge", "random_forest", "xgboost")
 
 
@@ -111,7 +114,8 @@ def compare() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Entrenamiento del forecast (Rol 1.3)")
     parser.add_argument("--model", choices=MODELOS, default=CHAMPION)
-    parser.add_argument("--tune", action="store_true", help="Tunear con CV temporal antes de entrenar")
+    parser.add_argument("--no-tune", action="store_true",
+                        help="No tunear: usa hiperparámetros por defecto (más rápido)")
     parser.add_argument("--compare", action="store_true", help="Comparar los 3 modelos sin tunear (no guarda)")
     parser.add_argument("--no-save", action="store_true", help="No guardar el modelo entrenado")
     args = parser.parse_args()
@@ -120,7 +124,7 @@ def main() -> None:
         compare()
         return
 
-    pipe, info = train(args.model, tune=args.tune)
+    pipe, info = train(args.model, tune=not args.no_tune)
     _print_info(info)
     if not args.no_save:
         ruta = save_model(pipe, args.model)
