@@ -14,16 +14,18 @@ Levantar la UI localmente:
 from dagster import AssetSelection, Definitions, define_asset_job, load_assets_from_modules
 from dagster_dbt import DbtCliResource
 
-from data_pipeline.orchestration import assets, feature_store, retrain
+from data_pipeline.orchestration import assets, retrain
 from data_pipeline.orchestration.dbt_project import dw_dbt_project
 
-# El feature store (Fase 3) se materializa con un asset Python (reusa ml/), no dbt;
-# queda downstream de la carga de Bronze, así entra en dw_publish y se refresca con el DW.
-# El retrain (Fase 3, ADR-041) suma su job + Schedule mensual + Sensor por datos nuevos.
-all_assets = load_assets_from_modules([assets, feature_store, retrain])
+# El feature store (Fase 3) se materializa DENTRO del job de retrain (asset
+# `features_refrescadas`, ADR-041), NO en dw_publish: así el refresh del DW (Fase 2)
+# no se acopla a las deps de ml/ (sklearn/mlflow). El retrain suma su job + Schedule
+# mensual + Sensor por datos nuevos.
+all_assets = load_assets_from_modules([assets, retrain])
 
-# Job de "publicación": carga Bronze→Postgres y corre dbt (Silver/Gold/DQ) + materializa
-# el feature store. Es lo que dispara el cron tras refrescar Bronze (ver run_pipeline.sh).
+# Job de "publicación": carga Bronze→Postgres y corre dbt (Silver/Gold/DQ). Es lo que
+# dispara el cron tras refrescar Bronze (ver run_pipeline.sh). El feature store NO va acá
+# (se materializa en el retrain), para no acoplar el pipeline de datos a deps de ml/.
 dw_publish_job = define_asset_job(
     name="dw_publish",
     selection=AssetSelection.assets(["bronze", "produccion"], ["bronze", "pozos"]).downstream(),
