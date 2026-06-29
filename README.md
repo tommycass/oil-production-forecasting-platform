@@ -4,7 +4,7 @@ Plataforma Predictiva de Producción de Hidrocarburos — Trabajo Integrador de 
 
 El sistema integra datos reales de producción de hidrocarburos (datos.gob.ar) en una **plataforma de datos** sobre arquitectura Medallion: ingesta orquestada con **Dagster**, transformación con **dbt** (Bronze → Silver → Gold con modelo estrella), checks de **calidad de datos** persistidos, exploración para usuarios de negocio en **Metabase** (BI) y linaje/gobierno en **DataHub**. Por encima, expone una **API REST** que sirve esos datos, con infraestructura reproducible con Docker, pipeline de **CI/CD** y monitoreo con **Prometheus y Grafana**. Sobre la capa Gold se entrena un **modelo de Machine Learning** que pronostica la producción de petróleo del mes siguiente, con tracking de experimentos en **MLflow** y servido por la API desde el model registry.
 
-> **Fase 1** construyó la API, la infraestructura (Docker/AWS), el CI/CD y el monitoreo. **Fase 2** agregó la integración de datos: pipeline Medallion, DW dimensional, calidad de datos, BI y gobierno. **Fase 3** (esta entrega) suma el **Machine Learning**: feature store, pipeline de entrenamiento, tracking/registry con MLflow y un endpoint de inferencia. Ver [Arquitectura de datos](#arquitectura-de-datos) y [Machine Learning — Forecast de producción](#machine-learning--forecast-de-producción-fase-3).
+> **Fase 1** construyó la API, la infraestructura (Docker/AWS), el CI/CD y el monitoreo. **Fase 2** agregó la integración de datos: pipeline Medallion, DW dimensional, calidad de datos, BI y gobierno. **Fase 3** (esta entrega) suma el **Machine Learning**: feature store, pipeline de entrenamiento, tracking/registry con MLflow, **retrain orquestado con Dagster** (Schedule + Sensor) y un endpoint de inferencia. Ver [Arquitectura de datos](#arquitectura-de-datos) y [Machine Learning — Forecast de producción](#machine-learning--forecast-de-producción-fase-3).
 
 ---
 
@@ -52,6 +52,8 @@ oil-production-forecasting-platform/
 │   │   │   └── mock_error.py       # GET /mock-500 (testing)
 │   │   ├── schemas/                # Schemas Pydantic (request/response)
 │   │   ├── services/               # Lógica de negocio + serving ML
+│   │   │   ├── wells.py            # Lógica de /wells
+│   │   │   ├── forecast.py         # Lógica de /forecast
 │   │   │   ├── model_loader.py     # Carga el modelo del registry MLflow (stage Production)
 │   │   │   └── feature_reader.py   # Lee features del feature store para inferencia
 │   │   ├── __init__.py
@@ -70,8 +72,10 @@ oil-production-forecasting-platform/
 │   │   └── validation.py           # Validación de schema en la ingesta (fail-fast, ADR-022)
 │   ├── orchestration/              # Assets de Dagster (orquestación)
 │   │   ├── assets.py               # Bronze(parquet) → Bronze(Postgres) → dbt (Silver/Gold/DQ)
-│   │   ├── definitions.py          # Punto de entrada + job dw_publish
+│   │   ├── definitions.py          # Punto de entrada + jobs dw_publish y retrain (+ schedule/sensor)
 │   │   ├── dbt_project.py          # Proyecto dbt expuesto a dagster-dbt
+│   │   ├── feature_store_build.py  # Materializa el feature store reusando ml/ (Fase 3, ADR-036)
+│   │   ├── retrain.py              # Job de retrain + Schedule mensual + Sensor por datos nuevos (ADR-041)
 │   │   └── run_pipeline.sh         # Refresh headless para cron (full reload, env-driven)
 │   ├── tests/                      # Tests del pipeline (pytest)
 │   ├── requirements.txt
@@ -86,9 +90,7 @@ oil-production-forecasting-platform/
 │   │   ├── bronze/                 # dbt sources de bronze.* (entrada del modelo)
 │   │   ├── silver/                 # Limpieza, tipado, dedup + cuarentena de rechazos
 │   │   ├── gold/                   # Modelo estrella: fact_produccion_mensual + 4 dims
-│   │   ├── semantic/               # Vistas semánticas sobre Gold para BI (ADR-027)
-│   │   └── features/               # Feature store offline (Fase 3, ADR-036)
-│   │       └── feat_produccion_pozo_mensual.sql  # 1 fila por (pozo, mes) + target
+│   │   └── semantic/               # Vistas semánticas sobre Gold para BI (ADR-027)
 │   ├── macros/
 │   │   └── log_dq_results.sql      # Persiste los checks de calidad en dq.dq_results
 │   ├── scripts/
@@ -102,9 +104,11 @@ oil-production-forecasting-platform/
 │   ├── features.py                 # Features derivadas (lags, ventanas, vecinos) anti-leakage
 │   ├── preprocessing.py            # Imputación por feature + one-hot, dentro del Pipeline
 │   ├── modeling.py                 # Modelos, tuning con CV temporal (random search)
+│   ├── eda.py                      # Helpers de análisis exploratorio (para notebooks)
 │   ├── train.py                    # Entrenamiento/evaluación (leer → entrenar → evaluar)
 │   ├── baseline.py                 # Baselines deterministas (persistencia, etc.)
-│   └── tracking.py                 # Helper de setup de MLflow
+│   ├── tracking.py                 # Helper de setup de MLflow
+│   └── requirements.txt            # Dependencias del paquete ml/ (validadas por Dagster en el retrain)
 │
 ├── notebooks/                      # EDA, feature engineering y comparación de modelos
 │
@@ -112,13 +116,18 @@ oil-production-forecasting-platform/
 │   ├── consigna-fase1.md
 │   ├── consigna-fase2.md
 │   ├── adenda_tecnica_fase2.md
+│   ├── adenda_tecnica_fase_3.md    # Adenda técnica de la Fase 3 (ML)
 │   ├── data-model.md               # Contrato Gold: grano, dims, surrogate keys, SCD
+│   ├── feature-store.md            # Contrato del feature store (Fase 3, ADR-036)
 │   ├── handoff-dw-bi-gobierno.md   # Traspaso del DW de B a C (BI + gobierno)
+│   ├── handoff-feature-store.md    # Traspaso del feature store entre roles de ML
+│   ├── handoffs/                   # Handoffs entre roles (MLflow tracking/registry, feature store)
 │   ├── runbooks/                   # Runbooks por rol
 │   │   ├── data-engineer.md        # Reprocesar un mes corregido por la fuente
 │   │   ├── analytics-engineer.md   # Reconstruir Silver/Gold y resolver gate de calidad
 │   │   ├── bi-user.md              # Explorar y analizar producción en Metabase
-│   │   └── governance-admin.md     # Desplegar DataHub y ejecutar la ingesta dbt
+│   │   ├── governance-admin.md     # Desplegar DataHub y ejecutar la ingesta dbt
+│   │   └── ml-retrain.md           # Operar el retrain: disparo, manual y backfill por fecha
 │   └── adr/                        # Architecture Decision Records
 │       ├── 0001-framework-backend.md
 │       ├── 0002-docker-containerizacion.md
@@ -144,7 +153,23 @@ oil-production-forecasting-platform/
 │       ├── 0022-validacion-schema-ingesta.md
 │       ├── 0023-ui-dagster-containerizada.md
 │       ├── 0024-motor-transformacion-y-dw.md
-│       └── 0025-testing-pipeline-datos.md
+│       ├── 0025-testing-pipeline-datos.md
+│       ├── 0026-restart-policy-datahub-ec2.md
+│       ├── 0027-semantic-layer.md
+│       ├── 0028-diseno-problema-modelado.md
+│       ├── 0029-modelo-baseline.md
+│       ├── 0030-plataforma-tracking-experimentos.md
+│       ├── 0031-construccion-dataset-modelado-antileakage.md
+│       ├── 0032-encoding-categoricas-onehot.md
+│       ├── 0033-feature-engineering.md
+│       ├── 0034-algoritmo-modelo-validacion-temporal.md
+│       ├── 0035-predict-api-contract.md
+│       ├── 0036-feature-store.md
+│       ├── 0037-mlflow-server.md
+│       ├── 0038-serving-strategy.md
+│       ├── 0039-preprocesamiento-datos.md
+│       ├── 0040-modelo-produccion.md
+│       └── 0041-orquestacion-retrain.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
@@ -489,15 +514,20 @@ al servido por la API desde el model registry.
 
 ### Feature store y features
 
-El **feature store offline** es un modelo dbt sobre Gold
-(`transform/models/features/feat_produccion_pozo_mensual.sql`): una fila por
-`(idpozo, anio, mes)` con las mismas features que consume el entrenamiento, para que
-**train e inferencia calculen lo mismo** (evita *training-serving skew*). Las features
+El **feature store offline** es la tabla `features.feat_produccion_pozo_mensual` en
+Postgres: una fila por `(idpozo, anio, mes)` con las mismas features que consume el
+entrenamiento, para que **train e inferencia calculen lo mismo** (evita *training-serving
+skew*). Se **materializa con código Python** (`data_pipeline/orchestration/feature_store_build.py`)
+que **reusa directamente el pipeline de `ml/`** como única fuente de verdad —reemplaza al
+modelo dbt original (ADR-036, revisión)—, leyendo de `bronze.produccion`. Las features
 incluyen autoregresivas del pozo (lags, medias móviles, acumulados, delta, estacional),
 `water_cut`, actividad y promedio de **pozos vecinos** por coordenadas, más atributos
 estáticos y categóricos. Todas son **anti-leakage** (lags por calendario, nunca usan el
-mes a predecir). Ver [ADR-033](docs/adr/0033-feature-engineering.md) y
-[ADR-036](docs/adr/0036-feature-store.md); contrato en `docs/feature-store.md`.
+mes a predecir). Se materializa **dentro del job de retrain** (no en `dw_publish`), para no
+acoplar el refresh del DW de Fase 2 a las dependencias de `ml/`. Ver
+[ADR-033](docs/adr/0033-feature-engineering.md) y
+[ADR-036](docs/adr/0036-feature-store.md); contrato en
+[docs/feature-store.md](docs/feature-store.md).
 
 ### Entrenamiento y modelo campeón
 
@@ -544,6 +574,33 @@ marca el campeón con stages **Staging → Production**; el criterio de promoci�
 [ADR-040](docs/adr/0040-modelo-produccion.md). La plataforma (MLflow vs W&B) se justifica
 en [ADR-030](docs/adr/0030-plataforma-tracking-experimentos.md) y el servidor en
 [ADR-037](docs/adr/0037-mlflow-server.md).
+
+### Reentrenamiento orquestado (Dagster)
+
+El retrain está orquestado con **Dagster** (`data_pipeline/orchestration/retrain.py`): un
+job `retrain` particionado por día que encadena **refrescar features → entrenar → registrar
+en MLflow** (assets `features_refrescadas` → `modelo_reentrenado`). El paso de
+entrenamiento corre `RETRAIN_CMD` (por defecto `python -m ml.baseline`, que loguea el run a
+MLflow) en un subproceso, con la fecha de corte de la partición pasada por `RETRAIN_ASOF`
+para respetar el anti-leakage. Se dispara de tres formas:
+
+- **Schedule mensual** (`retrain_mensual`, cron `0 6 6 * *`): el día 6, después del refresh
+  del DW (cron día 5, ADR-021), cuando ya hay features nuevas del mes.
+- **Sensor por datos nuevos** (`retrain_por_features_nuevas`): dispara cuando el feature
+  store gana un período nuevo (chequea `max(periodo)` cada hora).
+- **Manual / backfill por fecha**: re-materializar la partición del día deseado para
+  reentrenar "como si fuera" una fecha pasada (p. ej. tras una corrección de la fuente).
+
+El Schedule y el Sensor requieren el **dagster-daemon** corriendo. Todo es env-driven
+(`POSTGRES_*`, `MLFLOW_TRACKING_URI`), así el mismo código sirve a staging y producción.
+Procedimiento completo en el [runbook de retrain](docs/runbooks/ml-retrain.md) y diseño en
+[ADR-041](docs/adr/0041-orquestacion-retrain.md).
+
+```bash
+# Retrain manual de una fecha puntual (la partición usa AAAA-MM-DD)
+MOD=data_pipeline.orchestration.definitions
+dagster job execute -j retrain --partition "2026-06-06" -m $MOD
+```
 
 ### Inferencia (API)
 
@@ -677,7 +734,8 @@ Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe rev
 - **scikit-learn** — `Pipeline`, preprocesamiento, Random Forest / Ridge y validación cruzada temporal
 - **XGBoost** — gradient boosting (modelo comparado en el tuning)
 - **MLflow** — tracking de experimentos y model registry (stages Staging → Production)
-- **dbt** — feature store offline sobre Gold (`feat_produccion_pozo_mensual`)
+- **Dagster** — orquestación del retrain (job features→entrenar→MLflow + Schedule + Sensor)
+- **feature store en Postgres** — `features.feat_produccion_pozo_mensual`, materializado reusando el código de `ml/` (ADR-036)
 
 **Infraestructura**
 - **Docker / Docker Compose** — contenerización y orquestación local
@@ -764,3 +822,4 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [038](docs/adr/0038-serving-strategy.md) | Estrategia de serving del modelo | Redeploy del contenedor vs. recarga/polling del registry; actualización sin downtime |
 | [039](docs/adr/0039-preprocesamiento-datos.md) | Preprocesamiento de datos | Imputación por feature vs. uniforme; clip/log1p vs. sin tratar outliers; descarte de negativos |
 | [040](docs/adr/0040-modelo-produccion.md) | Modelo campeón y criterio de promoción | Random Forest vs. XGBoost vs. Ridge (tuneados); criterio Staging→Production |
+| [041](docs/adr/0041-orquestacion-retrain.md) | Orquestación del retrain | Job Dagster (features→entrenar→MLflow) + Schedule mensual + Sensor por datos nuevos; backfill por fecha |
