@@ -42,16 +42,19 @@ NEEDS_SCALING = {"reg_lineal"}
 
 # --- Matriz de features y split --------------------------------------------
 
-def build_feature_matrix(ds: pd.DataFrame | None = None) -> tuple[pd.DataFrame, list[str]]:
+def build_feature_matrix(
+    ds: pd.DataFrame | None = None, target: str = "prod_pet"
+) -> tuple[pd.DataFrame, list[str]]:
     """Devuelve ``(ds, feature_cols)``: el dataset con las features **crudas**
     (numéricas + categóricas sin codificar) y la lista de columnas que son features.
 
     El one-hot NO se hace acá: vive en el ``Pipeline`` (``build_pipeline``) para
     poder ajustarlo por fold durante la CV. Si no se pasa ``ds``, se construye con
-    ``ml.dataset.build_basic_dataset``.
+    ``ml.dataset.build_basic_dataset`` para el ``target`` indicado (``prod_pet`` por
+    defecto; ``prod_gas`` para el modelo de gas, ADR-042).
     """
     if ds is None:
-        ds = dataset.build_basic_dataset()
+        ds = dataset.build_basic_dataset(target=target)
     feature_cols = [c for c in ds.columns if c not in KEYS + [TARGET_COL]]
     return ds, feature_cols
 
@@ -181,11 +184,12 @@ def evaluate(y_true, y_pred) -> dict[str, float]:
     }
 
 
-def persistence_val(ds: pd.DataFrame) -> dict[str, float]:
-    """Baseline de persistencia en val: ŷ(t+1) = prod_pet(t). Referencia a batir
-    (ADR-029); ``prod_pet`` en el dataset es justo la producción del mes t."""
+def persistence_val(ds: pd.DataFrame, target: str = "prod_pet") -> dict[str, float]:
+    """Baseline de persistencia en val: ŷ(t+1) = ``target``(t). Referencia a batir
+    (ADR-029); ``target`` en el dataset (``prod_pet``/``prod_gas``) es justo la
+    producción del mes t."""
     va = ds[(ds.split == "val") & ds[TARGET_COL].notna()]
-    return evaluate(va[TARGET_COL], va["prod_pet"])
+    return evaluate(va[TARGET_COL], va[target])
 
 
 def train_eval_models(
@@ -401,7 +405,7 @@ def tune_all(
 
 
 def eval_searches_on_val(
-    searches: dict, ds: pd.DataFrame, feature_cols: list[str],
+    searches: dict, ds: pd.DataFrame, feature_cols: list[str], target: str = "prod_pet",
 ) -> pd.DataFrame:
     """Evalúa el mejor estimador de cada búsqueda sobre **val** (held-out, intacto
     durante el tuning) más la persistencia. Tabla comparativa ordenada por val_rmse.
@@ -411,12 +415,12 @@ def eval_searches_on_val(
     for nombre, search in searches.items():
         pred = search.best_estimator_.predict(X_val)
         filas.append({"modelo": nombre, **evaluate(y_val, pred)})
-    filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds)})
+    filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds, target)})
     return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
 
 
 def eval_searches_train_val(
-    searches: dict, ds: pd.DataFrame, feature_cols: list[str],
+    searches: dict, ds: pd.DataFrame, feature_cols: list[str], target: str = "prod_pet",
 ) -> pd.DataFrame:
     """Toma la **mejor config** de cada búsqueda y mide RMSE/R² en **train y val**.
 
@@ -438,10 +442,10 @@ def eval_searches_train_val(
             "val_rmse": m_va["val_rmse"], "val_r2": m_va["val_r2"],
         })
 
-    # persistencia (ŷ = prod_pet(t)) en cada split, como referencia
+    # persistencia (ŷ = target(t)) en cada split, como referencia
     usable = ds[ds[TARGET_COL].notna()]
-    p_tr = evaluate(*_persistencia(usable, "train"))
-    p_va = evaluate(*_persistencia(usable, "val"))
+    p_tr = evaluate(*_persistencia(usable, "train", target))
+    p_va = evaluate(*_persistencia(usable, "val", target))
     filas.append({
         "modelo": "persistencia (baseline)",
         "train_rmse": p_tr["val_rmse"], "train_r2": p_tr["val_r2"],
@@ -450,7 +454,9 @@ def eval_searches_train_val(
     return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
 
 
-def _persistencia(usable: pd.DataFrame, split: str) -> tuple[pd.Series, pd.Series]:
-    """(y_true, y_pred) de la persistencia para un split: ŷ(t+1) = prod_pet(t)."""
+def _persistencia(
+    usable: pd.DataFrame, split: str, target: str = "prod_pet"
+) -> tuple[pd.Series, pd.Series]:
+    """(y_true, y_pred) de la persistencia para un split: ŷ(t+1) = ``target``(t)."""
     s = usable[usable.split == split]
-    return s[TARGET_COL], s["prod_pet"]
+    return s[TARGET_COL], s[target]

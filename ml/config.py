@@ -20,7 +20,10 @@ DATA_CSV = PROJECT_ROOT / "data" / "_explore" / "produccion_full.csv"
 # versionarlo ni tocar el original.
 DATASET_BASICO_CSV = PROJECT_ROOT / "data" / "processed" / "dataset_basico.csv"
 
+# Target por defecto: petróleo (ADR-028). El segundo modelo (ADR-042) pasa
+# "prod_gas" como target; el pipeline está parametrizado para ambos.
 TARGET = "prod_pet"  # m³ de petróleo (ADR-028)
+TARGETS = ("prod_pet", "prod_gas")  # targets soportados (petróleo / gas, ADR-042)
 
 # --- Reproducibilidad ---
 # Semilla única para todo lo aleatorio del modelado (modelos, muestreo de
@@ -42,3 +45,10 @@ VAL_END = pd.Timestamp("2024-11-01")
 MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", f"sqlite:///{PROJECT_ROOT / 'mlflow.db'}")
 MLFLOW_ARTIFACT_URI = f"file:{PROJECT_ROOT / 'mlartifacts'}"
 EXPERIMENT_NAME = "produccion-forecast"
+
+
+def experiment_name(target: str = TARGET) -> str:
+    """Experimento MLflow según el target: petróleo usa el experimento histórico
+    (``produccion-forecast``) y gas uno propio (``produccion-forecast-gas``), para
+    no mezclar los runs de los dos modelos (ADR-042)."""
+    return EXPERIMENT_NAME if target == "prod_pet" else f"{EXPERIMENT_NAME}-gas"

@@ -46,8 +46,16 @@ BASIC_CATEGORICAL_FEATURES = [
 ]
 
 
-def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
+def build_basic_dataset(path=DATA_CSV, target: str = TARGET) -> pd.DataFrame:
     """Dataset básico para el forecast t+1, ya procesado **anti-leakage**.
+
+    ``target`` elige qué se predice: ``prod_pet`` (petróleo, default) o ``prod_gas``
+    (gas, ADR-042). Cambia el **universo** (pozos con ese ``target`` > 0 en train),
+    el **target** (``y_next`` = ``target`` del mes t+1) y las **features de ingeniería
+    autorregresivas** (calculadas sobre ``target``). Las features crudas
+    (``prod_pet``, ``prod_gas``, ``prod_agua``, …) se mantienen para ambos: para el
+    modelo de gas, ``prod_gas(t)`` es la señal de persistencia y ``prod_pet(t)`` entra
+    como señal cruzada (ambas son del mes t, no del futuro → sin leakage).
 
     Cada fila es ``(pozo, mes t)``: las **medidas son del mes t** y el target
     (``y_next``) es la producción de petróleo del **mes siguiente (t+1)**. Por
@@ -86,7 +94,7 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
     # Mismo criterio que ml.eda.load_train_raw. Ojo: NO descarta los meses en 0 de
     # los pozos petroleros (el pozo parado sigue siendo target válido = 0); solo deja
     # afuera pozos que nunca son petroleros (gas/inyección).
-    pozos = df.loc[(df[TARGET] > 0) & (df.periodo <= TRAIN_END), "idpozo"].unique()
+    pozos = df.loc[(df[target] > 0) & (df.periodo <= TRAIN_END), "idpozo"].unique()
     df = (
         df[df.idpozo.isin(pozos)]
         .sort_values(["idpozo", "periodo"])
@@ -104,10 +112,10 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
 
     # features de ingeniería sobre TODA la historia observada (antes del target,
     # para que los lags por calendario sean correctos). Ver ml/features.py.
-    df = features.add_engineered_features(df)
+    df = features.add_engineered_features(df, target=target)
 
-    # target = prod_pet del mes siguiente, alineado por calendario (no por fila)
-    nxt = df[["idpozo", "periodo", TARGET]].rename(columns={TARGET: "y_next"})
+    # target = `target` del mes siguiente, alineado por calendario (no por fila)
+    nxt = df[["idpozo", "periodo", target]].rename(columns={target: "y_next"})
     nxt["periodo"] = nxt["periodo"] - pd.DateOffset(months=1)
     out = df.merge(nxt, on=["idpozo", "periodo"], how="inner")
 
@@ -122,20 +130,22 @@ def build_basic_dataset(path=DATA_CSV) -> pd.DataFrame:
 
     cols = (
         ["idpozo", "periodo", "periodo_objetivo", "split"]
-        + BASIC_NUMERIC_FEATURES + features.ENGINEERED_FEATURES
+        + BASIC_NUMERIC_FEATURES + features.engineered_feature_names(target)
         + BASIC_CATEGORICAL_FEATURES + ["y_next"]
     )
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
 
-def save_basic_dataset(df: pd.DataFrame | None = None, path=DATASET_BASICO_CSV) -> Path:
+def save_basic_dataset(
+    df: pd.DataFrame | None = None, path=DATASET_BASICO_CSV, target: str = TARGET
+) -> Path:
     """Construye (si no se pasa ``df``) y guarda el dataset básico como CSV local.
 
     El destino está bajo ``data/`` y queda **gitignoreado** (data/.gitignore), así
     que no se versiona ni pisa el crudo original. Devuelve la ruta escrita.
     """
     if df is None:
-        df = build_basic_dataset()
+        df = build_basic_dataset(target=target)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False, encoding="utf-8-sig")
