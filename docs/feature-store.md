@@ -14,11 +14,11 @@ Una tabla en el DW (PostgreSQL) que **materializa la salida del pipeline de feat
 | | |
 |---|---|
 | **Tabla** | `features.feat_produccion_pozo_mensual` |
-| **Productor** | asset Dagster que corre el pipeline de `ml/` (única fuente de verdad de las features) |
+| **Productor** | el job de retrain (asset `features_refrescadas`) corre el pipeline de `ml/` y materializa la tabla (única fuente de verdad de las features) |
 | **Grano** | una fila por `(idpozo, mes base t)` |
 | **Clave de lookup (inferencia)** | `idpozo` + `periodo` (primer día del mes base `t`) |
 | **Consumidores** | Rol 1 (training, mismas features) y Rol 3 (`/predict`) |
-| **Refresh** | el job de retrain la materializa antes de entrenar (ADR-041); también con el refresh del DW |
+| **Refresh** | lo materializa el **job de retrain** antes de entrenar (ADR-041). **No** es parte del refresh del DW (`dw_publish`), para no acoplar el pipeline de datos a las deps de `ml/`. |
 
 ## Encuadre temporal (fila = mes base `t`)
 
