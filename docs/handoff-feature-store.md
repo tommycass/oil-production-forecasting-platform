@@ -15,7 +15,7 @@ Materializamos el feature store con **exactamente las features del modelo** (las
 
 ## Pendiente de Rol 1
 
-1. **Agregar `ml/requirements.txt`** (`mlflow`, `scikit-learn`, `pandas`, `numpy`, …) — **urgente para no romper el DW**: el asset `feature_store` se materializa dentro de `dw_publish` (reusa `ml/`), así que **el venv del DW (`run_pipeline.sh`) y el del daemon de retrain ahora necesitan las deps de `ml/`**. Sin ellas, la próxima corrida de `dw_publish` falla al importar `ml` en la materialización. Hasta que exista el archivo, instalar a mano `pip install mlflow scikit-learn pandas numpy` en esos venvs.
+1. **Agregar `ml/requirements.txt`** (`mlflow`, `scikit-learn`, `pandas`, `numpy`, …): el feature store se materializa **solo en el job de retrain** (no en `dw_publish`), así que el **venv del daemon de retrain** es el que necesita las deps de `ml/` (el refresh del DW queda libre de `ml/`). Hasta que exista el archivo, instalar a mano `pip install mlflow scikit-learn pandas numpy` en ese venv.
 2. **Cuando quieras, conectá el training al store:** podés seguir usando `build_basic_dataset` (mismas features, ya validado) o leer `features.feat_produccion_pozo_mensual` (filas con `y_next` no nulo). Si cambiás la lista de features en `ml/`, el asset la toma automáticamente (importa tus listas) — solo avisanos para re-materializar y que C ajuste el reader.
 
 ## Pendiente de Rol 3 (inferencia)

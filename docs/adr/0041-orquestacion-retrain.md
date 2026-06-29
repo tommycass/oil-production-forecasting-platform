@@ -35,7 +35,7 @@ Se eligen **particiones diarias** porque la consigna pide reproceso "por día"; 
 
 Un job de Dagster **`retrain`**, particionado por día, que encadena dos assets:
 
-1. **`features_refrescadas`** — **re-materializa el feature store** (ADR-036): corre el pipeline de features de `ml/` sobre el crudo de Bronze y reescribe `features.feat_produccion_pozo_mensual`. (No usa dbt: el store ya no es un modelo dbt sino una materialización Python.)
+1. **`features_refrescadas`** — **re-materializa el feature store** (ADR-036): corre el pipeline de features de `ml/` sobre el crudo de Bronze y reescribe `features.feat_produccion_pozo_mensual`. (No usa dbt: el store ya no es un modelo dbt sino una materialización Python.) **Es el único lugar donde se materializa el store** (se desacopló de `dw_publish` para que el refresh del DW no dependa de `ml/`); por eso el venv del daemon de retrain es el que necesita las deps de `ml/`.
 2. **`modelo_reentrenado`** — ejecuta el entrenamiento y registra el run en MLflow.
 
 Disparo: **`retrain_mensual`** (Schedule, día 6) + **`retrain_por_features_nuevas`** (Sensor sobre `max(periodo)` del feature store, con cursor). Ambos requieren el dagster-daemon.
