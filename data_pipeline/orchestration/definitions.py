@@ -13,13 +13,15 @@ Levantar la UI localmente:
 from dagster import AssetSelection, Definitions, define_asset_job, load_assets_from_modules
 from dagster_dbt import DbtCliResource
 
-from data_pipeline.orchestration import assets
+from data_pipeline.orchestration import assets, feature_store
 from data_pipeline.orchestration.dbt_project import dw_dbt_project
 
-all_assets = load_assets_from_modules([assets])
+# El feature store (Fase 3) se materializa con un asset Python (reusa ml/), no dbt;
+# queda downstream de la carga de Bronze, así entra en dw_publish y se refresca con el DW.
+all_assets = load_assets_from_modules([assets, feature_store])
 
-# Job de "publicación": carga Bronze→Postgres y corre dbt (Silver/Gold/DQ). Es lo
-# que dispara el cron tras refrescar las particiones de Bronze (ver run_pipeline.sh).
+# Job de "publicación": carga Bronze→Postgres y corre dbt (Silver/Gold/DQ) + materializa
+# el feature store. Es lo que dispara el cron tras refrescar Bronze (ver run_pipeline.sh).
 dw_publish_job = define_asset_job(
     name="dw_publish",
     selection=AssetSelection.assets(["bronze", "produccion"], ["bronze", "pozos"]).downstream(),
