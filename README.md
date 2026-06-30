@@ -626,7 +626,10 @@ modelos** (petróleo y gas, ADR-042) en la misma corrida: `features_refrescadas`
 las dos tablas del store y `modelo_reentrenado` corre `RETRAIN_CMD` (por defecto
 `python -m ml.baseline`, que loguea el run a MLflow) en un subproceso **una vez por target**
 (`--target prod_pet` / `--target prod_gas`), con la fecha de corte de la partición pasada por
-`RETRAIN_ASOF` para respetar el anti-leakage. Se dispara de tres formas:
+`RETRAIN_ASOF`. El entrenamiento la **honra**: `ml.config.retrain_asof()` la lee y
+`build_basic_dataset` recorta el dataset a `periodo <= asof`, así un reproceso de fecha pasada
+**no usa datos posteriores** (anti-leakage del backfill); si la fecha es anterior a `VAL_END`,
+los splits aún inexistentes se omiten. Se dispara de tres formas:
 
 - **Schedule mensual** (`retrain_mensual`, cron `0 6 6 * *`): el día 6, después del refresh
   del DW (cron día 5, ADR-021), cuando ya hay features nuevas del mes.

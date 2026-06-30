@@ -115,7 +115,9 @@ El **preprocesamiento** vive dentro del `Pipeline` del modelo (`ml/preprocessing
 - `val`: `2023-07-01 < periodo <= 2024-11-01`
 - `test`: `periodo > 2024-11-01`
 
-(`ml/config.py`: `TRAIN_END`, `VAL_END`.) Para el **retrain parametrizable por fecha** (tu tarea 2.3), mover `TRAIN_END`/`VAL_END` hacia adelante reincorpora pozos nuevos al universo y categorías nuevas al one-hot.
+(`ml/config.py`: `TRAIN_END`, `VAL_END`.)
+
+**Reproceso por fecha (`RETRAIN_ASOF`) — ya honrado por `ml/`.** Para el retrain parametrizable por fecha (tu tarea 2.3), el corte se hace por **`RETRAIN_ASOF`** (la env var que ya pasás desde el job): `ml.config.retrain_asof()` la lee y `build_basic_dataset(..., asof=...)` **recorta `periodo <= asof` antes** de definir el universo y las features. Así, al reprocesar una fecha pasada, el universo y los lags se recalculan **solo con datos ≤ asof** (no usa datos posteriores → anti-leakage del backfill). **No** movemos `TRAIN_END`/`VAL_END`: el split fijo del ADR-028 se mantiene y los períodos que aún no existen a esa fecha (p. ej. `test` si `asof < VAL_END`) simplemente se omiten en la evaluación. Si tu materialización del store también quiere respetar `asof` para un backfill, aplicá el mismo recorte `periodo <= asof` sobre el crudo antes de construir las features.
 
 ---
 

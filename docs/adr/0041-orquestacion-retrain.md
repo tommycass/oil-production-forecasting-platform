@@ -48,7 +48,7 @@ El job invoca el comando de entrenamiento de forma **configurable** (`RETRAIN_CM
 
 - **Default `python -m ml.baseline`**: entrena/evalúa y **loguea el run en MLflow** (cadena completa demostrable end-to-end). Acepta `--target`.
 - **`python -m ml.train`** entrena el campeón (Random Forest, ADR-040) pero **hoy NO loguea en MLflow** a propósito: el experiment tracking (1.4) y el model registry (1.5) son de **Rol 3** (handoff de MLflow; ADR-037). Cuando Rol 3 enchufe ese logging (p. ej. `ml.train --mlflow` o `log_run(pipe, info)`), se exporta `RETRAIN_CMD="python -m ml.train --mlflow"` (el job le suma `--target` igual).
-- **`RETRAIN_ASOF`** (env) = `partition_key`: el entrenamiento debe usar solo datos ≤ esa fecha (anti-leakage).
+- **`RETRAIN_ASOF`** (env) = `partition_key`: el entrenamiento usa solo datos ≤ esa fecha (anti-leakage). **Honrado por `ml/`** (Rol 1): `ml.config.retrain_asof()` lee la env var y `build_basic_dataset` recorta `periodo <= asof` **antes** de definir el universo y las features; los baselines toleran los splits que aún no existen a esa fecha. Sin la env var, comportamiento normal (todo el histórico). No se mueven `TRAIN_END`/`VAL_END` (split fijo del ADR-028).
 - **`MLFLOW_TRACKING_URI`** (env) apunta al servidor MLflow de Rol 3 (ADR-037); el código lo respeta sin cambios. Cada target usa su propio experimento/modelo (`experiment_name(target)`).
 
 > El venv del dagster-daemon necesita las dependencias de `ml/` (mlflow, scikit-learn, …) para correr el paso de entrenamiento. `ml/requirements.txt` **ya existe** en el repo (Rol 1); el daemon lo instala (ver runbook).

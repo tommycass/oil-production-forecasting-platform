@@ -29,7 +29,7 @@ El modelado y la decisión de los campeones **ya están**; falta **enchufar MLfl
 `train.py` todavía **no registra en MLflow**. Falta loguear, por cada run:
 - [ ] **Parámetros del modelo** → `info["best_params"]` (o `info["params"]` en el final).
 - [ ] **Métricas de evaluación** → `info["train"]`, `info["val"]` (y `info["test"]` en el final), más la persistencia de referencia.
-- [ ] **Versión de los datos usados** → no existe aún. Sugerencia: loguear `TRAIN_END`, `VAL_END`, la fuente (`DATA_CSV` o, cuando exista, la snapshot/versión del feature store del Rol 2), `n_dev`/`n_test`, y un hash del dataset.
+- [ ] **Versión de los datos usados** → no existe aún. Sugerencia: loguear `TRAIN_END`, `VAL_END`, **`RETRAIN_ASOF`** (la fecha de corte del reproceso, vía `ml.config.retrain_asof()` — clave para distinguir un run de backfill de uno normal), la fuente (`DATA_CSV` o, cuando exista, la snapshot/versión del feature store del Rol 2), `n_dev`/`n_test`, y un hash del dataset.
 - [ ] **Modelo entrenado** → el `pipeline` devuelto (incluye preprocesamiento), con `mlflow.sklearn.log_model(pipe, ...)`.
 
 ### 1.5 — Model registry
@@ -71,7 +71,7 @@ pipe, info = train.train_final("random_forest", target="prod_pet")        # o ta
 ```python
 import mlflow, mlflow.sklearn
 from ml.tracking import setup_mlflow
-from ml.config import TRAIN_END, VAL_END, experiment_name
+from ml.config import TRAIN_END, VAL_END, experiment_name, retrain_asof
 from ml import train
 
 target = "prod_pet"  # repetir el bloque con target="prod_gas" (o loopear sobre los dos)
@@ -85,6 +85,7 @@ with mlflow.start_run(run_name=f"rf_final_{target}"):
     # versión de datos:
     mlflow.log_param("train_end", str(TRAIN_END))
     mlflow.log_param("val_end", str(VAL_END))
+    mlflow.log_param("retrain_asof", str(retrain_asof()))  # None en corrida normal; fecha en backfill
     mlflow.log_param("n_dev", info["n_dev"])
     mlflow.log_param("n_test", info["n_test"])
     # métricas:
