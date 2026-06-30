@@ -60,11 +60,15 @@ y activar `retrain_mensual` / `retrain_por_features_nuevas` en *Automation*.
 
 ## 4. Retrain manual (una fecha)
 
-"Reentrenar como si fuera el día X" = materializar la partición X del job:
+"Reentrenar como si fuera el día X" = materializar la partición X de los assets del retrain:
 
 ```bash
-dagster job execute -m data_pipeline.orchestration.definitions -j retrain --partition 2026-04-06
+dagster asset materialize --select "features_refrescadas,modelo_reentrenado" \
+  --partition 2026-04-06 -m data_pipeline.orchestration.definitions
 ```
+
+> En Dagster 1.13 `dagster job execute` **no** acepta `--partition`; se usa `dagster asset
+> materialize ... --partition` (o `dagster job execute -j retrain --tags '{"dagster/partition":"2026-04-06"}'`).
 
 El paso de entrenamiento corre `RETRAIN_CMD` (default `python -m ml.baseline`, que ya loguea a
 MLflow) **una vez por target** — el asset le agrega `--target prod_pet` y `--target prod_gas`
@@ -87,7 +91,8 @@ elegir el **rango de particiones** (p. ej. `2025-01-01` … `2025-03-01`). El da
 ```bash
 for d in 2025-01-06 2025-02-06 2025-03-06; do
   echo "[retrain] reproceso $d"
-  dagster job execute -m data_pipeline.orchestration.definitions -j retrain --partition "$d"
+  dagster asset materialize --select "features_refrescadas,modelo_reentrenado" \
+    --partition "$d" -m data_pipeline.orchestration.definitions
 done
 ```
 
