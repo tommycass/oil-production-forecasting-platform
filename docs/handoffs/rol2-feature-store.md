@@ -5,11 +5,17 @@
 
 Todo lo de acá está implementado y validado en `ml/` y documentado en los ADR-028, 031, 032, 033, 036, 037.
 
+> **Novedad — son DOS modelos:** además de petróleo (`prod_pet`) ahora hay un modelo de
+> **gas** (`prod_gas`), ADR-042. Comparten casi todas las features; cambian la **columna
+> target**, el **universo** (pozos con ese target > 0 en train) y las **features de
+> ingeniería autorregresivas** (se calculan sobre el target). El pipeline de `ml/` está
+> **parametrizado por `target`**: `build_basic_dataset(target="prod_gas")`. Ver §2.2 y §9.
+
 ---
 
-## 1. Qué predice el modelo (contexto mínimo)
+## 1. Qué predicen los modelos (contexto mínimo)
 
-- **Target:** `prod_pet` (m³ de petróleo) del **mes siguiente** (`y_next` = producción en `t+1`).
+- **Targets:** `prod_pet` (petróleo) y `prod_gas` (gas), del **mes siguiente** (`y_next` = producción en `t+1`). Un modelo por target.
 - **Grano:** una fila por **(pozo, mes)** → claves `idpozo`, `periodo` (primer día del mes).
 - **Cada fila:** las features son del **mes `t`**; el target es la producción de `t+1`.
 - **Métrica:** RMSE / R² (ADR-028).
@@ -37,17 +43,17 @@ Fuente provisoria hoy: `data/_explore/produccion_full.csv`. En el store deben sa
 
 ### 2.2 Features de ingeniería (7) — derivadas, ver `ml/features.py`
 
-Todas se calculan **por pozo**, con **lags por calendario** (no `shift` de filas). Insumos: `prod_pet`, `prod_agua` (mensuales) y `coordenadax/coordenaday` (estáticos).
+Todas se calculan **por pozo**, con **lags por calendario** (no `shift` de filas). Insumos: el **target** (`prod_pet` o `prod_gas`), `prod_agua` (mensual) y `coordenadax/coordenaday` (estáticos). Las autorregresivas (roll3/delta1/lag12/acum6, vecinos y la actividad) se calculan **sobre la columna target** del modelo: en el de petróleo sobre `prod_pet`, en el de gas sobre `prod_gas` (nombres `{target}_roll3`, etc.). `water_cut` es físico (agua/petróleo) e igual para los dos.
 
-| Feature | Cálculo (sobre la serie del pozo) |
+| Feature (petróleo / gas) | Cálculo (sobre la serie del pozo, `m` = target del modelo) |
 |---|---|
-| `prod_pet_roll3` | media de `prod_pet` en {t, t-1, t-2} |
-| `prod_pet_delta1` | `prod_pet(t) − prod_pet(t-1)` |
-| `prod_pet_lag12` | `prod_pet(t-12)` (mismo mes del año anterior) |
-| `prod_pet_acum6` | suma de `prod_pet` en {t … t-5} |
-| `water_cut` | `prod_agua / (prod_agua + prod_pet)` en t; `0` si el denominador es 0 |
-| `produjo_mes_pasado` | `1` si `prod_pet(t) > 0`, si no `0` |
-| `prod_vecinos_mean` | media de `prod_pet(t)` de los **5 pozos más cercanos** por (`coordenadax`,`coordenaday`), excluido el propio pozo |
+| `prod_pet_roll3` / `prod_gas_roll3` | media de `m` en {t, t-1, t-2} |
+| `prod_pet_delta1` / `prod_gas_delta1` | `m(t) − m(t-1)` |
+| `prod_pet_lag12` / `prod_gas_lag12` | `m(t-12)` (mismo mes del año anterior) |
+| `prod_pet_acum6` / `prod_gas_acum6` | suma de `m` en {t … t-5} |
+| `water_cut` | `prod_agua / (prod_agua + prod_pet)` en t; `0` si el denominador es 0 (igual en ambos) |
+| `produjo_mes_pasado` | `1` si `m(t) > 0`, si no `0` |
+| `prod_vecinos_mean` | media de `m(t)` de los **5 pozos más cercanos** por (`coordenadax`,`coordenaday`), excluido el propio pozo |
 
 ### 2.3 Categóricas (14) — atributos, valor en el mes `t`
 
@@ -57,7 +63,7 @@ Se guardan **como texto crudo** (sin codificar). El one-hot **no** va en el stor
 
 ### 2.4 Target
 
-`y_next` = `prod_pet` del mes `t+1` (para entrenar). En **inferencia** no se materializa (es lo que se predice).
+`y_next` = el **target** (`prod_pet` o `prod_gas`) del mes `t+1` (para entrenar). En **inferencia** no se materializa (es lo que se predice). Cada modelo tiene su propio `y_next`.
 
 ---
 
@@ -69,7 +75,7 @@ Son la parte crítica. Si se rompen, el modelo entrena con información que no t
 2. **Lags por calendario, no por fila.** `t-k` se busca por `periodo - k meses` (no tomar "la fila anterior"); si falta ese mes, queda `NaN`. Replicar `ml.features._calendar_lag`. Esto evita que un hueco en la serie corra el lag.
 3. **`mes` es el mes del target (`t+1`)**, no el de las medidas. Es la única excepción "del futuro" y es válida porque la fecha a predecir se conoce de antemano (determinística, no es leakage).
 4. **Target por merge de calendario** (`periodo + 1 mes`), no por `shift(-1)`: garantiza que `y_next` sea siempre exactamente el mes siguiente.
-5. **Universo train-only.** El conjunto de pozos = los que tienen `prod_pet > 0` en algún mes **≤ TRAIN_END** (`2023-07-01`). No definir el universo con todo el histórico (metería pozos que recién producen en val/test → leakage de selección).
+5. **Universo train-only, por target.** El conjunto de pozos = los que tienen **el target** (`prod_pet` para el modelo de petróleo, `prod_gas` para el de gas) `> 0` en algún mes **≤ TRAIN_END** (`2023-07-01`). No definir el universo con todo el histórico (metería pozos que recién producen en val/test → leakage de selección). El universo gasífero es distinto (y más grande) que el petrolero.
 6. **Descartar producción negativa.** Filas con `prod_pet`/`prod_gas`/`prod_agua < 0` son errores de dato → se eliminan (ADR-039).
 
 ---
@@ -116,8 +122,8 @@ El **preprocesamiento** vive dentro del `Pipeline` del modelo (`ml/preprocessing
 ## 7. Código de referencia (fuente de verdad)
 
 - `ml/features.py` — las 7 features de ingeniería (replicá esta lógica en el store).
-- `ml/dataset.py` — `build_basic_dataset` (universo, drop de negativos, merge del target, split) y las listas `BASIC_NUMERIC_FEATURES` / `BASIC_CATEGORICAL_FEATURES`.
-- `ml/config.py` — `TARGET`, `TRAIN_END`, `VAL_END`.
+- `ml/dataset.py` — `build_basic_dataset(target=...)` (universo, drop de negativos, merge del target, split) y las listas `BASIC_NUMERIC_FEATURES` / `BASIC_CATEGORICAL_FEATURES`. `features.engineered_feature_names(target)` da los nombres de las 7 de ingeniería para cada target.
+- `ml/config.py` — `TARGET` (default), `TARGETS` (`prod_pet`, `prod_gas`), `TRAIN_END`, `VAL_END`.
 - ADR-031 (dataset anti-leakage), ADR-033 (features), ADR-039 (preprocesamiento).
 
 ## 8. Cómo validar paridad store ↔ training
@@ -128,4 +134,11 @@ Generá las features con tu pipeline para un set de `(idpozo, periodo)` y compar
 
 ## 9. Decisión conjunta pendiente
 
-Acordemos el **esquema final del store** (nombres/tipos exactos y el linaje a Gold de cada columna), que es lo que desbloquea también a Rol 3 para la inferencia.
+1. **Esquema final del store** (nombres/tipos exactos y el linaje a Gold de cada columna), que es lo que desbloquea también a Rol 3 para la inferencia.
+2. **Cómo materializar los DOS modelos.** Las 8 numéricas base + 14 categóricas son **compartidas**; lo que difiere entre petróleo y gas son las **7 de ingeniería** (`prod_pet_*` vs `prod_gas_*`), el **universo** y el `y_next`. Opciones a acordar:
+   - **a) Una tabla por target** (`feat_produccion_pozo_mensual` y `feat_..._gas`), cada una con sus 29 features + `y_next`, su universo. Más simple de servir (cada modelo lee su tabla), algo de duplicación de las columnas compartidas.
+   - **b) Una tabla "ancha"** con las compartidas + **ambos** bloques de ingeniería (`prod_pet_*` y `prod_gas_*`) + dos `y_next`, sobre la **unión** de universos. Sin duplicar las compartidas; cada modelo selecciona sus columnas (filas fuera de su universo quedan con su `y_next` nulo).
+   - **c) Columna `target`/partición** que discrimine las filas por modelo.
+   - Recomendación de Rol 1: **(a)** por simplicidad y para que el universo train-only de cada target quede limpio; reusás `build_basic_dataset(target=...)` dos veces. Pero decidilo con Rol 3 según cómo le convenga leer en inferencia.
+
+El paso de materialización de `ml/` (`feature_store_build.py`) ya reusa `add_engineered_features`; para gas hay que llamarlo con `target="prod_gas"` (y el universo/`y_next` correspondientes).

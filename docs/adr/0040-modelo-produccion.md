@@ -6,7 +6,7 @@
 
 El ADR-034 fijó la **metodología** (regresión tabular, comparación en val con CV temporal) y, sobre la comparación **sin tunear**, anticipó a **XGBoost** como mejor candidato. Con el **tuning de hiperparámetros** (CV temporal, random search) los resultados **cambian**, así que hay que fijar formalmente **cuál modelo va a producción** y con qué **criterio se promueve**.
 
-La plataforma pronostica **dos** producciones (decisión de la cátedra, ADR-042): **petróleo** (`prod_pet`) y **gas** (`prod_gas`), cada una con su modelo. Este ADR decide **el campeón de cada target** y el **criterio de promoción** (compartido), en base a la evidencia tuneada de los notebooks `03_modeling.ipynb` (petróleo) y `04_modeling_gas.ipynb` (gas). Se mantiene **un único ADR** para los dos modelos —en vez de duplicar el análisis— porque comparten metodología, criterio y código (pipeline parametrizado por target, ADR-042).
+La plataforma pronostica **dos** producciones (decisión de la cátedra, ADR-042): **petróleo** (`prod_pet`) y **gas** (`prod_gas`), cada una con su modelo. Este ADR decide **el campeón de cada target** y el **criterio de promoción** (compartido), en base a la evidencia tuneada de los notebooks `03_modeling_pet.ipynb` (petróleo) y `04_modeling_gas.ipynb` (gas). Se mantiene **un único ADR** para los dos modelos —en vez de duplicar el análisis— porque comparten metodología, criterio y código (pipeline parametrizado por target, ADR-042).
 
 La **mecánica** del registry (versionado, stages Staging→Production, recarga en la API) se documenta aparte (ADR-037 servidor MLflow, ADR-038 estrategia de serving).
 
@@ -14,7 +14,7 @@ La **mecánica** del registry (versionado, stages Staging→Production, recarga 
 
 Comparación **tuneada en val** (entrenando en train, CV temporal para elegir hiperparámetros; `test` intacto), por target.
 
-### Petróleo (`prod_pet`) — notebook `03_modeling.ipynb` §4.1–4.2
+### Petróleo (`prod_pet`) — notebook `03_modeling_pet.ipynb` §4.1–4.2
 
 | Modelo (tuneado) | train RMSE | val RMSE | val R² | gap train→val |
 |---|---|---|---|---|
