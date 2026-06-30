@@ -5,6 +5,10 @@ encadena el flujo que pide la adenda:
 
     refrescar features (materializa el feature store) → entrenar (ml/) → registrar en MLflow
 
+**Dos modelos (ADR-042):** el job reentrena **petróleo y gas**: `features_refrescadas`
+materializa las dos tablas del store y `modelo_reentrenado` corre el entrenamiento una
+vez por target (`--target prod_pet` / `--target prod_gas`).
+
 Disparo (adenda 2.4): además de correrlo a mano,
 - **Schedule mensual** alineado al refresh del DW (ADR-021, cron día 5): el retrain
   corre el día 6, cuando ya hay features nuevas del mes.
@@ -43,12 +47,13 @@ _RETRY = RetryPolicy(max_retries=2, delay=10, backoff=Backoff.EXPONENTIAL)
 
 
 def _train_cmd() -> list[str]:
-    """Comando del paso de entrenamiento, configurable por env.
+    """Comando **base** del paso de entrenamiento, configurable por env.
 
-    Por defecto orquesta `ml.baseline`, que entrena/evalúa y **loguea el run en
-    MLflow** (cadena completa demostrable). `train.py` (campeón) aún **no** loguea a
-    MLflow a propósito (el tracking/registro es de Rol 3, ver el handoff de MLflow);
-    cuando Rol 3 enchufe ese logging (p. ej. `ml.train --mlflow`), basta exportar
+    `modelo_reentrenado` le agrega `--target <target>` por cada modelo (petróleo / gas).
+    Por defecto orquesta `ml.baseline`, que entrena/evalúa y **loguea el run en MLflow**
+    (cadena completa demostrable). `train.py` (campeón) aún **no** loguea a MLflow a
+    propósito (el tracking/registro es de Rol 3, ver el handoff de MLflow); cuando Rol 3
+    enchufe ese logging (p. ej. `ml.train --mlflow`), basta exportar
     `RETRAIN_CMD="python -m ml.train --mlflow"`. No se hardcodea para no pisar su zona.
     """
     import sys
@@ -61,13 +66,16 @@ def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
     """Refresca el feature store (lo materializa) antes de entrenar.
 
     Reusa la materialización del store (ADR-036): corre el pipeline de features de
-    `ml/` sobre el crudo de Bronze y reescribe `features.feat_produccion_pozo_mensual`.
+    `ml/` sobre el crudo de Bronze y reescribe **las dos tablas** del store —
+    `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-042).
     Asume que Bronze ya está fresco (lo deja el refresh mensual del DW, ADR-018).
     """
     from data_pipeline.orchestration import feature_store_build as fsb
 
-    filas = fsb.materializar(fsb.engine_from_env())
-    return MaterializeResult(metadata={"filas": filas, "asof": context.partition_key})
+    filas = fsb.materializar_todos(fsb.engine_from_env())
+    return MaterializeResult(
+        metadata={"asof": context.partition_key, **{f"filas_{t}": n for t, n in filas.items()}}
+    )
 
 
 @asset(
@@ -79,23 +87,32 @@ def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
 def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     """Entrena y registra el run en MLflow para la fecha de la partición.
 
-    Corre `RETRAIN_CMD` (default `ml.baseline`, que loguea a MLflow). La fecha de
-    corte ("como si fuera el día X") se pasa por `RETRAIN_ASOF`; el entrenamiento
-    debe respetarla para no usar datos posteriores (anti-leakage). El tracking apunta
-    a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3, ADR-037) si está seteado.
+    Reentrena **los dos modelos** (petróleo y gas, ADR-042): corre `RETRAIN_CMD`
+    (default `ml.baseline`, que loguea a MLflow) **una vez por target**, agregándole
+    `--target <target>`. Cada target usa su propio experimento/modelo en MLflow
+    (`experiment_name(target)`). La fecha de corte ("como si fuera el día X") se pasa
+    por `RETRAIN_ASOF`; el entrenamiento debe respetarla para no usar datos posteriores
+    (anti-leakage). El tracking apunta a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3,
+    ADR-037) si está seteado.
     """
     import subprocess
 
+    from ml.config import TARGETS
+
     asof = context.partition_key
-    cmd = _train_cmd()
-    context.log.info(f"retrain asof={asof} cmd={' '.join(cmd)}")
-    subprocess.run(
-        cmd,
-        check=True,
-        cwd=str(PROJECT_ROOT),
-        env={**os.environ, "RETRAIN_ASOF": asof},
-    )
-    return MaterializeResult(metadata={"asof": asof, "cmd": " ".join(cmd)})
+    base = _train_cmd()
+    cmds: dict[str, str] = {}
+    for target in TARGETS:
+        cmd = [*base, "--target", target]
+        context.log.info(f"retrain target={target} asof={asof} cmd={' '.join(cmd)}")
+        subprocess.run(
+            cmd,
+            check=True,
+            cwd=str(PROJECT_ROOT),
+            env={**os.environ, "RETRAIN_ASOF": asof},
+        )
+        cmds[target] = " ".join(cmd)
+    return MaterializeResult(metadata={"asof": asof, **{f"cmd_{t}": c for t, c in cmds.items()}})
 
 
 retrain_job = define_asset_job(
@@ -112,7 +129,11 @@ def retrain_mensual(context):
 
 
 def _ultimo_periodo_features() -> str | None:
-    """Máximo `periodo` del feature store, o None si está vacío/inaccesible."""
+    """Máximo `periodo` del feature store, o None si está vacío/inaccesible.
+
+    Consulta la tabla de petróleo como representativa: las dos tablas (petróleo y gas)
+    se materializan juntas desde el mismo Bronze, así que comparten el `max(periodo)`.
+    """
     from sqlalchemy import create_engine, text
 
     url = (
