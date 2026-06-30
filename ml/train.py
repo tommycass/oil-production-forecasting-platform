@@ -38,10 +38,10 @@ CHAMPION = "random_forest"
 MODELOS = ("ridge", "random_forest", "xgboost")
 
 
-def _untuned_estimator(name: str):
-    """Estimador sin tunear: usa los **mejores hiperparámetros registrados**
-    (``modeling.BEST_PARAMS``, ADR-040), no defaults arbitrarios."""
-    return modeling.make_estimator(name)
+def _untuned_estimator(name: str, target: str = TARGET):
+    """Estimador sin tunear: usa los **mejores hiperparámetros registrados** para el
+    ``target`` (``modeling.BEST_PARAMS[target]``, ADR-040), no defaults arbitrarios."""
+    return modeling.make_estimator(name, target=target)
 
 
 def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
@@ -64,7 +64,7 @@ def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
         best_params = search.best_params_
     else:
         pipe = modeling.build_pipeline(
-            _untuned_estimator(model_name), model_name == "ridge", feats
+            _untuned_estimator(model_name, target), model_name == "ridge", feats
         )
         pipe.fit(X_tr, y_tr)
         best_params = None
@@ -110,13 +110,13 @@ def train_final(model_name: str = CHAMPION, params: dict | None = None, target: 
     ds, feats = modeling.build_feature_matrix(target=target)
     X_dev, y_dev, X_te, y_te = modeling.split_dev_test(ds, feats)
     pipe = modeling.build_pipeline(
-        modeling.make_estimator(model_name, params), model_name == "ridge", feats
+        modeling.make_estimator(model_name, params, target=target), model_name == "ridge", feats
     )
     pipe.fit(X_dev, y_dev)
     return pipe, {
         "model": model_name,
         "target": target,
-        "params": params or modeling.BEST_PARAMS[model_name],
+        "params": params or modeling.BEST_PARAMS[target][model_name],
         "n_dev": len(y_dev),
         "n_test": len(y_te),
         "dev": modeling.evaluate(y_dev, pipe.predict(X_dev)),

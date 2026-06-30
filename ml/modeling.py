@@ -136,27 +136,48 @@ def get_models(random_state: int = RANDOM_STATE) -> dict:
     }
 
 
-# Mejores hiperparámetros registrados (del tuning con CV temporal, notebook
-# 03_modeling §4.1 / ADR-040). Si no se tunea, se usan estos en vez de defaults
+# Mejores hiperparámetros registrados (del tuning con CV temporal). Indexados por
+# **target**: petróleo (notebook 03_modeling §4.1) y gas (notebook 04_modeling_gas
+# §4); ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos
+# en vez de defaults
 # arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
 # ahora se mantienen acá como "últimos mejores registrados".)
+# Nota: los hiperparámetros de RF y XGBoost coincidieron entre petróleo y gas
+# (mismo grid + misma semilla del random search); solo difiere el alpha de Ridge.
 BEST_PARAMS = {
-    "ridge": {"alpha": 1128.8378916846884},
-    "random_forest": {
-        "n_estimators": 400, "max_depth": 16,
-        "max_features": 0.5, "min_samples_leaf": 2,
+    "prod_pet": {
+        "ridge": {"alpha": 1128.8378916846884},
+        "random_forest": {
+            "n_estimators": 400, "max_depth": 16,
+            "max_features": 0.5, "min_samples_leaf": 2,
+        },
+        "xgboost": {
+            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+        },
     },
-    "xgboost": {
-        "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
-        "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+    "prod_gas": {
+        "ridge": {"alpha": 29.76351441631316},
+        "random_forest": {
+            "n_estimators": 400, "max_depth": 16,
+            "max_features": 0.5, "min_samples_leaf": 2,
+        },
+        "xgboost": {
+            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+        },
     },
 }
 
 
-def make_estimator(name: str, params: dict | None = None, random_state: int = RANDOM_STATE):
-    """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[name]`` si
-    no se pasan): los **últimos mejores hiperparámetros registrados** (ADR-040)."""
-    params = BEST_PARAMS[name] if params is None else params
+def make_estimator(
+    name: str, params: dict | None = None, target: str = "prod_pet",
+    random_state: int = RANDOM_STATE,
+):
+    """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[target][name]``
+    si no se pasan): los **últimos mejores hiperparámetros registrados** para ese
+    ``target`` (petróleo / gas, ADR-040)."""
+    params = BEST_PARAMS[target][name] if params is None else params
     if name == "ridge":
         return Ridge(**params)
     if name == "random_forest":
