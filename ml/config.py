@@ -38,6 +38,19 @@ RANDOM_STATE = int(os.getenv("ML_RANDOM_STATE", "42"))
 TRAIN_END = pd.Timestamp("2023-07-01")
 VAL_END = pd.Timestamp("2024-11-01")
 
+
+# --- Reproceso por fecha (retrain "como si fuera el día X", ADR-041) ---
+def retrain_asof() -> pd.Timestamp | None:
+    """Fecha de corte del reproceso, leída de la env var ``RETRAIN_ASOF``
+    (``YYYY-MM-DD``), o ``None`` si no está seteada.
+
+    El job de retrain la pasa para reentrenar **"como si fuera el día X"** (ADR-041,
+    handoff de Rol 2): el dataset se recorta a ``periodo <= asof`` para **no usar
+    datos posteriores** a esa fecha (anti-leakage al backfillear fechas pasadas). En
+    una corrida normal (sin la env var) no recorta nada."""
+    raw = os.getenv("RETRAIN_ASOF")
+    return pd.Timestamp(raw) if raw else None
+
 # --- MLflow ---
 # Backend SQLite para el tracking local (el file store quedó deprecado en 2026).
 # Los artefactos (modelos) van a ./mlartifacts. La infra "de verdad" de MLflow

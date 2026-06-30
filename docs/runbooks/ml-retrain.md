@@ -71,7 +71,9 @@ MLflow) **una vez por target** — el asset le agrega `--target prod_pet` y `--t
 (ADR-042), así que una corrida reentrena los dos modelos. El campeón se entrena con
 `RETRAIN_CMD="python -m ml.train ..."` **una vez que Rol 3 enchufe el logging de MLflow en
 `train.py`** (hoy `train.py` no loguea; el tracking/registro es de Rol 3, ADR-037). La fecha de
-corte llega en `RETRAIN_ASOF` (anti-leakage; ver ADR-041).
+corte llega en `RETRAIN_ASOF` y el entrenamiento la **honra**: `build_basic_dataset` recorta
+`periodo <= asof`, así un reproceso de fecha pasada no usa datos posteriores (anti-leakage; ver
+ADR-041). Si `asof` cae antes de `VAL_END`, los splits que aún no existen (p. ej. `test`) se omiten.
 
 ## 5. Reproceso por fecha / backfill (corrección histórica)
 
