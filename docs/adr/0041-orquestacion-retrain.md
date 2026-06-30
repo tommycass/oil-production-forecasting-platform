@@ -35,21 +35,23 @@ Se eligen **particiones diarias** porque la consigna pide reproceso "por día"; 
 
 Un job de Dagster **`retrain`**, particionado por día, que encadena dos assets:
 
-1. **`features_refrescadas`** — **re-materializa el feature store** (ADR-036): corre el pipeline de features de `ml/` sobre el crudo de Bronze y reescribe `features.feat_produccion_pozo_mensual`. (No usa dbt: el store ya no es un modelo dbt sino una materialización Python.) **Es el único lugar donde se materializa el store** (se desacopló de `dw_publish` para que el refresh del DW no dependa de `ml/`); por eso el venv del daemon de retrain es el que necesita las deps de `ml/`.
-2. **`modelo_reentrenado`** — ejecuta el entrenamiento y registra el run en MLflow.
+1. **`features_refrescadas`** — **re-materializa el feature store** (ADR-036): corre el pipeline de features de `ml/` sobre el crudo de Bronze y reescribe **las dos tablas** del store, `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-042), vía `materializar_todos`. (No usa dbt: el store ya no es un modelo dbt sino una materialización Python.) **Es el único lugar donde se materializa el store** (se desacopló de `dw_publish` para que el refresh del DW no dependa de `ml/`); por eso el venv del daemon de retrain es el que necesita las deps de `ml/`.
+2. **`modelo_reentrenado`** — ejecuta el entrenamiento y registra el run en MLflow **para los dos modelos** (petróleo y gas, ADR-042): corre `RETRAIN_CMD` una vez por target (`--target prod_pet` / `--target prod_gas`), cada uno con su experimento/modelo de MLflow.
 
 Disparo: **`retrain_mensual`** (Schedule, día 6) + **`retrain_por_features_nuevas`** (Sensor sobre `max(periodo)` del feature store, con cursor). Ambos requieren el dagster-daemon.
 
+> **Dos modelos (ADR-042).** El job reentrena ambos en la misma corrida: un solo refresh de features (las dos tablas) seguido de dos entrenamientos (uno por target). Es lo que pide el ADR-042 ("la orquestación del retrain debería reentrenar ambos modelos").
+
 ### Paso de entrenamiento (configurable, desacoplado de Rol 1/3)
 
-El job invoca el comando de entrenamiento de forma **configurable** (`RETRAIN_CMD`), sin pisar la zona de Rol 1/3:
+El job invoca el comando de entrenamiento de forma **configurable** (`RETRAIN_CMD`), sin pisar la zona de Rol 1/3. `modelo_reentrenado` le agrega `--target <target>` por cada modelo (petróleo / gas, ADR-042):
 
-- **Default `python -m ml.baseline`**: entrena/evalúa y **loguea el run en MLflow** (cadena completa demostrable end-to-end).
-- **`python -m ml.train`** entrena el campeón (Random Forest, ADR-040) pero **hoy NO loguea en MLflow** a propósito: el experiment tracking (1.4) y el model registry (1.5) son de **Rol 3** (handoff de MLflow; ADR-037). Cuando Rol 3 enchufe ese logging (p. ej. `ml.train --mlflow` o `log_run(pipe, info)`), se exporta `RETRAIN_CMD="python -m ml.train --mlflow"`.
+- **Default `python -m ml.baseline`**: entrena/evalúa y **loguea el run en MLflow** (cadena completa demostrable end-to-end). Acepta `--target`.
+- **`python -m ml.train`** entrena el campeón (Random Forest, ADR-040) pero **hoy NO loguea en MLflow** a propósito: el experiment tracking (1.4) y el model registry (1.5) son de **Rol 3** (handoff de MLflow; ADR-037). Cuando Rol 3 enchufe ese logging (p. ej. `ml.train --mlflow` o `log_run(pipe, info)`), se exporta `RETRAIN_CMD="python -m ml.train --mlflow"` (el job le suma `--target` igual).
 - **`RETRAIN_ASOF`** (env) = `partition_key`: el entrenamiento debe usar solo datos ≤ esa fecha (anti-leakage).
-- **`MLFLOW_TRACKING_URI`** (env) apunta al servidor MLflow de Rol 3 (ADR-037); el código lo respeta sin cambios.
+- **`MLFLOW_TRACKING_URI`** (env) apunta al servidor MLflow de Rol 3 (ADR-037); el código lo respeta sin cambios. Cada target usa su propio experimento/modelo (`experiment_name(target)`).
 
-> El venv del dagster-daemon necesita las dependencias de `ml/` (mlflow, scikit-learn) para correr el paso de entrenamiento. Falta `ml/requirements.txt` (Rol 1) → ítem de coordinación; documentado en el runbook.
+> El venv del dagster-daemon necesita las dependencias de `ml/` (mlflow, scikit-learn, …) para correr el paso de entrenamiento. `ml/requirements.txt` **ya existe** en el repo (Rol 1); el daemon lo instala (ver runbook).
 
 ## Consecuencias
 

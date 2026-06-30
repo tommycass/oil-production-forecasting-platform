@@ -77,3 +77,26 @@ Decisiones de diseño asociadas:
 - La API (Rol 3) lee las **mismas** columnas del store.
 
 **Consecuencia sobre la Alternativa A original.** Se descarta reproducir las features en dbt SQL (quedaba elegida cuando eran simples). El modelo dbt `feat_produccion_pozo_mensual` se reemplaza por la materialización Python. Se pierde el linaje dbt→DataHub de la tabla de features (aceptable: la lógica vive en `ml/` y el linaje del modelo lo lleva MLflow); se gana **identidad garantizada** entre las features de training e inferencia. Contrato detallado: [docs/feature-store.md](../feature-store.md).
+
+---
+
+## Revisión 2 (Fase 3) — dos targets (petróleo + gas)
+
+**Contexto del cambio.** La cátedra confirmó que se pronostican **ambas** producciones, petróleo (`prod_pet`) y gas (`prod_gas`), con **un modelo por target** ([ADR-042](0042-modelo-prediccion-gas.md)). El pipeline de `ml/` se parametrizó por `target`: cambian el **universo** (pozos con ese target `> 0` en train; el gasífero es más amplio), las **features de ingeniería autorregresivas** (`prod_pet_*` vs `prod_gas_*`) y el `y_next`. Las 8 numéricas base y las 14 categóricas son **compartidas**. Hay que decidir **cómo se persiste el segundo target** en el store.
+
+### Alternativas evaluadas (layout del store)
+
+- **a) Una tabla por target (elegida).** `feat_produccion_pozo_mensual` (petróleo, nombre histórico) y `feat_produccion_pozo_mensual_gas` (gas), cada una con sus 29 features + `y_next` y su universo train-only.
+  - **Ventajas:** el universo train-only de cada target queda **limpio y aislado** (sin filas de un target con `y_next` nulo del otro); cada modelo —training e inferencia— hace un `SELECT *` de **su** tabla sin lógica de selección de columnas; reusa `build_store_features(df, target=...)` dos veces (cero código nuevo de features); la tabla de petróleo **no cambia de nombre** (no rompe consumidores existentes); paridad validable por target. Es la recomendación de Rol 1 en el handoff.
+  - **Desventajas:** **duplica** las 22 columnas compartidas (8 numéricas + 14 categóricas) entre tablas. Trivial al volumen (~6 k filas por tabla) y sin costo de mantenimiento (la lista sale del mismo código de `ml/`).
+- **b) Una tabla "ancha".** Las compartidas una sola vez + **ambos** bloques de ingeniería (`prod_pet_*` y `prod_gas_*`) + dos `y_next`, sobre la **unión** de universos.
+  - **Ventajas:** sin duplicar las compartidas.
+  - **Desventajas:** cada modelo debe **seleccionar sus columnas**; las filas fuera del universo de un target quedan con su `y_next` nulo y features de ingeniería del otro target potencialmente sin sentido → mezcla dos universos en una tabla y complica la paridad y el reader de inferencia.
+- **c) Columna `target` / partición.** Una tabla con una columna discriminante y engineered de nombre genérico; filas duplicadas por `(idpozo, periodo, target)`.
+  - **Desventajas:** duplica **todas** las filas (no solo las columnas compartidas), mezcla universos y obliga a `WHERE target = …` en cada lectura; pierde el `SELECT *` simple.
+
+### Decisión revisada
+
+**Alternativa (a): una tabla por target.** `build_store_features(df, target)` se parametriza por target y `materializar_todos` recorre `ml.config.TARGETS` escribiendo `table_for(target)` (petróleo mantiene el nombre histórico; gas lleva sufijo `_gas`, igual que el experimento/modelo de MLflow). El job de retrain ([ADR-041](0041-orquestacion-retrain.md)) materializa las dos tablas y reentrena los dos modelos. Rol 3 lee la tabla del target que sirve.
+
+**Consecuencia.** El contrato ([docs/feature-store.md](../feature-store.md)) pasa a describir dos tablas idénticas en estructura salvo el nombre de las engineered y el universo. Paridad re-validada contra `build_basic_dataset(target=...)` para **ambos** targets (0 diferencias). Un target nuevo en el futuro = una tabla nueva (sumarlo a `TARGETS`), sin tocar la lógica de features.

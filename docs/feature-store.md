@@ -11,30 +11,45 @@ La consigna de Fase 3 (RNF) exige que **el procesamiento y la generación de fea
 
 Una tabla en el DW (PostgreSQL) que **materializa la salida del pipeline de features de ML** (`ml/features.py` + `ml/dataset.py`), es decir, **exactamente las features que consume el modelo campeón** ([ADR-040](adr/0040-modelo-produccion.md)). La produce un **asset de Dagster** (Rol 2) que ejecuta ese pipeline y escribe la tabla; **no** se reimplementa en SQL/dbt (las features de A —KNN de vecinos, lags por calendario— no se expresan bien en SQL y se desincronizarían).
 
+### Dos modelos → dos tablas (ADR-042)
+
+Desde la Fase 3 se pronostican **dos targets**: petróleo (`prod_pet`) y gas (`prod_gas`), un modelo por target ([ADR-042](adr/0042-modelo-prediccion-gas.md)). El store materializa **una tabla por target** (decisión registrada en ADR-036, *Revisión 2*): cada una con **su universo** (pozos con ese target `> 0` en train — el gasífero es más amplio), **sus features de ingeniería** sobre el target (`prod_pet_*` vs `prod_gas_*`) y su `y_next`. Las 8 numéricas base y las 14 categóricas son **compartidas** (se duplican entre tablas; trivial al volumen). Rol 3 lee **la tabla del target** que sirve.
+
+| | Petróleo (`prod_pet`) | Gas (`prod_gas`) |
+|---|---|---|
+| **Tabla** | `features.feat_produccion_pozo_mensual` (nombre histórico) | `features.feat_produccion_pozo_mensual_gas` |
+| **Universo** | pozos con `prod_pet > 0` en train | pozos con `prod_gas > 0` en train (más amplio) |
+| **Engineered** | `prod_pet_roll3/delta1/lag12/acum6` + genéricas | `prod_gas_roll3/delta1/lag12/acum6` + genéricas |
+| **Experimento / modelo MLflow** | `produccion-forecast` | `produccion-forecast-gas` |
+
+Todo lo demás del contrato es **idéntico** entre las dos tablas (grano, claves, encuadre temporal, categóricas crudas, `y_next` nullable para serving). Donde abajo dice "la tabla", aplica a cada una.
+
 | | |
 |---|---|
-| **Tabla** | `features.feat_produccion_pozo_mensual` |
-| **Productor** | el job de retrain (asset `features_refrescadas`) corre el pipeline de `ml/` y materializa la tabla (única fuente de verdad de las features) |
+| **Tablas** | `features.feat_produccion_pozo_mensual` (petróleo) · `features.feat_produccion_pozo_mensual_gas` (gas) |
+| **Productor** | el job de retrain (asset `features_refrescadas`) corre el pipeline de `ml/` para los dos targets y materializa ambas tablas (única fuente de verdad de las features) |
 | **Grano** | una fila por `(idpozo, mes base t)` |
 | **Clave de lookup (inferencia)** | `idpozo` + `periodo` (primer día del mes base `t`) |
-| **Consumidores** | Rol 1 (training, mismas features) y Rol 3 (`/predict`) |
+| **Consumidores** | Rol 1 (training, mismas features) y Rol 3 (`/predict`, por target) |
 | **Refresh** | lo materializa el **job de retrain** antes de entrenar (ADR-041). **No** es parte del refresh del DW (`dw_publish`), para no acoplar el pipeline de datos a las deps de `ml/`. |
 
 ## Encuadre temporal (fila = mes base `t`)
 
-Cada fila es el **mes base `t`**: todas las features están disponibles al cierre de `t` (anti-leakage) y sirven para predecir `prod_pet` del **mes siguiente `t+1`**. Para inferir `t+1`, la API lee la fila del mes base `t = (t+1) − 1 mes`.
+Cada fila es el **mes base `t`**: todas las features están disponibles al cierre de `t` (anti-leakage) y sirven para predecir el **target** (`prod_pet` o `prod_gas`) del **mes siguiente `t+1`**. Para inferir `t+1`, la API lee la fila del mes base `t = (t+1) − 1 mes` **en la tabla del target pedido**.
 
 > ⚠️ **Sutileza del feature `mes`:** entre las features del modelo, `mes` es el **mes del target (`t+1`)**, no el del mes base (lo fija `build_basic_dataset`: `mes = periodo_objetivo.month`). Por eso el lookup de inferencia usa `periodo` (mes base), no la columna `mes`. Mantener esa distinción al leer.
 
 ## Columnas (contrato)
 
-La **fuente de verdad** de la lista es el código de ML: `ml.dataset.BASIC_NUMERIC_FEATURES` + `ml.features.ENGINEERED_FEATURES` + `ml.dataset.BASIC_CATEGORICAL_FEATURES`. Al día de hoy son **29 features**:
+La **fuente de verdad** de la lista es el código de ML: `ml.dataset.BASIC_NUMERIC_FEATURES` + `ml.features.engineered_feature_names(target)` + `ml.dataset.BASIC_CATEGORICAL_FEATURES`. Cada tabla tiene **33 columnas** (3 claves + 29 features + `y_next`). Las **engineered cambian de nombre por target** (prefijo del target en las 4 autorregresivas); el resto es idéntico:
 
-- **Claves / lookup:** `idpozo`, `periodo` (date, mes base), `periodo_objetivo` (date, `t+1`).
+- **Claves / lookup:** `idpozo` (bigint), `periodo` (date, mes base), `periodo_objetivo` (date, `t+1`).
 - **Numéricas (8):** `prod_pet`, `prod_gas`, `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday`, `mes` (= mes del target).
-- **Engineered (7):** `prod_pet_roll3`, `prod_pet_delta1`, `prod_pet_lag12`, `prod_pet_acum6`, `water_cut`, `produjo_mes_pasado`, `prod_vecinos_mean`.
+- **Engineered (7):** `{target}_roll3`, `{target}_delta1`, `{target}_lag12`, `{target}_acum6` (autorregresivas, prefijo `prod_pet_` / `prod_gas_`) + `water_cut`, `produjo_mes_pasado`, `prod_vecinos_mean` (genéricas, mismo nombre en ambas tablas).
 - **Categóricas crudas (14):** `tipoextraccion`, `tipoestado`, `tipopozo`, `empresa`, `formprod`, `formacion`, `areapermisoconcesion`, `areayacimiento`, `cuenca`, `provincia`, `proyecto`, `clasificacion`, `subclasificacion`, `sub_tipo_recurso`.
-- **Metadata:** `feature_set_version`, `computed_at`.
+- **Target:** `y_next` (float, nullable).
+
+> El store **no** materializa columnas de metadata (`feature_set_version` / `computed_at`): el versionado del contrato se lleva por este documento + git (ver *Versionado*), no por columnas en la tabla.
 
 > Las categóricas van **crudas**: el one-hot/imputación/escalado vive en el `Pipeline` del modelo (se ajusta solo en train, [ADR-039](adr/0039-preprocesamiento-datos.md)) y se serializa en el artefacto, para que la inferencia lo replique idéntico. El store **no** encodea.
 
@@ -43,11 +58,11 @@ La **fuente de verdad** de la lista es el código de ML: `ml.dataset.BASIC_NUMER
 ## Cómo consumir
 
 ### Rol 1 — entrenamiento
-El store **materializa el pipeline de `ml/`** (el asset `feature_store` reusa `ml.features.add_engineered_features` + las listas `ml.dataset.BASIC_*`), con **paridad validada** contra `build_basic_dataset` (0 diferencias). El training puede seguir usando `build_basic_dataset` (mismas features) o leer el store (filas con `y_next` no nulo). Como la lista de features sale del código de `ml/`, cambiarla ahí re-materializa el store sin reescribir nada. Pendiente: `ml/requirements.txt` (para el venv del daemon).
+El store **materializa el pipeline de `ml/`** (el asset `features_refrescadas` reusa `ml.features.add_engineered_features(target=...)` + las listas `ml.dataset.BASIC_*`), con **paridad validada** contra `build_basic_dataset` para **los dos targets** (0 diferencias). El training puede seguir usando `build_basic_dataset(target=...)` (mismas features) o leer la tabla del target (filas con `y_next` no nulo). Como la lista de features sale del código de `ml/`, cambiarla ahí re-materializa ambas tablas sin reescribir nada. `ml/requirements.txt` ya existe (Rol 1) → el venv del daemon instala las deps de `ml/`.
 
 ### Rol 3 — inferencia (`POST /api/v1/predict`)
-Dado `(idpozo, mes_objetivo)`: leer la fila del **mes base** `t` (`periodo = primer día de mes_objetivo − 1 mes`) y pasar **todas las columnas de features** (las 29) al modelo `Production` de MLflow. **No recalcular features.** ⚠️ `feature_reader.py` hoy lee solo 6 columnas viejas (`lag1/lag2/lag3/roll3/antiguedad/tef_lag1`) que **ya no existen**: debe actualizarse a las columnas de arriba. Si no hay fila para ese pozo/mes, devolver el error de contrato definido por Rol 3.
+Dado `(idpozo, mes_objetivo, target)`: elegir la **tabla del target** (`feat_produccion_pozo_mensual` para petróleo, `..._gas` para gas), leer la fila del **mes base** `t` (`periodo = primer día de mes_objetivo − 1 mes`) y pasar **todas las columnas de features** (las 29) al modelo `Production` **de ese target** en MLflow (`produccion-forecast` / `produccion-forecast-gas`). **No recalcular features.** Cómo exponer el target en `/predict` (param o dos endpoints) lo define Rol 3 (revisar [ADR-035]). ⚠️ `feature_reader.py` hoy lee solo 6 columnas viejas (`lag1/lag2/lag3/roll3/antiguedad/tef_lag1`) de una sola tabla: debe actualizarse a las 29 columnas y **parametrizar la tabla por target**. Si no hay fila para ese pozo/mes, devolver el error de contrato definido por Rol 3.
 
 ## Versionado y cambios
 
-Cambiar la lista de features del modelo (en `ml/`) es un **cambio de contrato**: se incrementa `feature_set_version`, se actualiza este documento y se re-materializa el store. Como la lista sale del código de `ml/`, el asset de materialización la toma automáticamente; avisar a Rol 3 para que ajuste el reader si cambian las columnas.
+Cambiar la lista de features del modelo (en `ml/`) es un **cambio de contrato**: se documenta acá (sección *Columnas*, con su fecha/commit) y se re-materializa el store. Como la lista sale del código de `ml/`, el asset de materialización la toma automáticamente para los dos targets; avisar a Rol 3 para que ajuste el reader si cambian las columnas. Un **target nuevo** (otra producción) = una tabla nueva (`table_for(target)` en `feature_store_build.py`) + sumarlo a `ml.config.TARGETS`.

@@ -11,10 +11,15 @@ el [ADR-036](../adr/0036-feature-store.md) (feature store) y el [contrato del fe
 
 ## 1. Propósito y disparador
 
-Reentrenar el modelo a partir de features frescas y dejar el run registrado en MLflow. El
-job `retrain` (Dagster, particionado por día) encadena:
+Reentrenar **los dos modelos** (petróleo `prod_pet` y gas `prod_gas`, ADR-042) a partir de
+features frescas y dejar los runs registrados en MLflow. El job `retrain` (Dagster,
+particionado por día) encadena:
 
-    features_refrescadas (materializa el feature store) → modelo_reentrenado (entrena + loguea a MLflow)
+    features_refrescadas (materializa las 2 tablas del store) → modelo_reentrenado (entrena ambos targets + loguea a MLflow)
+
+`modelo_reentrenado` corre el entrenamiento una vez por target (`--target prod_pet` /
+`--target prod_gas`); cada uno usa su experimento/modelo de MLflow (`produccion-forecast` /
+`produccion-forecast-gas`).
 
 Se ejecuta cuando:
 - **Cadencia mensual** (Schedule `retrain_mensual`, día 6): después del refresh del DW (ADR-021, cron día 5).
@@ -25,7 +30,7 @@ Se ejecuta cuando:
 
 - **Dueño:** Rol 2 (Feature Store + Orquestación).
 - **Accesos:** credenciales del DW (`POSTGRES_*` en `infra/.env`), repo en la EC2.
-- **Venv del daemon** (`~/dagster-venv`): deps de `data_pipeline/requirements.txt` **+** las de `ml/` (mlflow, scikit-learn, pandas, numpy). La materialización del store y el training reusan `ml/`. > ⚠️ `ml/requirements.txt` lo debe publicar Rol 1; hasta entonces `pip install mlflow scikit-learn` en el venv.
+- **Venv del daemon** (`~/dagster-venv`): deps de `data_pipeline/requirements.txt` **+** las de `ml/requirements.txt` (mlflow, scikit-learn, xgboost, pandas, numpy). La materialización del store y el training reusan `ml/`. Instalar ambos: `pip install -r data_pipeline/requirements.txt -r ml/requirements.txt`.
 - **`MLFLOW_TRACKING_URI`**: apuntar al servidor MLflow de Rol 3 (ADR-037). Si no se setea, el tracking cae al SQLite local de `ml/config.py`.
 - **`DAGSTER_HOME`** (p. ej. `~/dagster-runtime`) para persistir runs y el cursor del sensor.
 
@@ -62,9 +67,11 @@ dagster job execute -m data_pipeline.orchestration.definitions -j retrain --part
 ```
 
 El paso de entrenamiento corre `RETRAIN_CMD` (default `python -m ml.baseline`, que ya loguea a
-MLflow). El campeón se entrena con `RETRAIN_CMD="python -m ml.train ..."` **una vez que Rol 3
-enchufe el logging de MLflow en `train.py`** (hoy `train.py` no loguea; el tracking/registro es
-de Rol 3, ADR-037). La fecha de corte llega en `RETRAIN_ASOF` (anti-leakage; ver ADR-041).
+MLflow) **una vez por target** — el asset le agrega `--target prod_pet` y `--target prod_gas`
+(ADR-042), así que una corrida reentrena los dos modelos. El campeón se entrena con
+`RETRAIN_CMD="python -m ml.train ..."` **una vez que Rol 3 enchufe el logging de MLflow en
+`train.py`** (hoy `train.py` no loguea; el tracking/registro es de Rol 3, ADR-037). La fecha de
+corte llega en `RETRAIN_ASOF` (anti-leakage; ver ADR-041).
 
 ## 5. Reproceso por fecha / backfill (corrección histórica)
 
@@ -91,5 +98,11 @@ dejando un run por fecha en MLflow. Es **idempotente** (el store se reescribe y 
 ## 6. Verificación
 
 - El run del job termina `Completed successfully` (UI o CLI).
-- En MLflow aparece un run nuevo por fecha con sus métricas (RMSE/R²) y el modelo.
-- `features.feat_produccion_pozo_mensual` quedó refrescada (`max(computed_at)` reciente).
+- En MLflow aparece un run nuevo por fecha **en cada experimento** (`produccion-forecast` y `produccion-forecast-gas`) con sus métricas (RMSE/R²) y el modelo.
+- Las **dos tablas** del store quedaron refrescadas con el último período de Bronze:
+  ```sql
+  SELECT 'pet' AS modelo, count(*), max(periodo) FROM features.feat_produccion_pozo_mensual
+  UNION ALL
+  SELECT 'gas', count(*), max(periodo) FROM features.feat_produccion_pozo_mensual_gas;
+  ```
+  (El universo gasífero es más amplio → la tabla de gas suele tener más filas.)

@@ -518,17 +518,21 @@ registry.
 
 ### Feature store y features
 
-El **feature store offline** es la tabla `features.feat_produccion_pozo_mensual` en
-Postgres: una fila por `(idpozo, anio, mes)` con las mismas features que consume el
-entrenamiento, para que **train e inferencia calculen lo mismo** (evita *training-serving
-skew*). Se **materializa con código Python** (`data_pipeline/orchestration/feature_store_build.py`)
-que **reusa directamente el pipeline de `ml/`** como única fuente de verdad —reemplaza al
-modelo dbt original (ADR-036, revisión)—, leyendo de `bronze.produccion`. Todas las features
-son **anti-leakage**: usan solo datos del mes `t` o anteriores (lags **por calendario**,
-nunca el mes a predecir). Se materializa **dentro del job de retrain** (no en `dw_publish`),
-para no acoplar el refresh del DW de Fase 2 a las dependencias de `ml/`.
+El **feature store offline** vive en Postgres (esquema `features`) con **una tabla por
+target** (ADR-042): `features.feat_produccion_pozo_mensual` (petróleo) y
+`features.feat_produccion_pozo_mensual_gas` (gas). Cada una tiene una fila por
+`(idpozo, periodo)` con las mismas features que consume el entrenamiento de ese modelo, para
+que **train e inferencia calculen lo mismo** (evita *training-serving skew*). Se
+**materializan con código Python** (`data_pipeline/orchestration/feature_store_build.py`,
+parametrizado por target) que **reusa directamente el pipeline de `ml/`** como única fuente de
+verdad —reemplaza al modelo dbt original (ADR-036, revisión)—, leyendo de `bronze.produccion`.
+Cada tabla tiene su **universo** (pozos con ese target `> 0` en train; el gasífero es más
+amplio) y sus features de ingeniería sobre el target. Todas las features son **anti-leakage**:
+usan solo datos del mes `t` o anteriores (lags **por calendario**, nunca el mes a predecir). Se
+materializan **dentro del job de retrain** (no en `dw_publish`), para no acoplar el refresh del
+DW de Fase 2 a las dependencias de `ml/`.
 
-Cada fila tiene **29 features** en tres grupos:
+Cada fila tiene **29 features** en tres grupos (las engineered llevan el prefijo del target):
 
 - **8 numéricas base** (medidas del mes `t` + atributos): `prod_pet`, `prod_gas`,
   `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday` y `mes` (mes del target
@@ -617,10 +621,12 @@ en [ADR-030](docs/adr/0030-plataforma-tracking-experimentos.md) y el servidor en
 
 El retrain está orquestado con **Dagster** (`data_pipeline/orchestration/retrain.py`): un
 job `retrain` particionado por día que encadena **refrescar features → entrenar → registrar
-en MLflow** (assets `features_refrescadas` → `modelo_reentrenado`). El paso de
-entrenamiento corre `RETRAIN_CMD` (por defecto `python -m ml.baseline`, que loguea el run a
-MLflow) en un subproceso, con la fecha de corte de la partición pasada por `RETRAIN_ASOF`
-para respetar el anti-leakage. Se dispara de tres formas:
+en MLflow** (assets `features_refrescadas` → `modelo_reentrenado`) y reentrena **los dos
+modelos** (petróleo y gas, ADR-042) en la misma corrida: `features_refrescadas` materializa
+las dos tablas del store y `modelo_reentrenado` corre `RETRAIN_CMD` (por defecto
+`python -m ml.baseline`, que loguea el run a MLflow) en un subproceso **una vez por target**
+(`--target prod_pet` / `--target prod_gas`), con la fecha de corte de la partición pasada por
+`RETRAIN_ASOF` para respetar el anti-leakage. Se dispara de tres formas:
 
 - **Schedule mensual** (`retrain_mensual`, cron `0 6 6 * *`): el día 6, después del refresh
   del DW (cron día 5, ADR-021), cuando ya hay features nuevas del mes.
@@ -777,7 +783,7 @@ Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe rev
 - **XGBoost** — gradient boosting (modelo comparado en el tuning)
 - **MLflow** — tracking de experimentos y model registry (stages Staging → Production)
 - **Dagster** — orquestación del retrain (job features→entrenar→MLflow + Schedule + Sensor)
-- **feature store en Postgres** — `features.feat_produccion_pozo_mensual`, materializado reusando el código de `ml/` (ADR-036)
+- **feature store en Postgres** — una tabla por target (`features.feat_produccion_pozo_mensual` y `..._gas`), materializadas reusando el código de `ml/` (ADR-036/042)
 
 **Infraestructura**
 - **Docker / Docker Compose** — contenerización y orquestación local
