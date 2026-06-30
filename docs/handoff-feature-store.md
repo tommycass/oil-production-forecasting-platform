@@ -15,17 +15,36 @@ Materializamos el feature store con **exactamente las features del modelo** (las
 - **Paridad validada (§8 del handoff de Rol 1):** comparado contra `build_basic_dataset(target=...)` para **los dos targets** → **0 diferencias** en las 29 features ni en `y_next`. Cada tabla = 33 columnas (3 claves + 29 features + `y_next`), tipos correctos.
 - **Diferencia con training:** el target va por **left-join**, así se conserva la **última fila de cada pozo** (`y_next` NULL) para que la API pueda predecir el mes siguiente. El training usa las filas con `y_next` no nulo (idéntico a `build_basic_dataset`).
 
-## Pendiente de Rol 1
+## Pendiente de Rol 1 (A)
 
 1. ~~Agregar `ml/requirements.txt`~~ **HECHO** (ya está en el repo: `mlflow`, `scikit-learn`, `pandas`, `numpy`, `xgboost`, …). El venv del daemon de retrain lo instala (la materialización del store y el training reusan `ml/`).
-2. **Cuando quieras, conectá el training al store:** podés seguir usando `build_basic_dataset(target=...)` (mismas features, ya validado para ambos targets) o leer la tabla del target (filas con `y_next` no nulo). Si cambiás la lista de features en `ml/`, el asset la toma automáticamente (importa tus listas) — solo avisanos para re-materializar y que C ajuste el reader.
+2. **Honrar `RETRAIN_ASOF` en el train step (necesario para el reproceso por fecha).** El job de retrain corre el comando de entrenamiento con la env var **`RETRAIN_ASOF=<YYYY-MM-DD>`** (= la partición; "reentrenar como si fuera el día X", ADR-041). Hoy `ml/` **no la lee** (`build_basic_dataset` / `ml.config` usan el `TRAIN_END` fijo), así que el backfill **no recorta datos posteriores** → riesgo de leakage al reprocesar fechas pasadas. Pedido: que `ml.dataset` (o `baseline`/`train`) lea `RETRAIN_ASOF` y **filtre `periodo <= asof`** antes de armar el dataset (y, si aplica, mueva `TRAIN_END`/`VAL_END` acorde). Es lógica de modelado → la dejamos en tu zona; nosotros ya pasamos la env var.
+3. **Opcional — conectar el training al store:** podés seguir con `build_basic_dataset(target=...)` (mismas features, paridad validada en ambos targets) o leer la tabla del target (filas con `y_next` no nulo). Si cambiás la lista de features en `ml/`, el asset la toma automáticamente (importa tus listas) — avisanos para re-materializar y que C ajuste el reader.
 
-## Pendiente de Rol 3 (inferencia)
+## Pendiente de Rol 3 (C) — inferencia
 
-`api/app/services/feature_reader.py` hoy lee **6 columnas viejas** (`lag1, lag2, lag3, roll3, antiguedad, tef_lag1`) de **una sola tabla** — todo desactualizado. Actualizar a las **29 columnas del modelo** y **parametrizar la tabla por target** (ver lista en [docs/feature-store.md](feature-store.md)):
+`api/app/services/feature_reader.py` quedó **desactualizado en 3 frentes** (no es solo cambiar nombres de columnas): pide 6 columnas que ya no existen, filtra por `anio`/`mes` (el store **no tiene** `anio`, y `mes` es el mes del **target** `t+1`), y usa una sola tabla. Hay que **reescribir el lookup**:
 
-- **Elegir la tabla del target:** `feat_produccion_pozo_mensual` (petróleo) / `feat_produccion_pozo_mensual_gas` (gas), y el modelo `Production` correspondiente (`produccion-forecast` / `produccion-forecast-gas`).
-- **Lookup:** por `idpozo` + `periodo` del **mes base** `t` (= primer día de `mes_objetivo − 1 mes`), no por la columna `mes`.
-- **Devolver todas las features** (numéricas + engineered + categóricas **crudas**) y pasárselas al `Pipeline` del modelo `Production` (el Pipeline hace one-hot/imputación internamente). Ojo: los nombres engineered difieren por target (`prod_pet_*` vs `prod_gas_*`).
-- ⚠️ `mes` es el mes del **target** (`t+1`), no el del mes base; por eso el lookup va por `periodo`.
-- **Cómo exponer el target en `/predict`** (un parámetro `target` o dos rutas) lo decidís vos; conviene revisar [ADR-035] (contrato de `/predict`) como anota el ADR-042.
+**Hoy (roto):**
+```sql
+SELECT lag1, lag2, lag3, roll3, antiguedad, tef_lag1
+FROM features.feat_produccion_pozo_mensual
+WHERE idpozo = :idpozo AND anio = :anio AND mes = :mes
+```
+
+**Esperado:**
+```sql
+SELECT <las 29 features>           -- o SELECT * y descartar periodo_objetivo / y_next
+FROM features.feat_produccion_pozo_mensual        -- petróleo
+-- o features.feat_produccion_pozo_mensual_gas    -- gas
+WHERE idpozo = :idpozo AND periodo = :periodo_t   -- periodo_t = date(mes_objetivo) - 1 mes
+```
+
+Checklist:
+- [ ] **Tabla por target:** `feat_produccion_pozo_mensual` (petróleo) / `feat_produccion_pozo_mensual_gas` (gas), y cargar el modelo `Production` del registry **de ese target** (`produccion-forecast` / `produccion-forecast-gas`).
+- [ ] **Lookup por `idpozo` + `periodo`** (date) del **mes base** `t` = primer día de `mes_objetivo − 1 mes`. **No** por `anio`/`mes` (no existe `anio`; `mes` es el mes del target).
+- [ ] **Pasar las 29 features crudas** (8 numéricas + 7 engineered + 14 categóricas) al `Pipeline` del modelo —que hace one-hot/imputación internamente—; **descartar** `idpozo`, `periodo`, `periodo_objetivo`, `y_next`. Los nombres engineered **difieren por target** (`prod_pet_*` vs `prod_gas_*`): conviene derivar la lista de `ml.dataset.BASIC_NUMERIC_FEATURES + ml.features.engineered_feature_names(target) + ml.dataset.BASIC_CATEGORICAL_FEATURES` (única fuente de verdad) en vez de hardcodear.
+- [ ] **Error de contrato** si no hay fila para `(idpozo, periodo_t)` (pozo nuevo o sin historia) — como hoy, pero con la clave correcta.
+- [ ] **Exponer el target en `/predict`** (un parámetro `target=prod_pet|prod_gas` o dos rutas): decisión tuya; revisar [ADR-035] (contrato de `/predict`) como anota el ADR-042.
+
+Lista completa de columnas y tipos: [docs/feature-store.md](feature-store.md).
