@@ -1,6 +1,8 @@
 # Título: ADR-028: Diseño del problema predictivo y estrategia de validación temporal
 **Estado:** Propuesta
 
+> **Enmienda (ADR-042):** la decisión de alcance "solo petróleo" (§2 *Target y grano* y §3 *Universo de entrenamiento*) quedó **extendida**: la cátedra confirmó que se esperan **ambas** producciones, así que se agrega un **segundo modelo** con target `prod_gas` (universo gasífero), reutilizando este mismo encuadre. Ver **ADR-042**.
+
 ## Contexto
 
 La Fase 3 integra un **modelo predictivo** a la plataforma. El endpoint `/forecast` hoy devuelve datos mock (ADR-009) y la capa Gold ya expone `gold.fact_produccion_mensual` con grano (pozo, mes). Antes de entrenar cualquier modelo, hay que decidir y documentar **cómo se encuadra el problema en términos de Machine Learning**: qué se predice, sobre qué universo de datos, con qué métrica se evalúa y —sobre todo— cómo se separan los datos para validar sin filtrar información del futuro (*leakage* temporal).

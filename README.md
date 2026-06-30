@@ -496,19 +496,23 @@ y el [runbook del Data Engineer](docs/runbooks/data-engineer.md)).
 
 ## Machine Learning — Forecast de producción (Fase 3)
 
-Sobre la capa Gold se entrena un modelo que **pronostica la producción de petróleo
-(`prod_pet`, m³) de un pozo para el mes siguiente (t+1)**. El flujo completo va de las
-features (materializadas en un feature store) al entrenamiento con tracking en MLflow y
-al servido por la API desde el model registry.
+Sobre la capa Gold se entrenan **dos modelos** que **pronostican la producción de un pozo
+para el mes siguiente (t+1)**: uno de **petróleo** (`prod_pet`, m³) y uno de **gas**
+(`prod_gas`). Comparten el mismo pipeline (parametrizado por *target*), así que todo lo que
+sigue vale para los dos. El flujo completo va de las features (materializadas en un feature
+store) al entrenamiento con tracking en MLflow y al servido por la API desde el model
+registry.
 
 ### Problema y validación
 
-- **Target:** `prod_pet` del mes `t+1`. **Grano:** una fila por **(pozo, mes)**.
+- **Targets:** `prod_pet` (petróleo) y `prod_gas` (gas) del mes `t+1` — **un modelo por
+  producción** (decisión de la cátedra, [ADR-042](docs/adr/0042-modelo-prediccion-gas.md)).
+  **Grano:** una fila por **(pozo, mes)**.
 - **Métrica:** **RMSE** (m³) como métrica de selección —penaliza los errores grandes,
   que dominan en un target de cola pesada—, con **R²** y **MAE** de apoyo.
 - **Split temporal de 3 vías** (sin mezclar fechas): se entrena con el pasado, se
   elige modelo/hiperparámetros en `val` y se mide una sola vez en `test`.
-- **Baseline a batir:** la **persistencia** (`ŷ(t+1) = prod_pet(t)`); un modelo solo se
+- **Baseline a batir:** la **persistencia** (`ŷ(t+1) = target(t)`); un modelo solo se
   promueve si la supera. Ver [ADR-028](docs/adr/0028-diseno-problema-modelado.md) y
   [ADR-029](docs/adr/0029-modelo-baseline.md).
 
@@ -519,13 +523,37 @@ Postgres: una fila por `(idpozo, anio, mes)` con las mismas features que consume
 entrenamiento, para que **train e inferencia calculen lo mismo** (evita *training-serving
 skew*). Se **materializa con código Python** (`data_pipeline/orchestration/feature_store_build.py`)
 que **reusa directamente el pipeline de `ml/`** como única fuente de verdad —reemplaza al
-modelo dbt original (ADR-036, revisión)—, leyendo de `bronze.produccion`. Las features
-incluyen autoregresivas del pozo (lags, medias móviles, acumulados, delta, estacional),
-`water_cut`, actividad y promedio de **pozos vecinos** por coordenadas, más atributos
-estáticos y categóricos. Todas son **anti-leakage** (lags por calendario, nunca usan el
-mes a predecir). Se materializa **dentro del job de retrain** (no en `dw_publish`), para no
-acoplar el refresh del DW de Fase 2 a las dependencias de `ml/`. Ver
-[ADR-033](docs/adr/0033-feature-engineering.md) y
+modelo dbt original (ADR-036, revisión)—, leyendo de `bronze.produccion`. Todas las features
+son **anti-leakage**: usan solo datos del mes `t` o anteriores (lags **por calendario**,
+nunca el mes a predecir). Se materializa **dentro del job de retrain** (no en `dw_publish`),
+para no acoplar el refresh del DW de Fase 2 a las dependencias de `ml/`.
+
+Cada fila tiene **29 features** en tres grupos:
+
+- **8 numéricas base** (medidas del mes `t` + atributos): `prod_pet`, `prod_gas`,
+  `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday` y `mes` (mes del target
+  `t+1`, conocido de antemano).
+- **7 de ingeniería** (`ml/features.py`), las autorregresivas calculadas **sobre el target**
+  (`prod_pet` en el modelo de petróleo, `prod_gas` en el de gas):
+
+  | Feature | Cálculo |
+  |---|---|
+  | `{target}_roll3` | media móvil del target en {t, t-1, t-2} (nivel reciente) |
+  | `{target}_delta1` | `target(t) − target(t-1)` (declinación reciente) |
+  | `{target}_lag12` | `target(t-12)` (estacionalidad anual) |
+  | `{target}_acum6` | acumulado del target en {t … t-5} |
+  | `water_cut` | `prod_agua / (prod_agua + prod_pet)` en t (madurez del pozo) |
+  | `produjo_mes_pasado` | `1` si el target produjo (>0) en t, si no `0` |
+  | `prod_vecinos_mean` | media del target en t de los **5 pozos más cercanos** por coordenadas |
+
+  Ninguna ajusta parámetros globales: cada fila se calcula solo con su mes `t` o anteriores
+  (los vecinos usan el mes `t`, con coordenadas estáticas), así que **no hay leakage** aunque
+  se computen sobre todo el histórico.
+- **14 categóricas** (atributos del pozo): `tipoextraccion`, `tipopozo`, `empresa`,
+  `formacion`, `cuenca`, `provincia`, etc. Se guardan **crudas**; el one-hot vive en el
+  modelo (ver abajo).
+
+Ver [ADR-033](docs/adr/0033-feature-engineering.md) y
 [ADR-036](docs/adr/0036-feature-store.md); contrato en
 [docs/feature-store.md](docs/feature-store.md).
 
@@ -541,36 +569,46 @@ temporal** (*expanding window* por mes) + **random search** con semilla fija
 [ADR-039](docs/adr/0039-preprocesamiento-datos.md) y
 [ADR-040](docs/adr/0040-modelo-produccion.md).
 
-**Campeón: Random Forest tuneado** (`n_estimators=400, max_depth=16, max_features=0.5,
-min_samples_leaf=2`):
+**Campeón (los dos targets): Random Forest tuneado** (`n_estimators=400, max_depth=16,
+max_features=0.5, min_samples_leaf=2`). En ambos, XGBoost gana sin tunear pero tuneado lo
+supera Random Forest; los hiperparámetros ganadores coincidieron (mismo grid + semilla).
+Métricas (RMSE en m³ / R²), comparadas contra la persistencia:
 
-| Conjunto | RMSE | R² |
-|---|---|---|
-| val (tuneado) | 229,9 | 0,900 |
-| **test** (dev→test, evaluación única) | **154,4** | **0,874** |
-| persistencia (test) | 166,2 | 0,854 |
+| Target | val RMSE | val R² | **test RMSE** | **test R²** | persistencia (test) |
+|---|---|---|---|---|---|
+| **Petróleo** (`prod_pet`) | 229,9 | 0,900 | **154,4** | **0,874** | 166,2 / 0,854 |
+| **Gas** (`prod_gas`) | 579,9 | 0,859 | **401,0** | **0,856** | 457,8 / 0,813 |
 
-Supera al baseline en val y en test → cumple el criterio de promoción.
+Los dos superan al baseline en val y en test → cumplen el criterio de promoción. (El RMSE
+de gas es mayor en valor absoluto porque la producción de gas tiene otra escala; el R²
+—comparable— es alto en ambos.) Ver
+[ADR-042](docs/adr/0042-modelo-prediccion-gas.md) (modelo de gas) y los notebooks
+`notebooks/03_modeling_pet.ipynb` (petróleo) y `notebooks/04_modeling_gas.ipynb` (gas).
 
-**Correr el entrenamiento** (requiere acceso a la fuente de datos / feature store):
+**Correr el entrenamiento** (requiere acceso a la fuente de datos / feature store). El
+`--target` elige el modelo (por defecto `prod_pet`):
 
 ```bash
 # entrenar el campeón y evaluar en val (tunea por defecto)
-python -m ml.train --model random_forest
+python -m ml.train --model random_forest                 # petróleo
+python -m ml.train --model random_forest --target prod_gas   # gas
 
 # entrenamiento final (dev = train+val) + evaluación única en test
-python -m ml.train --final
+python -m ml.train --final                  # petróleo
+python -m ml.train --final --target prod_gas    # gas
 
 # comparar modelos y baselines
-python -m ml.train --compare
-python -m ml.baseline
+python -m ml.train --compare [--target prod_gas]
+python -m ml.baseline [--target prod_gas]
 ```
 
 ### Tracking y registry (MLflow)
 
 Los experimentos se registran en **MLflow** (servidor en `infra/docker-compose.yml`,
-servicio `mlflow`, con backend Postgres). El **model registry** versiona los modelos y
-marca el campeón con stages **Staging → Production**; el criterio de promoción está en
+servicio `mlflow`, con backend Postgres), con **un experimento y un modelo de registry por
+target** (`produccion-forecast` para petróleo y `produccion-forecast-gas` para gas), para no
+mezclar runs ni versiones. El **model registry** versiona los modelos y marca cada campeón
+con stages **Staging → Production**; el criterio de promoción (común a los dos) está en
 [ADR-040](docs/adr/0040-modelo-produccion.md). La plataforma (MLflow vs W&B) se justifica
 en [ADR-030](docs/adr/0030-plataforma-tracking-experimentos.md) y el servidor en
 [ADR-037](docs/adr/0037-mlflow-server.md).
@@ -610,6 +648,10 @@ en stage `Production`** desde el registry (y se actualiza al promoverse uno nuev
 reiniciar) y **lee las features del feature store** (no las recalcula). Ver
 [ADR-035](docs/adr/0035-predict-api-contract.md) y
 [ADR-038](docs/adr/0038-serving-strategy.md).
+
+> Hoy `/predict` sirve el modelo de **petróleo**; exponer también el de **gas** (sea con un
+> parámetro `target` o un endpoint propio) queda como extensión de serving (Rol 3, ver el
+> handoff de MLflow).
 
 ```bash
 curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
@@ -821,5 +863,6 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [037](docs/adr/0037-mlflow-server.md) | Backend del servidor MLflow | Backend SQLite vs. Postgres; artifact store; servidor containerizado para tracking + registry |
 | [038](docs/adr/0038-serving-strategy.md) | Estrategia de serving del modelo | Redeploy del contenedor vs. recarga/polling del registry; actualización sin downtime |
 | [039](docs/adr/0039-preprocesamiento-datos.md) | Preprocesamiento de datos | Imputación por feature vs. uniforme; clip/log1p vs. sin tratar outliers; descarte de negativos |
-| [040](docs/adr/0040-modelo-produccion.md) | Modelo campeón y criterio de promoción | Random Forest vs. XGBoost vs. Ridge (tuneados); criterio Staging→Production |
+| [040](docs/adr/0040-modelo-produccion.md) | Modelos campeones (petróleo y gas) y criterio de promoción | Random Forest vs. XGBoost vs. Ridge (tuneados); campeón por target; criterio Staging→Production; gestión de los dos modelos |
 | [041](docs/adr/0041-orquestacion-retrain.md) | Orquestación del retrain | Job Dagster (features→entrenar→MLflow) + Schedule mensual + Sensor por datos nuevos; backfill por fecha |
+| [042](docs/adr/0042-modelo-prediccion-gas.md) | Segundo modelo: forecast de gas | Modelar `prod_gas` además de `prod_pet`; dos modelos vs. multi-salida; reuso del pipeline parametrizado; universo gasífero y anti-leakage |

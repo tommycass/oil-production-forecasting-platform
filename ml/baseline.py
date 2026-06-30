@@ -23,7 +23,7 @@ import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from ml import features
-from ml.config import EXPERIMENT_NAME, TARGET
+from ml.config import TARGET, TARGETS, experiment_name
 from ml.dataset import build_basic_dataset
 from ml.tracking import setup_mlflow
 
@@ -43,25 +43,26 @@ def _rmse(y_true, y_pred) -> float:
     return float(np.sqrt(mean_squared_error(y_true, y_pred)))
 
 
-def add_basic_baselines(ds):
+def add_basic_baselines(ds, target=TARGET):
     """Agrega las columnas de predicción de los baselines sobre el dataset básico.
 
-    ``prod_pet`` ya es la producción del mes t (persistencia) y ``prod_pet_roll3``
+    ``target``(t) ya es la producción del mes t (persistencia) y ``{target}_roll3``
     es la media de {t, t-1, t-2} (media móvil 3m); el estacional se arma con el lag
     de calendario de 11 meses (mismo mes del año anterior respecto del target t+1).
-    Todas usan solo información hasta el mes t (anti-leakage).
+    Todas usan solo información hasta el mes t (anti-leakage). Sirve para petróleo
+    (``prod_pet``) y gas (``prod_gas``, ADR-042).
     """
     ds = ds.copy()
-    ds["b_persist"] = ds["prod_pet"]
-    ds["b_ma3"] = ds["prod_pet_roll3"]
-    ds["b_seas"] = features._calendar_lag(ds, TARGET, 11)
+    ds["b_persist"] = ds[target]
+    ds["b_ma3"] = ds[f"{target}_roll3"]
+    ds["b_seas"] = features._calendar_lag(ds, target, 11)
     return ds
 
 
-def evaluate_baselines() -> dict[str, dict]:
+def evaluate_baselines(target: str = TARGET) -> dict[str, dict]:
     """Evalúa cada baseline en val y test. Devuelve
     ``{split: {nombre: {mae, rmse, n}}}``."""
-    ds = add_basic_baselines(build_basic_dataset())
+    ds = add_basic_baselines(build_basic_dataset(target=target), target=target)
     results: dict[str, dict] = {}
     for split in SPLITS:
         s = ds[(ds.split == split) & ds.y_next.notna()]
@@ -91,30 +92,35 @@ def _print_table(results: dict[str, dict]) -> None:
           f"(val RMSE = {prim['rmse']:.1f} m³, MAE = {prim['mae']:.1f} m³).")
 
 
-def log_to_mlflow(results: dict[str, dict]) -> None:
-    setup_mlflow()
+def log_to_mlflow(results: dict[str, dict], target: str = TARGET) -> None:
+    exp = experiment_name(target)
+    setup_mlflow(exp)
     for name in BASELINES:
         with mlflow.start_run(run_name=f"baseline_{name}"):
             mlflow.set_tag("tipo", "baseline")
+            mlflow.set_tag("target", target)
             mlflow.set_tag("primario", str(name == PRIMARY))
             mlflow.log_param("regla", name)
+            mlflow.log_param("target", target)
             for split in SPLITS:
                 r = results[split][name]
                 mlflow.log_metric(f"{split}_mae", r["mae"])
                 mlflow.log_metric(f"{split}_rmse", r["rmse"])
                 mlflow.log_metric(f"n_{split}", r["n"])
-    print(f"\n✓ Baselines logueados en MLflow (experimento '{EXPERIMENT_NAME}').")
+    print(f"\n✓ Baselines logueados en MLflow (experimento '{exp}').")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Baselines deterministas (ADR-029)")
+    parser.add_argument("--target", choices=TARGETS, default=TARGET,
+                        help="Qué predecir: prod_pet (petróleo) o prod_gas (gas, ADR-042)")
     parser.add_argument("--no-mlflow", action="store_true", help="No loguear en MLflow")
     args = parser.parse_args()
 
-    results = evaluate_baselines()
+    results = evaluate_baselines(args.target)
     _print_table(results)
     if not args.no_mlflow:
-        log_to_mlflow(results)
+        log_to_mlflow(results, args.target)
 
 
 if __name__ == "__main__":

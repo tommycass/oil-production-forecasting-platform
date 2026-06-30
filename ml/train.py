@@ -28,7 +28,7 @@ from pathlib import Path
 import joblib
 
 from ml import modeling
-from ml.config import PROJECT_ROOT
+from ml.config import PROJECT_ROOT, TARGET, TARGETS
 
 MODELS_DIR = PROJECT_ROOT / "models"
 # Campeón según la comparación TUNEADA en val (notebook 03_modeling §4.1, ADR-040):
@@ -38,20 +38,21 @@ CHAMPION = "random_forest"
 MODELOS = ("ridge", "random_forest", "xgboost")
 
 
-def _untuned_estimator(name: str):
-    """Estimador sin tunear: usa los **mejores hiperparámetros registrados**
-    (``modeling.BEST_PARAMS``, ADR-040), no defaults arbitrarios."""
-    return modeling.make_estimator(name)
+def _untuned_estimator(name: str, target: str = TARGET):
+    """Estimador sin tunear: usa los **mejores hiperparámetros registrados** para el
+    ``target`` (``modeling.BEST_PARAMS[target]``, ADR-040), no defaults arbitrarios."""
+    return modeling.make_estimator(name, target=target)
 
 
-def train(model_name: str = CHAMPION, tune: bool = False):
+def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
     """Entrena (con/sin tuning) y evalúa en val. Devuelve ``(pipeline, info)``.
 
     ``info`` trae el modelo, si fue tuneado, los mejores hiperparámetros y las
     métricas en train/val + la persistencia (baseline a batir, ADR-029). El
     ``pipeline`` devuelto es el artefacto a versionar/loguear (gancho para Rol 3).
+    ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
     """
-    ds, feats = modeling.build_feature_matrix()
+    ds, feats = modeling.build_feature_matrix(target=target)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
 
     if tune:
@@ -63,18 +64,19 @@ def train(model_name: str = CHAMPION, tune: bool = False):
         best_params = search.best_params_
     else:
         pipe = modeling.build_pipeline(
-            _untuned_estimator(model_name), model_name == "ridge", feats
+            _untuned_estimator(model_name, target), model_name == "ridge", feats
         )
         pipe.fit(X_tr, y_tr)
         best_params = None
 
     info = {
         "model": model_name,
+        "target": target,
         "tuned": tune,
         "best_params": best_params,
         "train": modeling.evaluate(y_tr, pipe.predict(X_tr)),
         "val": modeling.evaluate(y_va, pipe.predict(X_va)),
-        "persistencia_val": modeling.persistence_val(ds),
+        "persistencia_val": modeling.persistence_val(ds, target),
     }
     return pipe, info
 
@@ -99,25 +101,27 @@ def _print_info(info: dict) -> None:
     print(f"  -> {'✓ supera' if gana else '✗ NO supera'} la persistencia en RMSE (val)")
 
 
-def train_final(model_name: str = CHAMPION, params: dict | None = None):
+def train_final(model_name: str = CHAMPION, params: dict | None = None, target: str = TARGET):
     """Entrena el modelo final en **dev (train+val)** con los mejores
     hiperparámetros registrados (``BEST_PARAMS``, ADR-040) y lo evalúa **una vez en
     test**. Es la confirmación final del campeón; no re-tunea. Devuelve ``(pipe, info)``.
+    ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
     """
-    ds, feats = modeling.build_feature_matrix()
+    ds, feats = modeling.build_feature_matrix(target=target)
     X_dev, y_dev, X_te, y_te = modeling.split_dev_test(ds, feats)
     pipe = modeling.build_pipeline(
-        modeling.make_estimator(model_name, params), model_name == "ridge", feats
+        modeling.make_estimator(model_name, params, target=target), model_name == "ridge", feats
     )
     pipe.fit(X_dev, y_dev)
     return pipe, {
         "model": model_name,
-        "params": params or modeling.BEST_PARAMS[model_name],
+        "target": target,
+        "params": params or modeling.BEST_PARAMS[target][model_name],
         "n_dev": len(y_dev),
         "n_test": len(y_te),
         "dev": modeling.evaluate(y_dev, pipe.predict(X_dev)),
         "test": modeling.evaluate(y_te, pipe.predict(X_te)),
-        "persistencia_test": modeling.evaluate(y_te, X_te["prod_pet"]),
+        "persistencia_test": modeling.evaluate(y_te, X_te[target]),
     }
 
 
@@ -132,13 +136,13 @@ def _print_final(info: dict) -> None:
     print(f"  -> {'✓ supera' if gana else '✗ NO supera'} la persistencia en RMSE (test)")
 
 
-def compare() -> None:
+def compare(target: str = TARGET) -> None:
     """Compara los 3 modelos sin tunear sobre val (como la sección 3 del notebook)."""
-    ds, feats = modeling.build_feature_matrix()
+    ds, feats = modeling.build_feature_matrix(target=target)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
     tabla, _ = modeling.train_eval_models(X_tr, y_tr, X_va, y_va)
     import pandas as pd
-    pers = modeling.persistence_val(ds)
+    pers = modeling.persistence_val(ds, target)
     tabla = pd.concat(
         [tabla, pd.DataFrame([{"modelo": "persistencia (baseline)", **pers}])],
         ignore_index=True,
@@ -149,6 +153,8 @@ def compare() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Entrenamiento del forecast (Rol 1.3)")
     parser.add_argument("--model", choices=MODELOS, default=CHAMPION)
+    parser.add_argument("--target", choices=TARGETS, default=TARGET,
+                        help="Qué predecir: prod_pet (petróleo) o prod_gas (gas, ADR-042)")
     parser.add_argument("--no-tune", action="store_true",
                         help="No tunear: usa hiperparámetros por defecto (más rápido)")
     parser.add_argument("--compare", action="store_true", help="Comparar los 3 modelos sin tunear (no guarda)")
@@ -157,21 +163,25 @@ def main() -> None:
     parser.add_argument("--no-save", action="store_true", help="No guardar el modelo entrenado")
     args = parser.parse_args()
 
+    # sufijo de gas en el nombre del archivo para no pisar el modelo de petróleo
+    # (petróleo mantiene su nombre histórico: random_forest.joblib, etc.)
+    suf = "" if args.target == "prod_pet" else f"_{args.target}"
+
     if args.compare:
-        compare()
+        compare(args.target)
         return
 
     if args.final:
-        pipe, info = train_final(args.model)
+        pipe, info = train_final(args.model, target=args.target)
         _print_final(info)
         if not args.no_save:
-            print(f"\n✓ Modelo guardado en {save_model(pipe, args.model + '_final')}")
+            print(f"\n✓ Modelo guardado en {save_model(pipe, args.model + suf + '_final')}")
         return
 
-    pipe, info = train(args.model, tune=not args.no_tune)
+    pipe, info = train(args.model, tune=not args.no_tune, target=args.target)
     _print_info(info)
     if not args.no_save:
-        ruta = save_model(pipe, args.model)
+        ruta = save_model(pipe, args.model + suf)
         print(f"\n✓ Modelo guardado en {ruta}")
 
 

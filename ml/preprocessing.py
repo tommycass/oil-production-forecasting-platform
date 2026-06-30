@@ -39,11 +39,15 @@ from ml import dataset
 # La distinción importa para el NaN: en los volúmenes/variación un faltante es
 # "no hay historia" (-> 0 + flag), mientras que en las físicas/operativa conviene
 # la mediana de train.
+# Se listan las features de volumen de ambos targets (petróleo y gas, ADR-042);
+# `build_preprocessor` se queda solo con las presentes en cada dataset (`present`).
 VOLUMES = [
     "prod_pet", "prod_gas", "prod_agua",
-    "prod_pet_roll3", "prod_pet_acum6", "prod_pet_lag12", "prod_vecinos_mean",
+    "prod_pet_roll3", "prod_pet_acum6", "prod_pet_lag12",
+    "prod_gas_roll3", "prod_gas_acum6", "prod_gas_lag12",
+    "prod_vecinos_mean",
 ]
-VARIATION = ["prod_pet_delta1"]
+VARIATION = ["prod_pet_delta1", "prod_gas_delta1"]
 RATIOS_FLAGS = ["water_cut", "produjo_mes_pasado"]
 STATIC_PHYSICAL = ["profundidad", "coordenadax", "coordenaday"]
 OPERATIVA = ["tef"]
