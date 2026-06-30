@@ -91,7 +91,8 @@ def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     (default `ml.baseline`, que loguea a MLflow) **una vez por target**, agregándole
     `--target <target>`. Cada target usa su propio experimento/modelo en MLflow
     (`experiment_name(target)`). La fecha de corte ("como si fuera el día X") se pasa
-    por `RETRAIN_ASOF`; el entrenamiento debe respetarla para no usar datos posteriores
+    por `RETRAIN_ASOF`; el entrenamiento la respeta (`ml.config.retrain_asof` →
+    `build_basic_dataset` recorta `periodo <= asof`) para no usar datos posteriores
     (anti-leakage). El tracking apunta a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3,
     ADR-037) si está seteado.
     """
