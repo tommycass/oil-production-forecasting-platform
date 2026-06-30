@@ -2,7 +2,8 @@
 
 La lógica reusa `ml/features` (sklearn) → se saltea si sklearn no está disponible.
 Valida estructura y comportamiento clave (columnas, idpozo int, target left-join,
-`mes` = mes del target) sobre un panel sintético, sin red ni DB.
+`mes` = mes del target) sobre un panel sintético, sin red ni DB. Cubre los **dos
+targets** (petróleo y gas, ADR-042) y el mapeo de tablas.
 """
 import pandas as pd
 import pytest
@@ -52,3 +53,26 @@ def test_target_left_join_y_mes_es_del_objetivo():
     assert un_pozo["y_next"].iloc[0] == un_pozo["prod_pet"].iloc[1]
     # `mes` = mes del MES OBJETIVO (t+1): para periodo 2020-01 → mes 2
     assert un_pozo["mes"].iloc[0] == 2
+
+
+def test_table_for_mapea_petroleo_y_gas():
+    # petróleo mantiene el nombre histórico; gas lleva sufijo (convención _gas, ADR-042)
+    assert fsb.table_for("prod_pet") == "feat_produccion_pozo_mensual"
+    assert fsb.table_for("prod_gas") == "feat_produccion_pozo_mensual_gas"
+
+
+def test_build_gas_usa_features_de_gas_y_su_target():
+    # El modelo de gas materializa las features de ingeniería sobre prod_gas y su y_next.
+    out = fsb.build_store_features(_panel_crudo(), target="prod_gas")
+    esperadas = (
+        ["idpozo", "periodo", "periodo_objetivo"]
+        + BASIC_NUMERIC_FEATURES + mlf.engineered_feature_names("prod_gas")
+        + BASIC_CATEGORICAL_FEATURES + ["y_next"]
+    )
+    assert list(out.columns) == esperadas
+    # los nombres autorregresivos llevan el prefijo del target gas
+    assert "prod_gas_roll3" in out.columns and "prod_pet_roll3" not in out.columns
+    un_pozo = out[out.idpozo == 100].sort_values("periodo").reset_index(drop=True)
+    # y_next = prod_gas del mes siguiente (en el panel prod_gas es constante = 5)
+    assert un_pozo["y_next"].iloc[0] == un_pozo["prod_gas"].iloc[1]
+    assert pd.isna(un_pozo["y_next"].iloc[-1])
