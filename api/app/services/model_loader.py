@@ -21,10 +21,7 @@ import threading
 import time
 from typing import Optional
 
-import mlflow
-import mlflow.sklearn
 import pandas as pd
-from mlflow.tracking import MlflowClient
 
 logger = logging.getLogger(__name__)
 
@@ -48,10 +45,19 @@ class ModelLoader:
         self._lock = threading.Lock()
         self._model_name = model_name
         self._poll_interval = poll_interval
-        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
     def load(self) -> None:
-        """Carga (o recarga) la versión en stage Production desde el MLflow registry."""
+        """Carga (o recarga) la versión en stage Production desde el MLflow registry.
+
+        mlflow se importa aquí y no al cargar el módulo: es pesado (~40 s en EC2
+        pequeña) y bloquearia uvicorn antes de que /health pueda responder. Con el
+        import lazy, el módulo carga rápido y los modelos se cargan en background.
+        """
+        import mlflow
+        import mlflow.sklearn
+        from mlflow.tracking import MlflowClient
+
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
         client = MlflowClient()
         versions = client.get_latest_versions(self._model_name, stages=["Production"])
         if not versions:

@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -36,12 +37,15 @@ tags_metadata = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Carga los modelos de todos los targets (petróleo y gas). Un fallo por target no
-    # frena el arranque: la API inicia en modo degradado y /predict retorna 503 para el
-    # target cuyo modelo no esté disponible (MLflow inalcanzable o sin versión Production).
-    load_all()
-    start_polling_all()
-    logger.info("Carga de modelos y polling iniciados al arrancar")
+    # Carga de modelos en background: mlflow es pesado al importar (~40 s en EC2
+    # pequeña). Correrlo en un hilo daemon hace que uvicorn sirva /health de inmediato;
+    # /predict retorna 503 hasta que el modelo esté listo (degradación controlada).
+    def _startup() -> None:
+        load_all()
+        start_polling_all()
+        logger.info("Carga de modelos y polling iniciados en background")
+
+    threading.Thread(target=_startup, daemon=True, name="model-startup").start()
     yield
 
 
