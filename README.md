@@ -611,8 +611,12 @@ python -m ml.baseline [--target prod_gas]
 Los experimentos se registran en **MLflow** (servidor en `infra/docker-compose.yml`,
 servicio `mlflow`, con backend Postgres), con **un experimento y un modelo de registry por
 target** (`produccion-forecast` para petróleo y `produccion-forecast-gas` para gas), para no
-mezclar runs ni versiones. El **model registry** versiona los modelos y marca cada campeón
-con stages **Staging → Production**; el criterio de promoción (común a los dos) está en
+mezclar runs ni versiones. `python -m ml.train --mlflow --target <target>` entrena el campeón
+final y **loguea** el run (hiperparámetros, métricas dev/test, versión de datos y el `Pipeline`
+serializado), lo **registra** como nueva versión y **promueve** a Production con el criterio del
+ADR-040 (`ml/registry.py`). El **model registry** versiona los modelos y marca cada campeón
+con stages **Staging → Production**: un candidato pasa a `Production` solo si supera a la
+persistencia y mejora al `Production` actual del target (si no, queda en `Staging`);
 [ADR-040](docs/adr/0040-modelo-produccion.md). La plataforma (MLflow vs W&B) se justifica
 en [ADR-030](docs/adr/0030-plataforma-tracking-experimentos.md) y el servidor en
 [ADR-037](docs/adr/0037-mlflow-server.md).
@@ -623,9 +627,11 @@ El retrain está orquestado con **Dagster** (`data_pipeline/orchestration/retrai
 job `retrain` particionado por día que encadena **refrescar features → entrenar → registrar
 en MLflow** (assets `features_refrescadas` → `modelo_reentrenado`) y reentrena **los dos
 modelos** (petróleo y gas, ADR-042) en la misma corrida: `features_refrescadas` materializa
-las dos tablas del store y `modelo_reentrenado` corre `RETRAIN_CMD` (por defecto
-`python -m ml.baseline`, que loguea el run a MLflow) en un subproceso **una vez por target**
-(`--target prod_pet` / `--target prod_gas`), con la fecha de corte de la partición pasada por
+las dos tablas del store y `modelo_reentrenado` corre `RETRAIN_CMD` en un subproceso **una vez
+por target** (`--target prod_pet` / `--target prod_gas`). Por defecto es `python -m ml.baseline`
+(loguea baselines); para reentrenar y **registrar/promover el campeón** en cada corrida se
+exporta `RETRAIN_CMD="python -m ml.train --mlflow"` (el flag de tracking del Rol 3). Se corre
+con la fecha de corte de la partición pasada por
 `RETRAIN_ASOF`. El entrenamiento la **honra**: `ml.config.retrain_asof()` la lee y
 `build_basic_dataset` recorta el dataset a `periodo <= asof`, así un reproceso de fecha pasada
 **no usa datos posteriores** (anti-leakage del backfill); si la fecha es anterior a `VAL_END`,
@@ -651,20 +657,24 @@ dagster job execute -j retrain --partition "2026-06-06" -m $MOD
 
 ### Inferencia (API)
 
-`POST /api/v1/predict` recibe `idpozo`, `anio`, `mes` (el mes a predecir) y devuelve la
-producción estimada más la **versión del modelo** que la generó. La API **carga el modelo
-en stage `Production`** desde el registry (y se actualiza al promoverse uno nuevo, sin
-reiniciar) y **lee las features del feature store** (no las recalcula). Ver
+`POST /api/v1/predict` recibe `idpozo`, `anio`, `mes` (el mes a predecir) y un `target`
+opcional (`prod_pet` por defecto, o `prod_gas`), y devuelve la producción estimada más el
+**modelo y la versión** que la generaron. La API **carga el modelo en stage `Production`**
+del registry **de ese target** (y se actualiza al promoverse uno nuevo, sin reiniciar) y
+**lee las features del feature store** —de la tabla del target— sin recalcularlas. Un `target`
+inválido devuelve `422`; si el modelo del target no está disponible, `503`. Ver
 [ADR-035](docs/adr/0035-predict-api-contract.md) y
 [ADR-038](docs/adr/0038-serving-strategy.md).
 
-> Hoy `/predict` sirve el modelo de **petróleo**; exponer también el de **gas** (sea con un
-> parámetro `target` o un endpoint propio) queda como extensión de serving (Rol 3, ver el
-> handoff de MLflow).
-
 ```bash
+# Petróleo (target por defecto)
 curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
   -d '{"idpozo": 507, "anio": 2026, "mes": 6}' \
+  "<URL_DEL_SERVICIO>/api/v1/predict"
+
+# Gas (target explícito)
+curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
+  -d '{"idpozo": 507, "anio": 2026, "mes": 6, "target": "prod_gas"}' \
   "<URL_DEL_SERVICIO>/api/v1/predict"
 ```
 
@@ -677,7 +687,7 @@ curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
 | GET | `/health` | Health check del servicio | No |
 | GET | `/api/v1/wells` | Listado de pozos disponibles | Sí |
 | GET | `/api/v1/forecast` | Pronóstico de producción de un pozo | Sí |
-| POST | `/api/v1/predict` | Predicción ML de producción de petróleo (t+1) de un pozo | Sí |
+| POST | `/api/v1/predict` | Predicción ML de producción (t+1) de un pozo — petróleo o gas (`target`) | Sí |
 
 Documentación interactiva disponible en `/docs` (Swagger UI) y `/redoc` (ReDoc) con el servicio corriendo. Detalle de parámetros y códigos de respuesta en [api/README.md](api/README.md).
 

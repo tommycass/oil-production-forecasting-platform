@@ -72,9 +72,17 @@ dagster asset materialize --select "features_refrescadas,modelo_reentrenado" \
 
 El paso de entrenamiento corre `RETRAIN_CMD` (default `python -m ml.baseline`, que ya loguea a
 MLflow) **una vez por target** — el asset le agrega `--target prod_pet` y `--target prod_gas`
-(ADR-042), así que una corrida reentrena los dos modelos. El campeón se entrena con
-`RETRAIN_CMD="python -m ml.train ..."` **una vez que Rol 3 enchufe el logging de MLflow en
-`train.py`** (hoy `train.py` no loguea; el tracking/registro es de Rol 3, ADR-037). La fecha de
+(ADR-042), así que una corrida reentrena los dos modelos. Para reentrenar y **registrar/promover
+el campeón** en cada corrida (Rol 3 ya enchufó el logging en `train.py`, 1.4/1.5) se exporta:
+
+```bash
+export RETRAIN_CMD="python -m ml.train --mlflow"   # loguea, registra y promueve (ADR-040)
+```
+
+`ml.train --mlflow` entrena el campeón final, loguea el run (params, métricas dev/test, versión
+de datos, `Pipeline`), lo registra como nueva versión del modelo del target y lo promueve a
+`Production` si supera a la persistencia y mejora al `Production` actual (`ml/registry.py`;
+`--no-promote` lo deja en `Staging`). La fecha de
 corte llega en `RETRAIN_ASOF` y el entrenamiento la **honra**: `build_basic_dataset` recorta
 `periodo <= asof`, así un reproceso de fecha pasada no usa datos posteriores (anti-leakage; ver
 ADR-041). Si `asof` cae antes de `VAL_END`, los splits que aún no existen (p. ej. `test`) se omiten.
