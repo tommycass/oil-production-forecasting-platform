@@ -75,6 +75,11 @@ jobs:
           API_KEY: abcdef12345
           MLFLOW_TRACKING_URI: "sqlite:///test_mlflow.db"
 
+      - name: Run ML registry tests
+        run: pytest ml/tests/test_registry.py -v
+        env:
+          MLFLOW_TRACKING_URI: "sqlite:///test_mlflow.db"
+
   build:
     runs-on: ubuntu-latest
     needs: [test, test-pipeline, test-ml]

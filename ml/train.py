@@ -9,15 +9,18 @@ Todo el preprocesamiento (imputación de NaN por feature + flags, one-hot, escal
 sin clip ni log1p) vive en el ``Pipeline`` y se ajusta **solo con train / el train de
 cada fold** (ADR-039).
 
-**No loguea en MLflow:** el tracking de experimentos (1.4) y el model registry (1.5)
-quedan a cargo del Rol 3. ``train()`` devuelve ``(pipeline, métricas)`` como gancho
-para que ese logging se enchufe sin reescribir el entrenamiento.
+**Tracking en MLflow (1.4/1.5, Rol 3):** el logging de experimentos y el model registry
+los enchufa el Rol 3 con ``--mlflow`` (delega en ``ml.registry.log_and_register``);
+``train()``/``train_final()`` devuelven ``(pipeline, info)`` como gancho para no
+reescribir el entrenamiento. Sin ``--mlflow`` el entrenamiento no toca MLflow.
 
 Uso:
     python -m ml.train                       # tunea y entrena el campeón (random_forest) y lo guarda
     python -m ml.train --model xgboost       # tunea/entrena otro modelo
     python -m ml.train --no-tune             # sin tuning: usa los mejores hiperparámetros registrados
     python -m ml.train --final               # entrena en dev (train+val) y evalúa en TEST (confirmación final)
+    python -m ml.train --mlflow              # campeón final → loguea/registra/promueve en MLflow (Rol 3)
+    python -m ml.train --mlflow --no-promote # ídem, pero deja la versión en Staging (sin promover)
     python -m ml.train --compare             # compara los 3 modelos sin tunear
     python -m ml.train --no-save
 """
@@ -160,6 +163,10 @@ def main() -> None:
     parser.add_argument("--compare", action="store_true", help="Comparar los 3 modelos sin tunear (no guarda)")
     parser.add_argument("--final", action="store_true",
                         help="Entrenar en dev (train+val) con los mejores hiperparámetros y evaluar en TEST")
+    parser.add_argument("--mlflow", action="store_true",
+                        help="Entrenar el campeón final y loguear/registrar/promover en MLflow (Rol 3, 1.4/1.5)")
+    parser.add_argument("--no-promote", action="store_true",
+                        help="Con --mlflow: registra la versión pero la deja en Staging (no promueve)")
     parser.add_argument("--no-save", action="store_true", help="No guardar el modelo entrenado")
     args = parser.parse_args()
 
@@ -169,6 +176,17 @@ def main() -> None:
 
     if args.compare:
         compare(args.target)
+        return
+
+    if args.mlflow:
+        # Rol 3 (1.4/1.5): campeón final (dev=train+val, evaluado en test) → MLflow.
+        # Import perezoso: solo se necesita mlflow cuando se usa este flag.
+        from ml import registry
+        pipe, info = train_final(args.model, target=args.target)
+        _print_final(info)
+        registry.log_and_register(pipe, info, promote=not args.no_promote)
+        if not args.no_save:
+            print(f"\n✓ Modelo guardado en {save_model(pipe, args.model + suf + '_final')}")
         return
 
     if args.final:
