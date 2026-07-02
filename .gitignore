@@ -36,3 +36,7 @@ journal-estudio-IS.md
 mlruns/
 mlflow.db
 mlartifacts/
+
+# Modelos entrenados por train.py (artefactos locales; no se versionan)
+models/
+*.joblib

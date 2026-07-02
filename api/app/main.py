@@ -1,4 +1,5 @@
 import logging
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -10,7 +11,7 @@ from app.core.rate_limit import limiter
 from app.core.security import APIKeyMiddleware
 from app.routes import health, wells, forecast, mock_error
 from app.routes import predict as predict_route
-from app.services.model_loader import MODEL_LOADER
+from app.services.model_loader import load_all, start_polling_all
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,15 @@ tags_metadata = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        MODEL_LOADER.load()
-        MODEL_LOADER.start_polling()
-        logger.info("Modelo cargado y polling iniciado al arrancar")
-    except Exception as exc:
-        logger.warning(
-            "No se pudo cargar el modelo al arrancar: %s. /predict retornará 503.", exc
-        )
+    # Carga de modelos en background: mlflow es pesado al importar (~40 s en EC2
+    # pequeña). Correrlo en un hilo daemon hace que uvicorn sirva /health de inmediato;
+    # /predict retorna 503 hasta que el modelo esté listo (degradación controlada).
+    def _startup() -> None:
+        load_all()
+        start_polling_all()
+        logger.info("Carga de modelos y polling iniciados en background")
+
+    threading.Thread(target=_startup, daemon=True, name="model-startup").start()
     yield
 
 

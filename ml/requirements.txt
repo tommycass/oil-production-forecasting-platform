@@ -1,0 +1,20 @@
+# Dependencias del paquete ml/ (modelado + feature engineering + tracking).
+# Dagster valida contra este archivo antes de ejecutar el retrain
+# (data_pipeline/orchestration/retrain.py -> `python -m ml.baseline`).
+# Versiones fijadas a las usadas al entrenar/registrar los modelos en MLflow.
+
+# Datos y cómputo numérico
+numpy==1.26.4
+pandas==2.0.3
+
+# Modelado
+scikit-learn==1.7.0
+xgboost==2.1.3
+joblib==1.2.0
+
+# Tracking / registry de experimentos
+mlflow==3.10.1
+
+# EDA y utilidades
+matplotlib==3.7.1
+tqdm==4.66.4

@@ -2,8 +2,10 @@
 #
 # Sirve el webserver + daemon de Dagster cargando el grafo de assets del pipeline
 # (data_pipeline.orchestration.definitions): Bronze(parquet) → Bronze(Postgres) →
-# Silver → Gold + Data Quality. Se levanta vía el perfil "orchestration" del
-# docker-compose; no forma parte del stack por defecto ni del build de CI.
+# Silver → Gold + Data Quality, y el job de retrain (Fase 3, ADR-041): materializa el
+# feature store (reusa ml/) y reentrena los dos modelos (petróleo y gas, ADR-042). Se
+# levanta vía el perfil "orchestration" del docker-compose; no forma parte del stack
+# por defecto ni del build de CI.
 FROM python:3.11-slim
 
 # git: por si `dbt deps` resuelve algún paquete vía git. psycopg2-binary trae su
@@ -14,15 +16,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 WORKDIR /opt/dagster/app
 ENV PYTHONPATH=/opt/dagster/app
 
-# Requirements primero (capa cacheable): deps del pipeline + del proyecto dbt.
+# Requirements primero (capa cacheable): deps del pipeline + del proyecto dbt + de ml/.
+# ml/ hace falta porque el job de retrain materializa el feature store (importa
+# ml.features) y entrena (subprocess `python -m ml.baseline|train`); ver ADR-041.
 COPY data_pipeline/requirements.txt /tmp/req-pipeline.txt
 COPY transform/requirements.txt /tmp/req-transform.txt
-RUN pip install --no-cache-dir -r /tmp/req-pipeline.txt -r /tmp/req-transform.txt
+COPY ml/requirements.txt /tmp/req-ml.txt
+RUN pip install --no-cache-dir -r /tmp/req-pipeline.txt -r /tmp/req-transform.txt -r /tmp/req-ml.txt
 
-# Código del pipeline + proyecto dbt. PROJECT_ROOT (config.py) resuelve a este WORKDIR,
-# así transform/ queda en /opt/dagster/app/transform como espera el DbtProject.
+# Código del pipeline + proyecto dbt + paquete ml/. PROJECT_ROOT (config.py) resuelve a
+# este WORKDIR, así transform/ queda en /opt/dagster/app/transform como espera el
+# DbtProject y ml/ en /opt/dagster/app/ml (DATA_CSV bajo data/, montada como volumen).
 COPY data_pipeline/ ./data_pipeline/
 COPY transform/ ./transform/
+COPY ml/ ./ml/
 
 # Paquetes dbt (dbt_utils, dbt_expectations) resueltos en build.
 RUN cd transform && dbt deps

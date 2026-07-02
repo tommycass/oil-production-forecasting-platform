@@ -19,19 +19,18 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin, clone
-from sklearn.compose import ColumnTransformer
+from sklearn.base import clone
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.impute import SimpleImputer
 from sklearn.linear_model import Ridge
 from sklearn.metrics import make_scorer, mean_squared_error, r2_score
-from sklearn.model_selection import ParameterGrid, cross_val_score
+from sklearn.model_selection import ParameterGrid, ParameterSampler, cross_val_score
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from tqdm.auto import tqdm
 from xgboost import XGBRegressor
 
-from ml import dataset
+from ml import dataset, preprocessing
+from ml.config import RANDOM_STATE
 
 # columnas que NO son features (claves, target)
 KEYS = ["idpozo", "periodo", "periodo_objetivo", "split"]
@@ -43,16 +42,19 @@ NEEDS_SCALING = {"reg_lineal"}
 
 # --- Matriz de features y split --------------------------------------------
 
-def build_feature_matrix(ds: pd.DataFrame | None = None) -> tuple[pd.DataFrame, list[str]]:
+def build_feature_matrix(
+    ds: pd.DataFrame | None = None, target: str = "prod_pet"
+) -> tuple[pd.DataFrame, list[str]]:
     """Devuelve ``(ds, feature_cols)``: el dataset con las features **crudas**
     (numéricas + categóricas sin codificar) y la lista de columnas que son features.
 
     El one-hot NO se hace acá: vive en el ``Pipeline`` (``build_pipeline``) para
     poder ajustarlo por fold durante la CV. Si no se pasa ``ds``, se construye con
-    ``ml.dataset.build_basic_dataset``.
+    ``ml.dataset.build_basic_dataset`` para el ``target`` indicado (``prod_pet`` por
+    defecto; ``prod_gas`` para el modelo de gas, ADR-042).
     """
     if ds is None:
-        ds = dataset.build_basic_dataset()
+        ds = dataset.build_basic_dataset(target=target)
     feature_cols = [c for c in ds.columns if c not in KEYS + [TARGET_COL]]
     return ds, feature_cols
 
@@ -73,75 +75,38 @@ def split_train_val(
     )
 
 
-# --- Preprocesamiento: one-hot con fallback, dentro del Pipeline -----------
+def split_dev_test(
+    ds: pd.DataFrame, feature_cols: list[str]
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+    """Separa en (X_dev, y_dev, X_test, y_test): **dev = train + val** para el
+    entrenamiento final del modelo elegido, y **test** para la evaluación única.
 
-class OneHotDESC(BaseEstimator, TransformerMixin):
-    """One-hot con fallback explícito ``DESCONOCIDO`` (ADR-032), apto para usar
-    como paso de un ``Pipeline`` / ``ColumnTransformer``.
-
-    A diferencia de ``ml.dataset.fit_onehot_encoder`` (que filtra ``split=="train"``),
-    aprende el vocabulario en ``fit`` con **todas las filas que recibe** — que dentro
-    de la cross-validation son las del **train de cada fold**. En ``transform``, los
-    nulos y las **categorías no vistas** se mapean a la columna ``<feature>_DESCONOCIDO``.
-    Así el one-hot también se ajusta por fold (sin leakage val→train en el vocabulario).
-    """
-
-    FILL = dataset.CATEGORICAL_NA_FILL  # "DESCONOCIDO"
-
-    def fit(self, X, y=None):
-        X = pd.DataFrame(X)
-        self.columns_ = list(X.columns)
-        categories = []
-        for c in self.columns_:
-            cats = sorted(X[c].fillna(self.FILL).unique().tolist())
-            if self.FILL not in cats:
-                cats.append(self.FILL)
-            categories.append(cats)
-        self.known_ = [set(c) for c in categories]
-        self.encoder_ = OneHotEncoder(
-            categories=categories, handle_unknown="ignore",
-            sparse_output=False, dtype="uint8",
-        ).fit(X[self.columns_].fillna(self.FILL))
-        return self
-
-    def transform(self, X):
-        X = pd.DataFrame(X)[self.columns_].copy()
-        for i, c in enumerate(self.columns_):
-            X[c] = X[c].where(X[c].isin(self.known_[i]), self.FILL)
-        return self.encoder_.transform(X)
-
-    def get_feature_names_out(self, input_features=None):
-        return self.encoder_.get_feature_names_out(self.columns_)
+    El preprocesamiento se ajusta sobre dev (test queda fuera), igual que en la CV
+    se ajustaba por fold: ningún estadístico ve test (anti-leakage)."""
+    usable = ds[ds[TARGET_COL].notna()]
+    dev = usable[usable.split.isin(["train", "val"])]
+    te = usable[usable.split == "test"]
+    return (
+        dev[feature_cols], dev[TARGET_COL],
+        te[feature_cols], te[TARGET_COL],
+    )
 
 
-def _split_cols(feature_cols: list[str]) -> tuple[list[str], list[str]]:
-    """Separa ``feature_cols`` en (numéricas, categóricas) según ADR-031/032."""
-    cat = [c for c in feature_cols if c in dataset.BASIC_CATEGORICAL_FEATURES]
-    num = [c for c in feature_cols if c not in dataset.BASIC_CATEGORICAL_FEATURES]
-    return num, cat
-
+# --- Preprocesamiento + modelo, todo dentro del Pipeline -------------------
 
 def build_pipeline(estimator, scale: bool, feature_cols: list[str]) -> Pipeline:
-    """Pipeline de preprocesamiento + modelo, con **todo lo aprendido fit en train**.
+    """Pipeline de preprocesamiento por feature + modelo, con **todo lo aprendido
+    fit en train**.
 
-    - numéricas → imputación por **mediana**;
-    - categóricas → **one-hot con fallback ``DESCONOCIDO``** (``OneHotDESC``);
-    - opcional → **estandarización** (para la regresión lineal/ridge);
-    - modelo.
-
-    Que el ``ColumnTransformer`` (one-hot + imputación) y el ``StandardScaler``
-    vivan en el ``Pipeline`` es lo que garantiza que, en la CV, **los tres se
-    reajusten solo con el train de cada fold** (anti-leakage val→train).
+    El preprocesamiento (``ml.preprocessing.build_preprocessor``: imputación de NaN
+    por feature + flags, one-hot con ``DESCONOCIDO``) y el
+    ``StandardScaler`` opcional viven dentro del ``Pipeline``. Por eso, en la CV,
+    **todos los estadísticos (medianas, percentiles, vocabulario, media/desvío) se
+    reajustan solo con el train de cada fold** (anti-leakage val→train); y el train
+    son filas ``periodo <= TRAIN_END`` (pasado). El escalado solo se agrega para los
+    modelos lineales (``scale=True``); los árboles no lo necesitan.
     """
-    num_cols, cat_cols = _split_cols(feature_cols)
-    prep = ColumnTransformer(
-        transformers=[
-            ("num", SimpleImputer(strategy="median"), num_cols),
-            ("cat", OneHotDESC(), cat_cols),
-        ],
-        remainder="drop",
-    )
-    steps = [("prep", prep)]
+    steps = [("prep", preprocessing.build_preprocessor(feature_cols))]
     if scale:
         steps.append(("scaler", StandardScaler()))
     steps.append(("model", estimator))
@@ -150,7 +115,7 @@ def build_pipeline(estimator, scale: bool, feature_cols: list[str]) -> Pipeline:
 
 # --- Modelos y evaluación --------------------------------------------------
 
-def get_models(random_state: int = 42) -> dict:
+def get_models(random_state: int = RANDOM_STATE) -> dict:
     """Modelos a comparar, con hiperparámetros razonables para un primer barrido.
 
     El comparador lineal es ``Ridge`` (no ``LinearRegression`` pelada): con ~380
@@ -171,6 +136,57 @@ def get_models(random_state: int = 42) -> dict:
     }
 
 
+# Mejores hiperparámetros registrados (del tuning con CV temporal). Indexados por
+# **target**: petróleo (notebook 03_modeling §4.1) y gas (notebook 04_modeling_gas
+# §4); ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos
+# en vez de defaults
+# arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
+# ahora se mantienen acá como "últimos mejores registrados".)
+# Nota: los hiperparámetros de RF y XGBoost coincidieron entre petróleo y gas
+# (mismo grid + misma semilla del random search); solo difiere el alpha de Ridge.
+BEST_PARAMS = {
+    "prod_pet": {
+        "ridge": {"alpha": 1128.8378916846884},
+        "random_forest": {
+            "n_estimators": 400, "max_depth": 16,
+            "max_features": 0.5, "min_samples_leaf": 2,
+        },
+        "xgboost": {
+            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+        },
+    },
+    "prod_gas": {
+        "ridge": {"alpha": 29.76351441631316},
+        "random_forest": {
+            "n_estimators": 400, "max_depth": 16,
+            "max_features": 0.5, "min_samples_leaf": 2,
+        },
+        "xgboost": {
+            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+        },
+    },
+}
+
+
+def make_estimator(
+    name: str, params: dict | None = None, target: str = "prod_pet",
+    random_state: int = RANDOM_STATE,
+):
+    """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[target][name]``
+    si no se pasan): los **últimos mejores hiperparámetros registrados** para ese
+    ``target`` (petróleo / gas, ADR-040)."""
+    params = BEST_PARAMS[target][name] if params is None else params
+    if name == "ridge":
+        return Ridge(**params)
+    if name == "random_forest":
+        return RandomForestRegressor(n_jobs=-1, random_state=random_state, **params)
+    if name == "xgboost":
+        return XGBRegressor(tree_method="hist", n_jobs=-1, random_state=random_state, **params)
+    raise ValueError(f"modelo desconocido: {name}")
+
+
 def rmse(y_true, y_pred) -> float:
     """RMSE compatible con todas las versiones de sklearn (no usa
     ``root_mean_squared_error``, que recién existe desde sklearn 1.4)."""
@@ -189,11 +205,12 @@ def evaluate(y_true, y_pred) -> dict[str, float]:
     }
 
 
-def persistence_val(ds: pd.DataFrame) -> dict[str, float]:
-    """Baseline de persistencia en val: ŷ(t+1) = prod_pet(t). Referencia a batir
-    (ADR-029); ``prod_pet`` en el dataset es justo la producción del mes t."""
+def persistence_val(ds: pd.DataFrame, target: str = "prod_pet") -> dict[str, float]:
+    """Baseline de persistencia en val: ŷ(t+1) = ``target``(t). Referencia a batir
+    (ADR-029); ``target`` en el dataset (``prod_pet``/``prod_gas``) es justo la
+    producción del mes t."""
     va = ds[(ds.split == "val") & ds[TARGET_COL].notna()]
-    return evaluate(va[TARGET_COL], va["prod_pet"])
+    return evaluate(va[TARGET_COL], va[target])
 
 
 def train_eval_models(
@@ -268,10 +285,19 @@ def train_search_arrays(
     return tr[feature_cols], tr[TARGET_COL].to_numpy(), tr["periodo"].to_numpy()
 
 
-def search_spaces(random_state: int = 42) -> dict:
-    """Espacios de búsqueda por modelo. ``ridge`` tunea la lambda L2 (``alpha``);
-    los árboles, sus hiperparámetros principales. Grids chicos a propósito
-    (ampliables) para que la corrida sea manejable.
+def search_spaces(random_state: int = RANDOM_STATE) -> dict:
+    """Espacios de búsqueda por modelo para **random search** (``ParameterSampler``).
+
+    Cada hiperparámetro es una **lista de valores elegidos a mano** (3–5 según el
+    caso, en rangos con sentido); ``tune_model`` **muestrea ``n_iter``** combinaciones
+    de la grilla, así se explora sin enumerar todo. ``ridge`` tunea la lambda L2
+    (``alpha``); los árboles, sus hiperparámetros principales.
+
+    **Cuántas iteraciones por modelo:** el campo ``n_iter`` de cada spec. Editalo
+    acá para cambiar cuántas configuraciones prueba *ese* modelo (ridge tiene una
+    grilla chica, así que con 5 ya las cubre todas; los árboles tienen grilla grande
+    y conviene muestrear más). También se puede pisar globalmente pasando ``n_iter``
+    a ``tune_all``/``tune_model``.
 
     ``search_n_jobs``: para los árboles (que ya paralelizan internamente con
     ``n_jobs=-1``) se deja en 1 para no sobre-suscribir CPU; para ridge, -1.
@@ -281,17 +307,22 @@ def search_spaces(random_state: int = 42) -> dict:
             "estimator": Ridge(),
             "scale": True,
             "search_n_jobs": -1,
-            "grid": {"model__alpha": [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]},
+            "n_iter": 20,  # grilla de 20 alphas log-espaciados: prueba las 20
+            # lambda L2: la regularización se mueve por órdenes de magnitud, así
+            # que la grilla es log-espaciada (0.01 → 10000), 20 valores.
+            "space": {"model__alpha": list(np.logspace(-2, 4, 20))},
         },
         "random_forest": {
             "estimator": RandomForestRegressor(n_jobs=-1, random_state=random_state),
             "scale": False,
             "search_n_jobs": 1,
-            "grid": {
-                "model__n_estimators": [300],
-                "model__max_depth": [None, 16],
-                "model__min_samples_leaf": [5, 20],
-                "model__max_features": ["sqrt", 0.3],
+            "n_iter": 20,  # grilla de 240: muestrea 20
+            "space": {
+                "model__n_estimators": [10, 50, 100, 200, 400],
+                # profundidad alta pero ACOTADA (sin None: gana por sobreajuste).
+                "model__max_depth": [12, 16, 24, 32],
+                "model__min_samples_leaf": [2, 5, 10, 20],
+                "model__max_features": ["sqrt", 0.3, 0.5],
             },
         },
         "xgboost": {
@@ -300,12 +331,14 @@ def search_spaces(random_state: int = 42) -> dict:
             ),
             "scale": False,
             "search_n_jobs": 1,
-            "grid": {
-                "model__n_estimators": [400, 800],
-                "model__learning_rate": [0.03, 0.05],
-                "model__max_depth": [4, 6, 8],
-                "model__subsample": [0.8],
-                "model__colsample_bytree": [0.8],
+            "n_iter": 20,  # grilla de 2160: muestrea 20
+            "space": {
+                "model__n_estimators": [10, 50, 100, 200, 400],
+                "model__learning_rate": [0.01, 0.03, 0.05, 0.1],
+                "model__max_depth": [12, 16, 24, 32],
+                "model__min_child_weight": [1, 5, 10],
+                "model__subsample": [0.7, 0.8, 1.0],
+                "model__colsample_bytree": [0.7, 0.8, 1.0],
             },
         },
     }
@@ -313,27 +346,33 @@ def search_spaces(random_state: int = 42) -> dict:
 
 def tune_model(
     spec: dict, X_train: pd.DataFrame, y_train: np.ndarray,
-    periodos_train: np.ndarray, n_splits: int = 4,
-    nombre: str = "modelo", progress: bool = True,
+    periodos_train: np.ndarray, n_splits: int = 4, n_iter: int | None = None,
+    nombre: str = "modelo", progress: bool = True, random_state: int = RANDOM_STATE,
 ) -> SimpleNamespace:
-    """Grid search con CV temporal para un modelo, con **barra de progreso**.
+    """Random search con CV temporal para un modelo, con **barra de progreso**.
 
-    Recorre cada combinación de ``spec["grid"]`` y la evalúa con ``cross_val_score``
-    sobre los folds temporales (RMSE promedio); el ``Pipeline`` (one-hot +
-    imputación [+ escalado] + modelo) se reajusta **por fold**. La barra (``tqdm``)
-    avanza una vez por combinación y muestra el mejor RMSE hasta el momento.
-    Reentrena el mejor estimador en **todo** train.
+    Muestrea ``n_iter`` configuraciones de ``spec["space"]`` (``ParameterSampler``)
+    y evalúa cada una con ``cross_val_score`` sobre los folds temporales (RMSE
+    promedio); el ``Pipeline`` (one-hot + imputación [+ escalado] + modelo) se
+    reajusta **por fold**. La barra (``tqdm``) avanza una vez por configuración y
+    muestra el mejor RMSE hasta el momento. Reentrena el mejor estimador en **todo**
+    train. ``n_iter`` controla cuántas configuraciones se prueban (y el tiempo).
 
     Devuelve un objeto con ``best_params_``, ``best_score_`` (= -RMSE de CV) y
     ``best_estimator_`` (Pipeline ajustado), compatible con el resto del módulo.
     """
     folds = time_series_folds(periodos_train, n_splits=n_splits)
     feature_cols = list(X_train.columns)
-    combos = list(ParameterGrid(spec["grid"]))
+    # n_iter: el del spec por defecto; si se pasa explícito, lo pisa.
+    n_iter = spec.get("n_iter", 20) if n_iter is None else n_iter
+    # muestrea n_iter combos de la grilla discreta; si la grilla es más chica que
+    # n_iter, se prueban todas (capear evita el warning de ParameterSampler).
+    n_eff = min(n_iter, len(ParameterGrid(spec["space"])))
+    combos = list(ParameterSampler(spec["space"], n_iter=n_eff, random_state=random_state))
     n_jobs = spec.get("search_n_jobs", 1)
 
     resultados, mejor_rmse = [], np.inf
-    barra = tqdm(combos, desc=f"{nombre} ({len(combos)} combos)", disable=not progress)
+    barra = tqdm(combos, desc=f"{nombre} ({len(combos)} configs)", disable=not progress)
     for params in barra:
         pipe = build_pipeline(clone(spec["estimator"]), spec["scale"], feature_cols).set_params(**params)
         scores = cross_val_score(
@@ -360,19 +399,20 @@ def tune_model(
 
 def tune_all(
     ds: pd.DataFrame, feature_cols: list[str], n_splits: int = 4,
-    progress: bool = True,
+    n_iter: int | None = None, progress: bool = True,
 ) -> tuple[pd.DataFrame, dict]:
-    """Tunea ridge, random_forest y xgboost con CV temporal sobre train.
+    """Tunea ridge, random_forest y xgboost con random search + CV temporal.
 
-    Cada modelo muestra su propia barra de progreso. Devuelve ``(tabla_cv,
-    searches)``: la tabla con el RMSE de CV y los mejores hiperparámetros de cada
-    modelo, y el dict de resultados de búsqueda.
+    ``n_iter`` controla cuántas configuraciones prueba cada modelo: si es ``None``
+    (default) se usa el del spec de cada modelo (``search_spaces``); si se pasa un
+    número, **pisa** el de todos. Cada modelo muestra su barra de progreso. Devuelve
+    ``(tabla_cv, searches)``: RMSE de CV y mejores hiperparámetros por modelo.
     """
     X_tr, y_tr, periodos = train_search_arrays(ds, feature_cols)
     searches, filas = {}, []
     for nombre, spec in search_spaces().items():
         search = tune_model(
-            spec, X_tr, y_tr, periodos, n_splits=n_splits,
+            spec, X_tr, y_tr, periodos, n_splits=n_splits, n_iter=n_iter,
             nombre=nombre, progress=progress,
         )
         searches[nombre] = search
@@ -386,7 +426,7 @@ def tune_all(
 
 
 def eval_searches_on_val(
-    searches: dict, ds: pd.DataFrame, feature_cols: list[str],
+    searches: dict, ds: pd.DataFrame, feature_cols: list[str], target: str = "prod_pet",
 ) -> pd.DataFrame:
     """Evalúa el mejor estimador de cada búsqueda sobre **val** (held-out, intacto
     durante el tuning) más la persistencia. Tabla comparativa ordenada por val_rmse.
@@ -396,12 +436,12 @@ def eval_searches_on_val(
     for nombre, search in searches.items():
         pred = search.best_estimator_.predict(X_val)
         filas.append({"modelo": nombre, **evaluate(y_val, pred)})
-    filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds)})
+    filas.append({"modelo": "persistencia (baseline)", **persistence_val(ds, target)})
     return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
 
 
 def eval_searches_train_val(
-    searches: dict, ds: pd.DataFrame, feature_cols: list[str],
+    searches: dict, ds: pd.DataFrame, feature_cols: list[str], target: str = "prod_pet",
 ) -> pd.DataFrame:
     """Toma la **mejor config** de cada búsqueda y mide RMSE/R² en **train y val**.
 
@@ -423,10 +463,10 @@ def eval_searches_train_val(
             "val_rmse": m_va["val_rmse"], "val_r2": m_va["val_r2"],
         })
 
-    # persistencia (ŷ = prod_pet(t)) en cada split, como referencia
+    # persistencia (ŷ = target(t)) en cada split, como referencia
     usable = ds[ds[TARGET_COL].notna()]
-    p_tr = evaluate(*_persistencia(usable, "train"))
-    p_va = evaluate(*_persistencia(usable, "val"))
+    p_tr = evaluate(*_persistencia(usable, "train", target))
+    p_va = evaluate(*_persistencia(usable, "val", target))
     filas.append({
         "modelo": "persistencia (baseline)",
         "train_rmse": p_tr["val_rmse"], "train_r2": p_tr["val_r2"],
@@ -435,7 +475,9 @@ def eval_searches_train_val(
     return pd.DataFrame(filas).sort_values("val_rmse").reset_index(drop=True)
 
 
-def _persistencia(usable: pd.DataFrame, split: str) -> tuple[pd.Series, pd.Series]:
-    """(y_true, y_pred) de la persistencia para un split: ŷ(t+1) = prod_pet(t)."""
+def _persistencia(
+    usable: pd.DataFrame, split: str, target: str = "prod_pet"
+) -> tuple[pd.Series, pd.Series]:
+    """(y_true, y_pred) de la persistencia para un split: ŷ(t+1) = ``target``(t)."""
     s = usable[usable.split == split]
-    return s[TARGET_COL], s["prod_pet"]
+    return s[TARGET_COL], s[target]
