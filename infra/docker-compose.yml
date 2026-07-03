@@ -15,6 +15,10 @@ services:
       # mlflow.sklearn.load_model resuelve URIs file:// directamente (no via proxy),
       # por eso el container necesita acceso al path donde el training dejó los artefactos.
       - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts
+      # El Pipeline fue entrenado con transformers del paquete ml/. Sklearn los necesita
+      # importar al deserializar (pickle). Se monta en /app/ml para que sea importable
+      # (el working dir del container es /app, que está en sys.path).
+      - ../ml:/app/ml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
