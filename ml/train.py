@@ -35,7 +35,7 @@ from ml.config import PROJECT_ROOT, TARGET, TARGETS
 
 MODELS_DIR = PROJECT_ROOT / "models"
 # Campeón según la comparación TUNEADA en val sobre el set recursion-safe (notebooks
-# 05/06 §3.1, ADR-043/044): random_forest (val RMSE ~227.5 / R² 0.902 en petróleo;
+# 02/03 §3.1, ADR-043/044): random_forest (val RMSE ~227.1 / R² 0.903 en petróleo;
 # ~576.6 / 0.861 en gas) supera a xgboost, ridge y la persistencia. Se entrena siempre
 # recursion-safe (ver train()), así que este campeón sirve para /predict y /forecast.
 CHAMPION = "random_forest"
@@ -56,7 +56,7 @@ def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
     ``pipeline`` devuelto es el artefacto a versionar/loguear (gancho para Rol 3).
     ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
 
-    Entrena **siempre con el set recursion-safe** (ADR-043/044, notebooks 05/06): es el
+    Entrena **siempre con el set recursion-safe** (ADR-043/044, notebooks 02/03): es el
     modelo por defecto y único de producción, apto tanto para ``/predict`` (un paso)
     como para el forecast recursivo (``/forecast``). Se excluyen las features que no se
     pueden recalcular en un mes futuro desde la trayectoria del target

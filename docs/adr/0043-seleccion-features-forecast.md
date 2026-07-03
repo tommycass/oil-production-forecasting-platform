@@ -12,7 +12,7 @@ Con 35 candidatas hace falta **decidir el set final**, con tres criterios en ten
 2. **Robustez a cold-start** — pozos **sin historial** (primeros meses de su serie): todas las features autorregresivas les quedan `NaN` → el modelo debe apoyarse en otra cosa.
 3. **Mantenibilidad del feature store** — cada feature es una columna a materializar y mantener con paridad training-serving (ADR-036).
 
-**Metodología (leakage-safe).** El ranking se calculó con **permutation importance sobre `val`** aplicada al modelo campeón (Random Forest tuneado con CV temporal), en `notebooks/05_feature_selection_pet.ipynb`, con la lógica en `ml/selection.py`. Se mide en val (no en train) para no premiar lo que el modelo memorizó; **`test` quedó intacto**. La granularidad es la **feature cruda** (se permuta `empresa` entera, no una dummy suelta). La importancia queda en **m³** = cuánto sube el RMSE de val al romper esa feature.
+**Metodología (leakage-safe).** El ranking se calculó con **permutation importance sobre `val`** aplicada al modelo campeón (Random Forest tuneado con CV temporal), en `notebooks/02_feature_selection_pet.ipynb`, con la lógica en `ml/selection.py`. Se mide en val (no en train) para no premiar lo que el modelo memorizó; **`test` quedó intacto**. La granularidad es la **feature cruda** (se permuta `empresa` entera, no una dummy suelta). La importancia queda en **m³** = cuánto sube el RMSE de val al romper esa feature.
 
 ## Ranking de features (petróleo, `prod_pet`)
 
@@ -129,7 +129,7 @@ Se conserva el esquema de imputación **0 + flag** para las autorregresivas (ADR
 **Positivas:**
 - Set **compacto** (~14 features fijas) que en val casi iguala al de 35 (RF 234.5 vs 227.8) → menos columnas a materializar y mantener (ADR-036), modelo más simple y rápido.
 - **Robustez a cold-start explícita:** al conservar las anclas estáticas, un pozo nuevo tiene señal (reservorio, profundidad, ubicación) aunque sus features autorregresivas estén en 0 + flag.
-- Decisión **empírica y auditable:** el ranking sale del notebook 05, reproducible y leakage-safe.
+- Decisión **empírica y auditable:** el ranking sale del notebook 02, reproducible y leakage-safe.
 - Baja `delta3` (ruido) detectada por el propio ranking.
 
 **Negativas / trade-offs:**
@@ -140,4 +140,4 @@ Se conserva el esquema de imputación **0 + flag** para las autorregresivas (ADR
 
 ---
 
-> Relacionados: **ADR-033** (feature engineering base que este ADR extiende y poda), **ADR-039** (imputación 0 + flag, clave para el cold-start), **ADR-031** (universo train-only y anti-leakage; define qué pozo *tiene* fila), **ADR-036** (feature store: contrato de columnas a re-materializar), **ADR-034** (algoritmo y CV temporal, sobre cuyo campeón se midió la importancia) y **ADR-042** (modelo de gas: misma selección con features `prod_gas_*`). Metodología en `ml/selection.py` y `notebooks/05_feature_selection_pet.ipynb`.
+> Relacionados: **ADR-033** (feature engineering base que este ADR extiende y poda), **ADR-039** (imputación 0 + flag, clave para el cold-start), **ADR-031** (universo train-only y anti-leakage; define qué pozo *tiene* fila), **ADR-036** (feature store: contrato de columnas a re-materializar), **ADR-034** (algoritmo y CV temporal, sobre cuyo campeón se midió la importancia) y **ADR-042** (modelo de gas: misma selección con features `prod_gas_*`). Metodología en `ml/selection.py` y `notebooks/02_feature_selection_pet.ipynb`.

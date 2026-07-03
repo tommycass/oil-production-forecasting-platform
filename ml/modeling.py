@@ -52,7 +52,7 @@ def recursion_safe_cols(feature_cols: list[str], target: str = "prod_pet") -> li
 
     Quita ``prod_vecinos_mean`` (cross-well), ``water_cut``/``prod_agua``/``tef`` (series
     medidas que no forecasteamos) y la producción **cruzada** (el otro target). Es
-    exactamente el filtro ``NO_RECURSION_SAFE`` del notebook 05/06. El resto —
+    exactamente el filtro ``NO_RECURSION_SAFE`` del notebook 02/03. El resto —
     autorregresivas del propio target + estáticas + calendario — se puede recalcular en
     cada paso recursivo.
     """
@@ -77,7 +77,7 @@ def build_feature_matrix(
     ``recursion_safe=True`` deja **solo las features recursion-safe** (ADR-043/044,
     vía ``recursion_safe_cols``): el modelo entrenado con ellas se puede usar en el
     forecast recursivo (``/forecast``). Es el mismo set con el que trabaja el notebook
-    05/06. Por defecto ``False`` (todas las features, modelo de un paso).
+    02/03. Por defecto ``False`` (todas las features, modelo de un paso).
     """
     if ds is None:
         ds = dataset.build_basic_dataset(target=target)
@@ -166,7 +166,7 @@ def get_models(random_state: int = RANDOM_STATE) -> dict:
 
 # Mejores hiperparámetros registrados (del tuning con CV temporal sobre el set
 # **recursion-safe**, ADR-043/044). Indexados por **target**: petróleo (notebook
-# 05_feature_selection_pet §3.1) y gas (notebook 06_feature_selection_gas §3.1);
+# 02_feature_selection_pet §3.1) y gas (notebook 03_feature_selection_gas §3.1);
 # ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos en vez de
 # defaults arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
 # ahora se mantienen acá como "últimos mejores registrados".)

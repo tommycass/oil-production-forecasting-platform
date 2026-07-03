@@ -29,7 +29,7 @@ Se evaluaron reglas deterministas sobre el **dataset unificado** (`build_basic_d
 - **Persistencia:** la más simple posible y la **mejor** en val y test. Coherente con la alta autocorrelación observada (corr 0,95 con el mes siguiente).
 - **Regla de declinación (Arps / tasa de declinación):** alternativa "de negocio" más sofisticada (ŷ = y(t)·(1 − tasa)). Se descartó **como baseline** porque requiere estimar una tasa por pozo, lo que ya la convierte en un mini-modelo y le quita el rol de referencia trivial. Queda como posible feature/idea para el modelo, no como baseline.
 
-> La persistencia en val (RMSE 250,6 / R² 0,881) coincide exactamente con la que reporta el notebook `03_modeling_pet.ipynb`, confirmando que baselines y modelos corren sobre el mismo dataset y split.
+> La persistencia en val (RMSE 250,6 / R² 0,881) coincide exactamente con la que reporta el notebook `02_feature_selection_pet.ipynb`, confirmando que baselines y modelos corren sobre el mismo dataset y split.
 
 ## Decisión
 
