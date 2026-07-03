@@ -13,8 +13,8 @@ services:
       - ../api/.env
     volumes:
       # mlflow.sklearn.load_model resuelve URIs file:// directamente (no via proxy),
-      # por eso el container necesita leer el mismo path donde el training dejó los artefactos.
-      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts:ro
+      # por eso el container necesita acceso al path donde el training dejó los artefactos.
+      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
@@ -252,7 +252,9 @@ services:
 
   # MLflow tracking server + model registry (ADR-032). Perfil "ml".
   # Backend: Postgres (misma instancia que el DW, base separada mlflow_db).
-  # Artifacts: volumen local con --serve-artifacts (la API descarga vía HTTP, sin montar el volumen).
+  # Artifacts: el training corre en el host y escribe a mlartifacts/ con URI file://.
+  # La API los lee directamente (mlflow.sklearn.load_model resuelve file:// sin proxy),
+  # por eso tanto mlflow como api montan el mismo path del host.
   # Uso local: docker compose --profile ml --profile local-db up
   # Staging/prod: POSTGRES_HOST apunta al RDS; la base mlflow_db debe existir previamente.
   mlflow:
