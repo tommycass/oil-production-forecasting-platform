@@ -164,35 +164,37 @@ def get_models(random_state: int = RANDOM_STATE) -> dict:
     }
 
 
-# Mejores hiperparámetros registrados (del tuning con CV temporal). Indexados por
-# **target**: petróleo (notebook 03_modeling §4.1) y gas (notebook 04_modeling_gas
-# §4); ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos
-# en vez de defaults
-# arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
+# Mejores hiperparámetros registrados (del tuning con CV temporal sobre el set
+# **recursion-safe**, ADR-043/044). Indexados por **target**: petróleo (notebook
+# 05_feature_selection_pet §3.1) y gas (notebook 06_feature_selection_gas §3.1);
+# ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos en vez de
+# defaults arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
 # ahora se mantienen acá como "últimos mejores registrados".)
-# Nota: los hiperparámetros de RF y XGBoost coincidieron entre petróleo y gas
-# (mismo grid + misma semilla del random search); solo difiere el alpha de Ridge.
+# Nota: XGBoost coincidió entre petróleo y gas (mismo grid + misma semilla del random
+# search); RF difirió (petróleo: 200 árboles / prof. 24; gas: 400 / 16) y el alpha de
+# Ridge es data-dependiente. min_samples_leaf=5 en RF (más regularización que el set
+# completo previo) sale del re-tuneo sobre las features recursion-safe.
 BEST_PARAMS = {
     "prod_pet": {
-        "ridge": {"alpha": 1128.8378916846884},
+        "ridge": {"alpha": 10000.0},
         "random_forest": {
-            "n_estimators": 400, "max_depth": 16,
-            "max_features": 0.5, "min_samples_leaf": 2,
+            "n_estimators": 200, "max_depth": 24,
+            "max_features": 0.5, "min_samples_leaf": 5,
         },
         "xgboost": {
-            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
-            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+            "n_estimators": 50, "learning_rate": 0.1, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.8, "colsample_bytree": 0.8,
         },
     },
     "prod_gas": {
-        "ridge": {"alpha": 29.76351441631316},
+        "ridge": {"alpha": 3.359818286283781},
         "random_forest": {
             "n_estimators": 400, "max_depth": 16,
-            "max_features": 0.5, "min_samples_leaf": 2,
+            "max_features": 0.5, "min_samples_leaf": 5,
         },
         "xgboost": {
-            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
-            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+            "n_estimators": 50, "learning_rate": 0.1, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.8, "colsample_bytree": 0.8,
         },
     },
 }

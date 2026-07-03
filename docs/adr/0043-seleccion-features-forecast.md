@@ -1,10 +1,10 @@
 # Título: ADR-043: Selección de features del forecast (ranking por permutation importance y robustez a cold-start)
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 
-El ADR-033 definió 7 features derivadas y, para habilitar el **forecast recursivo** (predecir t+1, t+2, … realimentando la propia predicción), el set autorregresivo se amplió con más features **recursion-safe** del propio target (`prod_pet_lag2/lag3/roll6/acum12/delta3/ratio1/std3/cummax/frac_peak/meses_desde_pico` + `well_age_months`). Eso dejó un **set candidato de 35 features recursion-safe** (excluyendo las que no se pueden recalcular en un mes futuro desde la trayectoria del target: `prod_vecinos_mean` —cross-well—, `water_cut`, `prod_gas`, `prod_agua`, `tef`).
+El objetivo del forecast es **recursivo** (predecir t+1, t+2, … realimentando la propia predicción), así que el modelo se construye desde el inicio sobre un set **recursion-safe**: features que se pueden recalcular en un mes futuro a partir de la trayectoria del propio target. Ese set junta las features de ingeniería del ADR-033 con las autorregresivas del propio target (`prod_pet_lag2/lag3/roll6/acum12/delta3/ratio1/std3/cummax/frac_peak/meses_desde_pico` + `well_age_months`), y **excluye** las que no se pueden recalcular hacia el futuro (`prod_vecinos_mean` —cross-well—, `water_cut`, `prod_gas`, `prod_agua`, `tef`). Queda un **set candidato de 35 features recursion-safe**.
 
 Con 35 candidatas hace falta **decidir el set final**, con tres criterios en tensión:
 
@@ -136,7 +136,7 @@ Se conserva el esquema de imputación **0 + flag** para las autorregresivas (ADR
 - El cold-start **sigue siendo el punto débil**: sin la señal autorregresiva dominante, la predicción de pozos nuevos es intrínsecamente más pobre. Este ADR lo *mitiga* (anclas), no lo resuelve.
 - La importancia se midió sobre la **población general**; la calibración fina de cuántas estáticas conservar debería hacerse sobre la **subpoblación cold-start** (pendiente).
 - La erosión del *edge* sobre la persistencia en **test** sugiere posible cambio de distribución entre períodos; conviene monitorearlo y no sobre-vender la mejora del modelo.
-- El set final cambia el **contrato del feature store** y el input del modelo (vs ADR-033/036): hay que re-materializar y versionar.
+- El **contrato del feature store** (ADR-036) debe materializar exactamente estas columnas recursion-safe con paridad training-serving, y el forecast recursivo necesita además la **serie histórica** del pozo para sembrar la recursión (no solo la fila del mes base).
 
 ---
 

@@ -1,6 +1,6 @@
 # Título: ADR-044: Forecast recursivo multi-paso (endpoint `/forecast` sobre el modelo mensual)
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 
@@ -54,7 +54,7 @@ Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**:
    - Horizonte > `MAX_FORECAST_MONTHS` → 422.
    - Pozo sin fila en el feature store (fuera del universo, ADR-031) → 404.
    - Cold-start / poca historia → las features autorregresivas quedan **0 + flag** (ADR-039); el modelo se apoya en las estáticas (ADR-043).
-6. **Dependencia (Paso 0):** requiere un **modelo recursion-safe registrado** en MLflow (entrenado solo con las features del ADR-043). El modelo de producción actual (ADR-040) **no** sirve para recursar.
+6. **Modelo:** el modelo de producción es **recursion-safe por defecto** (ADR-043/040): se entrena únicamente con features que se pueden recalcular hacia el futuro, así que `/forecast` recursa **directamente sobre el mismo modelo que sirve `/predict`**, sin un artefacto aparte.
 
 ## Consecuencias
 
@@ -66,10 +66,9 @@ Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**:
 
 **Negativas / trade-offs:**
 - **Error acumulado:** cada paso se apoya en la predicción anterior; la confianza cae con el horizonte (por eso el tope en meses).
-- **Dependencia dura del modelo recursion-safe:** hasta entrenarlo y registrarlo, el endpoint queda escrito pero no operativo. El modelo actual no es apto.
 - **Necesita la serie histórica del pozo** para sembrar la recursión (no solo la fila del feature store): hay que leerla del store/DW.
 - Reproducir en serving el mismo cálculo de features que en training (paridad, ADR-036) es más delicado en modo recursivo (se recalcula paso a paso).
 
 ---
 
-> Relacionados: **ADR-035** (contrato de `/predict`, el paso unitario), **ADR-043** (features recursion-safe: prerequisito del recursivo), **ADR-040** (modelo de producción actual, NO recursion-safe), **ADR-031/039** (universo y manejo de NaN/cold-start), **ADR-036** (feature store: fuente de la historia y paridad training-serving), **ADR-028/033** (granularidad mensual del modelo). Implementación: `ml/forecast.py` (motor), `api/app/services/forecast.py` y `api/app/routes/forecast.py` (endpoint).
+> Relacionados: **ADR-035** (contrato de `/predict`, el paso unitario), **ADR-043** (features recursion-safe: prerequisito del recursivo), **ADR-040** (modelo de producción, recursion-safe por defecto), **ADR-031/039** (universo y manejo de NaN/cold-start), **ADR-036** (feature store: fuente de la historia y paridad training-serving), **ADR-028/033** (granularidad mensual del modelo). Implementación: `ml/forecast.py` (motor), `api/app/services/forecast.py` y `api/app/routes/forecast.py` (endpoint).
