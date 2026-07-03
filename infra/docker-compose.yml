@@ -277,6 +277,11 @@ services:
           --serve-artifacts
     volumes:
       - mlartifacts:/mlartifacts
+      # El training corre en el host y escribe artefactos a mlartifacts/ del proyecto.
+      # Este bind-mount expone ese path dentro del contenedor para que el servidor
+      # pueda servirlos vía proxy (--serve-artifacts). Mismo path absoluto que el
+      # artifact_uri registrado en Postgres.
+      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts:ro
     restart: unless-stopped
     logging:
       driver: "json-file"
