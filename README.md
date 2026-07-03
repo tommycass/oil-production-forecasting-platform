@@ -531,27 +531,31 @@ usan solo datos del mes `t` o anteriores (lags **por calendario**, nunca el mes 
 materializan **dentro del job de retrain** (no en `dw_publish`), para no acoplar el refresh del
 DW de Fase 2 a las dependencias de `ml/`.
 
-Cada fila tiene **29 features** en tres grupos (las engineered llevan el prefijo del target):
+Cada fila tiene **35 features** (el set **recursion-safe**, ADR-043: las que el modelo usa y
+se pueden recalcular hacia el futuro para el forecast recursivo), en tres grupos:
 
-- **8 numéricas base** (medidas del mes `t` + atributos): `prod_pet`, `prod_gas`,
-  `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday` y `mes` (mes del target
-  `t+1`, conocido de antemano).
-- **7 de ingeniería** (`ml/features.py`), las autorregresivas calculadas **sobre el target**
-  (`prod_pet` en el modelo de petróleo, `prod_gas` en el de gas):
+- **5 numéricas base** (del mes `t` + atributos): `{target}` (nivel del mes `t`),
+  `profundidad`, `coordenadax`, `coordenaday` y `mes` (mes del target `t+1`, conocido de
+  antemano).
+- **16 de ingeniería** (`ml/features.py`), autorregresivas sobre el target (`prod_pet` /
+  `prod_gas`):
 
   | Feature | Cálculo |
   |---|---|
-  | `{target}_roll3` | media móvil del target en {t, t-1, t-2} (nivel reciente) |
-  | `{target}_delta1` | `target(t) − target(t-1)` (declinación reciente) |
-  | `{target}_lag12` | `target(t-12)` (estacionalidad anual) |
-  | `{target}_acum6` | acumulado del target en {t … t-5} |
-  | `water_cut` | `prod_agua / (prod_agua + prod_pet)` en t (madurez del pozo) |
-  | `produjo_mes_pasado` | `1` si el target produjo (>0) en t, si no `0` |
-  | `prod_vecinos_mean` | media del target en t de los **5 pozos más cercanos** por coordenadas |
+  | `{target}_roll3` / `{target}_roll6` | media móvil {t..t-2} / {t..t-5} (nivel reciente) |
+  | `{target}_delta1` / `{target}_delta3` | `target(t) − target(t-1)` / `(t-3)` (declinación) |
+  | `{target}_ratio1` | `target(t) / target(t-1)` (declinación multiplicativa) |
+  | `{target}_lag2` / `{target}_lag3` / `{target}_lag12` | target en t-2 / t-3 / t-12 (nivel y estacionalidad anual) |
+  | `{target}_acum6` / `{target}_acum12` | acumulado en 6 / 12 meses |
+  | `{target}_std3` | desvío de {t, t-1, t-2} (volatilidad) |
+  | `{target}_cummax` / `{target}_frac_peak` / `{target}_meses_desde_pico` | pico histórico, fracción del pico y meses desde el pico |
+  | `well_age_months` | edad del pozo (meses desde su 1er mes observado) |
+  | `produjo_mes_pasado` | `1` si el target produjo (>0) en t |
 
-  Ninguna ajusta parámetros globales: cada fila se calcula solo con su mes `t` o anteriores
-  (los vecinos usan el mes `t`, con coordenadas estáticas), así que **no hay leakage** aunque
-  se computen sobre todo el histórico.
+  Ninguna ajusta parámetros globales: cada fila se calcula solo con su mes `t` o anteriores,
+  así que **no hay leakage** aunque se computen sobre todo el histórico. Todas se pueden
+  **recalcular a partir de la trayectoria del target**, que es lo que habilita el forecast
+  recursivo (ADR-044).
 - **14 categóricas** (atributos del pozo): `tipoextraccion`, `tipopozo`, `empresa`,
   `formacion`, `cuenca`, `provincia`, etc. Se guardan **crudas**; el one-hot vive en el
   modelo (ver abajo).

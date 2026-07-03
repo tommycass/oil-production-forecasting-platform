@@ -4,9 +4,9 @@ El endpoint mantiene el **contrato de Fase 1** (``id_well``, ``date_start``, ``d
 → ``{id_well, data:[{date, prod}]}``) y agrega el parámetro **opcional** ``target``
 (default ``prod_pet``). La salida es **mensual** (un punto por mes futuro).
 
-Se mockean las dos dependencias externas: la **lectura de la serie histórica** del feature
-store (``get_history_for_forecast``, seam del Rol 2) y el **modelo** (``get_loader``). El
-motor recursivo (``ml.forecast``) corre de verdad sobre la historia mockeada.
+Se mockean las dos dependencias externas: la **lectura del feature store**
+(``get_history_for_forecast``) y el **modelo** (``get_loader``). El motor recursivo
+(``ml.forecast``) corre de verdad sobre la historia mockeada.
 """
 import pandas as pd
 import pytest
@@ -192,16 +192,6 @@ def test_forecast_model_not_loaded_is_503():
     loader.snapshot_model.side_effect = RuntimeError("modelo no disponible")
     ph, _ = _patch()
     with ph, patch("app.services.forecast.get_loader", return_value=loader):
-        r = _get({"id_well": "42", "date_start": "2025-07-01", "date_end": "2025-08-01"})
-    assert r.status_code == 503
-
-
-def test_forecast_history_reader_not_implemented_is_503():
-    """Mientras el lector de historia (feature store) no esté implementado: 503."""
-    with patch(
-        "app.services.forecast.get_history_for_forecast",
-        side_effect=NotImplementedError("pendiente Rol 2"),
-    ):
         r = _get({"id_well": "42", "date_start": "2025-07-01", "date_end": "2025-08-01"})
     assert r.status_code == 503
 

@@ -2,7 +2,7 @@
 
 Reemplaza el mock de declinación lineal de la Fase 1 por el pronóstico real:
 
-1. Lee la **serie histórica** del pozo del feature store (``feature_reader``, seam Rol 2).
+1. Lee del feature store la **fila del mes base** + la **serie histórica** del pozo (``feature_reader``).
 2. Calcula la **ventana futura** pedida, acotada al **horizonte máximo** (``MAX_FORECAST_MONTHS``).
 3. Corre el **motor recursivo** (``ml.forecast``) reusando el modelo de MLflow.
 4. Devuelve la serie **mensual** con la forma del contrato de Fase 1: ``[{date, prod}]``.
@@ -64,13 +64,12 @@ def get_forecast(
     Raises:
         ValueError: el pozo no tiene serie en el feature store (fuera del universo) → 404.
         ForecastRangeError: el rango no tiene meses pronosticables → 422.
-        NotImplementedError: falta el lector de historia (adaptación del feature store) → 503.
         RuntimeError: el modelo no está disponible en MLflow → 503.
     """
     idpozo = int(id_well)
 
-    # 1) features del mes base + serie observada + estáticos (seam feature store). ValueError
-    #    si el pozo no tiene historia; NotImplementedError mientras el lector no esté (Rol 2).
+    # 1) features del mes base + serie observada + estáticos, leídos del feature store.
+    #    ValueError si el pozo no tiene serie (fuera del universo / sin historia).
     base_features, series, static = get_history_for_forecast(idpozo, target)
 
     # 2) ventana futura, acotada al horizonte. L = último mes observado.

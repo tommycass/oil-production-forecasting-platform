@@ -12,7 +12,7 @@ Materializamos el feature store con **exactamente las features del modelo** (las
   - `features.feat_produccion_pozo_mensual_gas` — gas (`prod_gas`).
 - Cada tabla tiene **su universo** (pozos con ese target `> 0` en train; el gasífero es más amplio), **sus engineered** sobre el target (`prod_pet_*` vs `prod_gas_*`) y su `y_next`. Las 8 numéricas base + 14 categóricas son compartidas (se duplican). `build_store_features(df, target=...)` se parametrizó por target; `materializar_todos` recorre `ml.config.TARGETS`.
 - **Fuente:** `bronze.produccion` (crudo, mismas columnas que el CSV del training; gobernado en el DW). Se lee **una sola vez** y se construyen las dos tablas.
-- **Paridad validada (§8 del handoff de Rol 1):** comparado contra `build_basic_dataset(target=...)` para **los dos targets** → **0 diferencias** en las 29 features ni en `y_next`. Cada tabla = 33 columnas (3 claves + 29 features + `y_next`), tipos correctos.
+- **Paridad validada (§8 del handoff de Rol 1):** comparado contra `build_basic_dataset(target=...)` para **los dos targets** → **0 diferencias** en las features ni en `y_next` (mismo código de `ml/`). Cada tabla = 39 columnas (3 claves + 35 features recursion-safe + `y_next`), tipos correctos.
 - **Diferencia con training:** el target va por **left-join**, así se conserva la **última fila de cada pozo** (`y_next` NULL) para que la API pueda predecir el mes siguiente. El training usa las filas con `y_next` no nulo (idéntico a `build_basic_dataset`).
 
 ## Pendiente de Rol 1 (A)
@@ -34,7 +34,7 @@ WHERE idpozo = :idpozo AND anio = :anio AND mes = :mes
 
 **Esperado:**
 ```sql
-SELECT <las 29 features>           -- o SELECT * y descartar periodo_objetivo / y_next
+SELECT <las 35 features>           -- o SELECT * y descartar periodo_objetivo / y_next
 FROM features.feat_produccion_pozo_mensual        -- petróleo
 -- o features.feat_produccion_pozo_mensual_gas    -- gas
 WHERE idpozo = :idpozo AND periodo = :periodo_t   -- periodo_t = date(mes_objetivo) - 1 mes
@@ -43,7 +43,7 @@ WHERE idpozo = :idpozo AND periodo = :periodo_t   -- periodo_t = date(mes_objeti
 Checklist:
 - [ ] **Tabla por target:** `feat_produccion_pozo_mensual` (petróleo) / `feat_produccion_pozo_mensual_gas` (gas), y cargar el modelo `Production` del registry **de ese target** (`produccion-forecast` / `produccion-forecast-gas`).
 - [ ] **Lookup por `idpozo` + `periodo`** (date) del **mes base** `t` = primer día de `mes_objetivo − 1 mes`. **No** por `anio`/`mes` (no existe `anio`; `mes` es el mes del target).
-- [ ] **Pasar las 29 features crudas** (8 numéricas + 7 engineered + 14 categóricas) al `Pipeline` del modelo —que hace one-hot/imputación internamente—; **descartar** `idpozo`, `periodo`, `periodo_objetivo`, `y_next`. Los nombres engineered **difieren por target** (`prod_pet_*` vs `prod_gas_*`): conviene derivar la lista de `ml.dataset.BASIC_NUMERIC_FEATURES + ml.features.engineered_feature_names(target) + ml.dataset.BASIC_CATEGORICAL_FEATURES` (única fuente de verdad) en vez de hardcodear.
+- [ ] **Pasar las 35 features crudas** (5 numéricas + 16 engineered + 14 categóricas) al `Pipeline` del modelo —que hace one-hot/imputación internamente—; **descartar** `idpozo`, `periodo`, `periodo_objetivo`, `y_next`. Los nombres engineered **difieren por target** (`prod_pet_*` vs `prod_gas_*`): conviene derivar la lista de `ml.dataset.BASIC_NUMERIC_FEATURES + ml.features.engineered_feature_names(target) + ml.dataset.BASIC_CATEGORICAL_FEATURES` (única fuente de verdad) en vez de hardcodear.
 - [ ] **Error de contrato** si no hay fila para `(idpozo, periodo_t)` (pozo nuevo o sin historia) — como hoy, pero con la clave correcta.
 - [ ] **Exponer el target en `/predict`** (un parámetro `target=prod_pet|prod_gas` o dos rutas): decisión tuya; revisar [ADR-035] (contrato de `/predict`) como anota el ADR-042.
 

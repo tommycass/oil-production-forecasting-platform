@@ -289,7 +289,7 @@ def add_well_age_months(df: pd.DataFrame) -> pd.DataFrame:
 def add_engineered_features(
     df: pd.DataFrame, target: str = "prod_pet", k_vecinos: int = 5
 ) -> pd.DataFrame:
-    """Agrega las 7 features de ingeniería sobre el panel mensual ``(pozo, mes)``,
+    """Agrega las features de ingeniería sobre el panel mensual ``(pozo, mes)``,
     para el ``target`` dado (``prod_pet`` por defecto; ``prod_gas`` para el modelo
     de gas, ADR-042).
 

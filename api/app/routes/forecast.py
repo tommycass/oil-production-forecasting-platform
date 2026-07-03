@@ -28,7 +28,7 @@ router = APIRouter()
         404: {"description": "Well does not exist in the DW, or has no history in the feature store"},
         422: {"description": "date_start is after date_end, or the range has no future months to forecast"},
         429: {"description": "Rate limit exceeded"},
-        503: {"description": "Model or feature store history not available"},
+        503: {"description": "Model not available (MLflow unreachable or no Production version)"},
     },
 )
 @limiter.limit(RATE_LIMIT)
@@ -50,6 +50,6 @@ def forecast(
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:  # pozo sin serie en el feature store (fuera del universo)
         raise HTTPException(status_code=404, detail=str(exc))
-    except (NotImplementedError, RuntimeError) as exc:  # lector pendiente / modelo no cargado
+    except RuntimeError as exc:  # modelo no disponible en MLflow
         raise HTTPException(status_code=503, detail=str(exc))
     return ForecastResponse(id_well=id_well, data=data)

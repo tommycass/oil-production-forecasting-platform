@@ -59,7 +59,7 @@ Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**, **conse
    - Rango sin meses futuros (todo el rango es pasado) → 422.
    - Rango que **empieza** más allá del horizonte máximo → 422; si solo el final lo supera, se **recorta** (200 con menos meses).
    - Pozo inexistente en el DW → 404; pozo sin serie en el feature store (fuera del universo, ADR-031) → 404.
-   - Modelo no disponible en MLflow, o lector de historia del feature store aún no implementado → 503.
+   - Modelo no disponible en MLflow (inalcanzable o sin versión Production) → 503.
    - Cold-start / poca historia → las features autorregresivas quedan **0 + flag** (ADR-039); el modelo se apoya en las estáticas (ADR-043).
 6. **Modelo:** el modelo de producción es **recursion-safe por defecto** (ADR-043/040): se entrena únicamente con features que se pueden recalcular hacia el futuro, así que `/forecast` recursa **directamente sobre el mismo modelo que sirve `/predict`**, sin un artefacto aparte.
 
@@ -75,7 +75,7 @@ Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**, **conse
 
 **Negativas / trade-offs:**
 - **Error acumulado:** cada paso se apoya en la predicción anterior; la confianza cae con el horizonte (por eso el tope en meses).
-- **Necesita la serie histórica del pozo** para sembrar la recursión (no solo la fila del feature store): hay que leerla del store/DW. Esa lectura (`feature_reader.get_history_for_forecast`) es la **adaptación del feature store** (Rol 2); hasta que esté, `/forecast` responde **503**.
+- **Necesita la serie histórica del pozo** (no solo la fila del mes base) para recalcular los pasos futuros. Se lee de la **misma tabla** que materializa el training (`feature_reader.get_history_for_forecast`); el store conserva la fila del último mes (left-join, `y_next` NULL) para habilitar la inferencia. Requiere que el store esté **re-materializado** con las columnas recursion-safe (lo hace el retrain, ADR-041).
 - **Recorte silencioso:** al mantener el contrato fijo, cuando el rango supera el horizonte no hay un campo que lo señale (se documenta en la descripción del endpoint).
 - Reproducir en serving el mismo cálculo de features que en training (paridad, ADR-036) es más delicado en modo recursivo (se recalcula paso a paso); se mitiga reusando las **mismas funciones** de `ml/features.py`.
 

@@ -41,11 +41,11 @@ Cada fila es el **mes base `t`**: todas las features están disponibles al cierr
 
 ## Columnas (contrato)
 
-La **fuente de verdad** de la lista es el código de ML: `ml.dataset.BASIC_NUMERIC_FEATURES` + `ml.features.engineered_feature_names(target)` + `ml.dataset.BASIC_CATEGORICAL_FEATURES`. Cada tabla tiene **33 columnas** (3 claves + 29 features + `y_next`). Las **engineered cambian de nombre por target** (prefijo del target en las 4 autorregresivas); el resto es idéntico:
+El store materializa **solo el set recursion-safe** (ADR-043): las **35 features** que usa el modelo. La **fuente de verdad** es el código de ML (`ml.dataset.BASIC_NUMERIC_FEATURES` + `ml.features.engineered_feature_names(target)` + `ml.dataset.BASIC_CATEGORICAL_FEATURES`, filtrado por `ml.modeling.recursion_safe_cols`). Cada tabla tiene **39 columnas** (3 claves + 35 features + `y_next`). Las **autorregresivas cambian de nombre por target** (prefijo `prod_pet_` / `prod_gas_`); las categóricas son idénticas:
 
 - **Claves / lookup:** `idpozo` (bigint), `periodo` (date, mes base), `periodo_objetivo` (date, `t+1`).
-- **Numéricas (8):** `prod_pet`, `prod_gas`, `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday`, `mes` (= mes del target).
-- **Engineered (7):** `{target}_roll3`, `{target}_delta1`, `{target}_lag12`, `{target}_acum6` (autorregresivas, prefijo `prod_pet_` / `prod_gas_`) + `water_cut`, `produjo_mes_pasado`, `prod_vecinos_mean` (genéricas, mismo nombre en ambas tablas).
+- **Numéricas (5):** `{target}` (nivel del mes `t`), `profundidad`, `coordenadax`, `coordenaday`, `mes` (= mes del target).
+- **Engineered (16):** autorregresivas con prefijo del target — `{target}_roll3`, `{target}_roll6`, `{target}_delta1`, `{target}_delta3`, `{target}_ratio1`, `{target}_lag2`, `{target}_lag3`, `{target}_lag12`, `{target}_acum6`, `{target}_acum12`, `{target}_std3`, `{target}_cummax`, `{target}_frac_peak`, `{target}_meses_desde_pico` — + genéricas `produjo_mes_pasado`, `well_age_months`.
 - **Categóricas crudas (14):** `tipoextraccion`, `tipoestado`, `tipopozo`, `empresa`, `formprod`, `formacion`, `areapermisoconcesion`, `areayacimiento`, `cuenca`, `provincia`, `proyecto`, `clasificacion`, `subclasificacion`, `sub_tipo_recurso`.
 - **Target:** `y_next` (float, nullable).
 
@@ -61,7 +61,7 @@ La **fuente de verdad** de la lista es el código de ML: `ml.dataset.BASIC_NUMER
 El store **materializa el pipeline de `ml/`** (el asset `features_refrescadas` reusa `ml.features.add_engineered_features(target=...)` + las listas `ml.dataset.BASIC_*`), con **paridad validada** contra `build_basic_dataset` para **los dos targets** (0 diferencias). El training puede seguir usando `build_basic_dataset(target=...)` (mismas features) o leer la tabla del target (filas con `y_next` no nulo). Como la lista de features sale del código de `ml/`, cambiarla ahí re-materializa ambas tablas sin reescribir nada. `ml/requirements.txt` ya existe (Rol 1) → el venv del daemon instala las deps de `ml/`.
 
 ### Rol 3 — inferencia (`GET /api/v1/forecast`, recursivo)
-La inferencia se unificó en `/forecast` (recursivo mensual, ADR-044); `/predict` se retiró (ADR-035 reemplazado). El forecast **no** lee una sola fila: necesita la **serie mensual observada** del pozo (`periodo`, `<target>`) para sembrar la recursión, más los **atributos estáticos** (profundidad, coords, categóricas). Elegir la **tabla del target** (`feat_produccion_pozo_mensual` para petróleo, `..._gas` para gas) y devolver esa serie + estáticos. ⚠️ **A implementar (Rol 2):** `feature_reader.get_history_for_forecast(idpozo, target)` — hoy es un stub documentado (contrato en su docstring); mientras no esté, `/forecast` responde 503. Requiere que el store materialice las columnas **recursion-safe** (ADR-043) con paridad training-serving.
+La inferencia se unificó en `/forecast` (recursivo mensual, ADR-044); `/predict` se retiró (ADR-035 reemplazado). El forecast lee del store (`feature_reader.get_history_for_forecast`, **implementado**): (1) la **fila del mes base** (último mes del pozo, con `y_next` NULL — el store la conserva vía left-join) → predice t+1 **sin recalcular**; (2) la **serie** `(periodo, <target>)` de todos los meses → recalcula los meses futuros (t+2+). Elige la **tabla del target** (`feat_produccion_pozo_mensual` / `..._gas`) y descarta `idpozo/periodo/periodo_objetivo/y_next` (guarda anti-leak). **Dependencia operativa:** el store debe estar **re-materializado** con las columnas recursion-safe (ADR-043) — lo hace el retrain (ADR-041) reusando `ml.features`, así que la paridad training-serving está garantizada.
 
 ## Versionado y cambios
 
