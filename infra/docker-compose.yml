@@ -11,6 +11,10 @@ services:
       - "8000:8000"
     env_file:
       - ../api/.env
+    volumes:
+      # mlflow.sklearn.load_model resuelve URIs file:// directamente (no via proxy),
+      # por eso el container necesita leer el mismo path donde el training dejó los artefactos.
+      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
