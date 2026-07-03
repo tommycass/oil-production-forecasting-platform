@@ -68,6 +68,28 @@ def test_forecast_date_start_after_date_end():
     assert response.status_code == 422
 
 
+def test_forecast_horizon_too_long():
+    """Un rango que supera MAX_FORECAST_DAYS debe rechazarse con 422 (evita respuestas
+    gigantes sobre fechas arbitrariamente lejanas)."""
+    response = client.get(
+        "/api/v1/forecast",
+        params={"id_well": "POZO-001", "date_start": "2024-01-01", "date_end": "2030-01-01"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 422
+    assert "máximo" in response.json()["detail"]
+
+
+def test_forecast_horizon_at_limit_ok():
+    """Un rango dentro del límite sigue funcionando (borde: 366 días)."""
+    response = client.get(
+        "/api/v1/forecast",
+        params={"id_well": "POZO-001", "date_start": "2024-01-01", "date_end": "2025-01-01"},
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+
+
 def test_forecast_no_api_key():
     response = client.get(
         "/api/v1/forecast",
