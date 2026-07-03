@@ -10,7 +10,6 @@ from slowapi.errors import RateLimitExceeded
 from app.core.rate_limit import limiter
 from app.core.security import APIKeyMiddleware
 from app.routes import health, wells, forecast, mock_error
-from app.routes import predict as predict_route
 from app.services.model_loader import load_all, start_polling_all
 
 logger = logging.getLogger(__name__)
@@ -22,11 +21,8 @@ tags_metadata = [
     },
     {
         "name": "Forecast",
-        "description": "Daily production forecast per well for a date range.",
-    },
-    {
-        "name": "ML",
-        "description": "ML-powered monthly production predictions from the MLflow model registry.",
+        "description": "Monthly production forecast per well for a date range, "
+        "computed recursively with the ML model from the MLflow registry (ADR-044).",
     },
     {
         "name": "Health",
@@ -39,7 +35,7 @@ tags_metadata = [
 async def lifespan(app: FastAPI):
     # Carga de modelos en background: mlflow es pesado al importar (~40 s en EC2
     # pequeña). Correrlo en un hilo daemon hace que uvicorn sirva /health de inmediato;
-    # /predict retorna 503 hasta que el modelo esté listo (degradación controlada).
+    # /forecast retorna 503 hasta que el modelo esté listo (degradación controlada).
     def _startup() -> None:
         load_all()
         start_polling_all()
@@ -104,6 +100,5 @@ app.include_router(health.router)
 app.include_router(wells.router)
 app.include_router(forecast.router)
 app.include_router(mock_error.router)
-app.include_router(predict_route.router)
 
 Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(app)

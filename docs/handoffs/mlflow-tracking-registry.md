@@ -101,12 +101,12 @@ Lo ideal es encapsular esto en `train.py` (p. ej. un flag `--mlflow` o una funci
 
 ## 5. Datos de referencia (números actuales)
 
-Campeón en ambos targets: **Random Forest** `{n_estimators=400, max_depth=16, max_features=0.5, min_samples_leaf=2}` (mismos hiperparámetros; ver `BEST_PARAMS[target]`).
+Campeón en ambos targets: **Random Forest**, tuneado sobre el **set recursion-safe** (ADR-043). Hiperparámetros por target (ya no coinciden): petróleo `{n_estimators=200, max_depth=24, max_features=0.5, min_samples_leaf=5}`; gas `{n_estimators=400, max_depth=16, max_features=0.5, min_samples_leaf=5}` (ver `BEST_PARAMS[target]`).
 
 | Target (experimento / registered model) | val RMSE / R² | test RMSE / R² | persistencia test |
 |---|---|---|---|
-| Petróleo (`produccion-forecast`) | 229,9 / 0,900 | **154,4 / 0,874** | 166,2 / 0,854 |
-| Gas (`produccion-forecast-gas`) | 579,9 / 0,859 | **401,0 / 0,856** | 457,8 / 0,813 |
+| Petróleo (`produccion-forecast`) | 227,1 / 0,903 | **157,9 / 0,868** | 166,2 / 0,854 |
+| Gas (`produccion-forecast-gas`) | 580,4 / 0,859 | **408,2 / 0,851** | 457,8 / 0,813 |
 
 Baseline a batir = persistencia (ADR-029). Detalle y justificación de ambos campeones en el ADR-040.
 

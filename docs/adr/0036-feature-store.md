@@ -42,7 +42,7 @@ Un asset de Dagster que calcula las features en pandas (reusando `ml/dataset.py`
 Decisiones de diseño asociadas:
 
 1. **Una sola definición de features (anti-skew).** El modelo dbt reproduce **exacto** las features de `ml/dataset.py` (`lag1/2/3`, `roll3` con min_periods=3, `antiguedad` 0-based, `tef_lag1`, target `y_next`). `ml/dataset.py` se refactoriza para **leer del store** en vez de recalcular, y la API lee del **mismo** store. Así la feature se calcula **una vez** y es idéntica en training e inferencia.
-2. **Encuadre "fila = mes base `t`"** (alineado con `ml/dataset.py`, `y_next = shift(-1)`): coherente con `POST /api/v1/predict` y con `/forecast`.
+2. **Encuadre "fila = mes base `t`"** (alineado con `ml/dataset.py`, `y_next = shift(-1)`): coherente con la inferencia de `/forecast` (ADR-044).
 3. **Categóricas crudas en el store; encoding en el modelo.** El store guarda `tipopozo`, `cuenca`, etc. sin encodear; el one-hot/scaling vive en el pipeline del modelo y se serializa en MLflow, para que la inferencia lo replique. Evita acoplar el store a un algoritmo.
 4. **Deriva de Gold, no de Silver/CSV.** Mantiene la arquitectura Medallion y el linaje gobernado.
 

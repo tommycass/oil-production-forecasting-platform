@@ -18,7 +18,7 @@ Esto es viable **gracias al set de features recursion-safe** (ADR-043): las feat
 ### 1. Estrategia multi-paso: recursivo vs directo
 
 - **Directo multi-horizonte (descartado por ahora):** entrenar un modelo por horizonte (t+1, t+2, … t+h) o uno que reciba el horizonte como input. No acumula error, pero multiplica el costo de entrenamiento/mantenimiento y no reusa el modelo de un paso ya existente.
-- **Recursivo (elegido):** reusa **un único modelo de un paso** (el de `/predict`) realimentando la predicción. Aprovecha directamente el set recursion-safe (ADR-043). Trade-off: el **error se acumula** con el horizonte (cada predicción se apoya en la anterior) → se mitiga con un **horizonte máximo** acotado.
+- **Recursivo (elegido):** reusa **un único modelo de un paso** (la predicción mensual) realimentando la predicción. Aprovecha directamente el set recursion-safe (ADR-043). Trade-off: el **error se acumula** con el horizonte (cada predicción se apoya en la anterior) → se mitiga con un **horizonte máximo** acotado.
 
 ### 2. Granularidad de salida: mensual vs diaria
 
@@ -28,7 +28,7 @@ Esto es viable **gracias al set de features recursion-safe** (ADR-043): las feat
 ### 3. Relación con `/predict`
 
 - **Reimplementar la predicción de un mes dentro de forecast (descartado):** duplica lógica.
-- **Reusar el paso unitario (elegido):** `forecast` es un **loop sobre la predicción de un mes**. El código de predecir-un-mes (features → pipeline → valor) se factoriza y lo usan los dos. El equipo decide si `/predict` se **expone** en la API o queda como función interna; en cualquier caso el código se aprovecha.
+- **Reusar el paso unitario (elegido):** `forecast` es un **loop sobre la predicción de un mes** (features → pipeline → valor). Como `/forecast` con un rango de **un solo mes** devuelve exactamente esa predicción, **subsume** a `/predict`. Por eso se **retira `/predict`** (ADR-035 queda reemplazado por este ADR) y queda `/forecast` como único endpoint de pronóstico. El parámetro `target` (petróleo/gas) que tenía `/predict` se conserva como parámetro **opcional** de `/forecast` (default `prod_pet`), sin romper el contrato de Fase 1.
 
 ### 4. `date_start` anterior al último dato real
 
@@ -38,36 +38,46 @@ Esto es viable **gracias al set de features recursion-safe** (ADR-043): las feat
 
 ### 5. Horizonte máximo
 
-- El `/forecast` ya acota el rango (ADR previo: `MAX_FORECAST_DAYS`). Con la salida mensual, el tope pasa a **meses** (`MAX_FORECAST_MONTHS`, propuesto **12**). Además de evitar respuestas enormes, **acota la acumulación de error** del recursivo: un pronóstico recursivo a muchos meses es cada vez menos confiable.
+- El `/forecast` ya acotaba el rango (ADR previo: `MAX_FORECAST_DAYS`). Con la salida mensual, el tope pasa a **meses** (`MAX_FORECAST_MONTHS = 12`), medido **desde el último mes con dato del pozo** (es lo que acota la cantidad de pasos recursivos). Además de evitar respuestas enormes, **acota la acumulación de error**: un pronóstico recursivo a muchos meses es cada vez menos confiable.
+- **Qué hacer si el rango pedido supera el tope: recortar (elegido) vs rechazar.** Se **recorta** hasta el mes máximo permitido y se devuelven los meses hasta ahí (responde "hasta donde sí"), en vez de rechazar toda la request. Como el contrato de respuesta de Fase 1 es fijo (`{id_well, data:[{date, prod}]}`), el recorte **no** lleva un campo `truncated`; se documenta en la descripción del endpoint. Solo se responde **422** si el rango **empieza** más allá del tope (no queda ningún mes dentro del horizonte para devolver).
 
 ## Decisión
 
-Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**:
+Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**, **conservando el contrato de Fase 1** (`id_well`, `date_start`, `date_end` → `{id_well, data:[{date, prod}]}`; se agrega solo el parámetro **opcional** `target`):
 
-1. **Motor recursivo** (`ml/forecast.py`, función pura y testeable): recibe la **serie mensual observada** del pozo (+ atributos estáticos) y el **pipeline recursion-safe**; para cada mes futuro predice, **apenda la predicción a la serie**, **recalcula las features recursion-safe** (`ml.features`) y avanza. Devuelve la serie mensual `[(mes, producción)]`.
-2. **Un paso = el modelo de `/predict`** (reuso del código de predicción de un mes).
-3. **Salida mensual**, **solo meses futuros** (arranca en `max(date_start, último_mes_observado + 1)`).
-4. **Horizonte máximo en meses** (`MAX_FORECAST_MONTHS`).
+1. **Motor recursivo** (`ml/forecast.py`, función pura y testeable): recibe la fila de features del **mes base** (del store), la **serie mensual observada** y los **atributos estáticos**, más el **pipeline recursion-safe**; para cada mes futuro predice, **apenda la predicción a la serie**, **recalcula las features recursion-safe** (`ml.features`) y avanza. Devuelve la serie mensual `[(mes, producción)]`. La recursión **arranca en el mes siguiente al último dato del pozo** (`L+1`), que es lo que acota los pasos.
+
+   **Estrategia de features (feature store en inferencia, RNF Fase 3):**
+   - **Mes base → t+1:** se usan las **features pre-computadas del store** (la fila del último mes observado), **sin recalcular** — así el store se usa en inferencia (es lo mismo que hacía `/predict`).
+   - **Meses futuros → t+2, t+3, …:** se **recalculan** las features recursion-safe desde la serie extendida, porque esos meses **no existen** en el store (dependen de predicciones). Es inevitable en un forecast recursivo, y es **skew-free** porque usa las **mismas funciones de `ml/features.py`** con las que el store materializa (mismo código → mismo resultado; recalcular el mes base daría idéntico a su fila del store).
+   - **Estáticas** (`profundidad`, coords, categóricas): vienen del store y **nunca se recalculan** (se replican).
+2. **Un paso = el modelo de un paso** (el mismo que se registra en MLflow). `/predict` se retira y `/forecast` lo subsume (un rango de un mes = la predicción de un mes).
+3. **Salida mensual**, **solo meses futuros** (arranca en `max(date_start, último_mes_observado + 1)`). Cada punto usa el campo `date` del contrato con la fecha del **primer día del mes**.
+4. **Horizonte máximo en meses** (`MAX_FORECAST_MONTHS = 12`), medido desde el último dato del pozo; si el rango lo supera se **recorta** hasta ahí.
 5. **Casos borde:**
-   - `date_start > date_end` → 422 (ya implementado).
-   - Rango sin meses futuros → 422.
-   - Horizonte > `MAX_FORECAST_MONTHS` → 422.
-   - Pozo sin fila en el feature store (fuera del universo, ADR-031) → 404.
+   - `date_start > date_end` → 422.
+   - Rango sin meses futuros (todo el rango es pasado) → 422.
+   - Rango que **empieza** más allá del horizonte máximo → 422; si solo el final lo supera, se **recorta** (200 con menos meses).
+   - Pozo inexistente en el DW → 404; pozo sin serie en el feature store (fuera del universo, ADR-031) → 404.
+   - Modelo no disponible en MLflow, o lector de historia del feature store aún no implementado → 503.
    - Cold-start / poca historia → las features autorregresivas quedan **0 + flag** (ADR-039); el modelo se apoya en las estáticas (ADR-043).
 6. **Modelo:** el modelo de producción es **recursion-safe por defecto** (ADR-043/040): se entrena únicamente con features que se pueden recalcular hacia el futuro, así que `/forecast` recursa **directamente sobre el mismo modelo que sirve `/predict`**, sin un artefacto aparte.
 
 ## Consecuencias
 
 **Positivas:**
-- `/forecast` pasa a ser un pronóstico real multi-paso, con una sola familia de modelo (el de un paso) reutilizada.
+- `/forecast` pasa a ser un pronóstico real multi-paso, con una sola familia de modelo (el de un paso) reutilizada, **sin cambiar el contrato de Fase 1** (`{id_well, data:[{date, prod}]}`).
 - Aprovecha directamente el diseño recursion-safe (ADR-043): las features se recalculan solas en cada paso.
 - Salida mensual coherente con la granularidad del modelo; sin supuestos diarios artificiales.
+- **Un solo endpoint de pronóstico**: al subsumir a `/predict`, se reduce la superficie de la API (menos código y tests que mantener).
+- **Latencia dentro del RNF (< 5 s):** medido ~**0,6 s** en el peor caso (12 pasos sobre un pozo con ~20 años de historia); ~32 ms de recompute + ~13 ms de predict por paso. El horizonte máximo acota el costo. Hay un test de humo de regresión en `ml/tests/test_forecast.py`.
 - Borde `date_start` en el pasado resuelto de forma simple (solo futuro).
 
 **Negativas / trade-offs:**
 - **Error acumulado:** cada paso se apoya en la predicción anterior; la confianza cae con el horizonte (por eso el tope en meses).
-- **Necesita la serie histórica del pozo** para sembrar la recursión (no solo la fila del feature store): hay que leerla del store/DW.
-- Reproducir en serving el mismo cálculo de features que en training (paridad, ADR-036) es más delicado en modo recursivo (se recalcula paso a paso).
+- **Necesita la serie histórica del pozo** para sembrar la recursión (no solo la fila del feature store): hay que leerla del store/DW. Esa lectura (`feature_reader.get_history_for_forecast`) es la **adaptación del feature store** (Rol 2); hasta que esté, `/forecast` responde **503**.
+- **Recorte silencioso:** al mantener el contrato fijo, cuando el rango supera el horizonte no hay un campo que lo señale (se documenta en la descripción del endpoint).
+- Reproducir en serving el mismo cálculo de features que en training (paridad, ADR-036) es más delicado en modo recursivo (se recalcula paso a paso); se mitiga reusando las **mismas funciones** de `ml/features.py`.
 
 ---
 

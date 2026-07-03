@@ -1,5 +1,12 @@
-from pydantic import BaseModel
 from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel
+
+# Targets soportados (ADR-042): petróleo y gas. Es el valor del parámetro OPCIONAL
+# `target` de /forecast (default prod_pet); no forma parte del cuerpo de la respuesta,
+# que mantiene el contrato de Fase 1 ({id_well, data:[{date, prod}]}).
+Target = Literal["prod_pet", "prod_gas"]
 
 
 class ForecastPoint(BaseModel):
