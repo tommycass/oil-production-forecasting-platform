@@ -47,15 +47,18 @@ def _untuned_estimator(name: str, target: str = TARGET):
     return modeling.make_estimator(name, target=target)
 
 
-def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
+def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET,
+          recursion_safe: bool = False):
     """Entrena (con/sin tuning) y evalúa en val. Devuelve ``(pipeline, info)``.
 
     ``info`` trae el modelo, si fue tuneado, los mejores hiperparámetros y las
     métricas en train/val + la persistencia (baseline a batir, ADR-029). El
     ``pipeline`` devuelto es el artefacto a versionar/loguear (gancho para Rol 3).
     ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
+    ``recursion_safe=True`` entrena solo con las features recursion-safe (ADR-043/044),
+    para que el modelo se pueda usar en el forecast recursivo (``/forecast``).
     """
-    ds, feats = modeling.build_feature_matrix(target=target)
+    ds, feats = modeling.build_feature_matrix(target=target, recursion_safe=recursion_safe)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
 
     if tune:
@@ -104,13 +107,15 @@ def _print_info(info: dict) -> None:
     print(f"  -> {'✓ supera' if gana else '✗ NO supera'} la persistencia en RMSE (val)")
 
 
-def train_final(model_name: str = CHAMPION, params: dict | None = None, target: str = TARGET):
+def train_final(model_name: str = CHAMPION, params: dict | None = None, target: str = TARGET,
+                recursion_safe: bool = False):
     """Entrena el modelo final en **dev (train+val)** con los mejores
     hiperparámetros registrados (``BEST_PARAMS``, ADR-040) y lo evalúa **una vez en
     test**. Es la confirmación final del campeón; no re-tunea. Devuelve ``(pipe, info)``.
     ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
+    ``recursion_safe=True`` usa solo las features recursion-safe (ADR-043/044).
     """
-    ds, feats = modeling.build_feature_matrix(target=target)
+    ds, feats = modeling.build_feature_matrix(target=target, recursion_safe=recursion_safe)
     X_dev, y_dev, X_te, y_te = modeling.split_dev_test(ds, feats)
     pipe = modeling.build_pipeline(
         modeling.make_estimator(model_name, params, target=target), model_name == "ridge", feats
@@ -139,9 +144,9 @@ def _print_final(info: dict) -> None:
     print(f"  -> {'✓ supera' if gana else '✗ NO supera'} la persistencia en RMSE (test)")
 
 
-def compare(target: str = TARGET) -> None:
+def compare(target: str = TARGET, recursion_safe: bool = False) -> None:
     """Compara los 3 modelos sin tunear sobre val (como la sección 3 del notebook)."""
-    ds, feats = modeling.build_feature_matrix(target=target)
+    ds, feats = modeling.build_feature_matrix(target=target, recursion_safe=recursion_safe)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
     tabla, _ = modeling.train_eval_models(X_tr, y_tr, X_va, y_va)
     import pandas as pd
@@ -160,6 +165,9 @@ def main() -> None:
                         help="Qué predecir: prod_pet (petróleo) o prod_gas (gas, ADR-042)")
     parser.add_argument("--no-tune", action="store_true",
                         help="No tunear: usa hiperparámetros por defecto (más rápido)")
+    parser.add_argument("--recursion-safe", action="store_true",
+                        help="Entrenar solo con features recursion-safe (ADR-043/044), para el "
+                             "forecast recursivo. Guarda con sufijo _rsafe para no pisar el modelo actual.")
     parser.add_argument("--compare", action="store_true", help="Comparar los 3 modelos sin tunear (no guarda)")
     parser.add_argument("--final", action="store_true",
                         help="Entrenar en dev (train+val) con los mejores hiperparámetros y evaluar en TEST")
@@ -171,18 +179,22 @@ def main() -> None:
     args = parser.parse_args()
 
     # sufijo de gas en el nombre del archivo para no pisar el modelo de petróleo
-    # (petróleo mantiene su nombre histórico: random_forest.joblib, etc.)
+    # (petróleo mantiene su nombre histórico: random_forest.joblib, etc.); + _rsafe
+    # para el modelo recursion-safe, que convive con el de un paso sin pisarlo.
     suf = "" if args.target == "prod_pet" else f"_{args.target}"
+    if args.recursion_safe:
+        suf += "_rsafe"
+    rs = args.recursion_safe
 
     if args.compare:
-        compare(args.target)
+        compare(args.target, recursion_safe=rs)
         return
 
     if args.mlflow:
         # Rol 3 (1.4/1.5): campeón final (dev=train+val, evaluado en test) → MLflow.
         # Import perezoso: solo se necesita mlflow cuando se usa este flag.
         from ml import registry
-        pipe, info = train_final(args.model, target=args.target)
+        pipe, info = train_final(args.model, target=args.target, recursion_safe=rs)
         _print_final(info)
         registry.log_and_register(pipe, info, promote=not args.no_promote)
         if not args.no_save:
@@ -190,13 +202,13 @@ def main() -> None:
         return
 
     if args.final:
-        pipe, info = train_final(args.model, target=args.target)
+        pipe, info = train_final(args.model, target=args.target, recursion_safe=rs)
         _print_final(info)
         if not args.no_save:
             print(f"\n✓ Modelo guardado en {save_model(pipe, args.model + suf + '_final')}")
         return
 
-    pipe, info = train(args.model, tune=not args.no_tune, target=args.target)
+    pipe, info = train(args.model, tune=not args.no_tune, target=args.target, recursion_safe=rs)
     _print_info(info)
     if not args.no_save:
         ruta = save_model(pipe, args.model + suf)
