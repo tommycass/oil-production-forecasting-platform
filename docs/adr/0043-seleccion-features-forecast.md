@@ -120,9 +120,11 @@ Adoptar, para el modelo de **petróleo**, un set final en **dos capas**, con el 
 - Categóricas de baja cardinalidad con imp. ≈ 0: `formacion`, `formprod`, `cuenca`, `provincia`, `clasificacion`, `subclasificacion`, `tipoestado`, `sub_tipo_recurso`, `tipoextraccion`, `proyecto`, `produjo_mes_pasado`.
 - (Ya fuera del candidato por recursion-safety: `prod_vecinos_mean`, `water_cut`, `prod_gas`, `prod_agua`, `tef`.)
 
-**Borderline (a fijar con re-tuning + medición dedicada):** `std3`, `frac_peak`, `lag12`, `lag3`, `meses_desde_pico`, `mes`, `areapermisoconcesion`, `tipopozo`, `empresa`.
+**Borderline — resueltas: quedan FUERA del set final** (`std3`, `frac_peak`, `lag12`, `lag3`, `meses_desde_pico`, `mes`, `areapermisoconcesion`, `tipopozo`, `empresa`): aporte < 1,5 m³ cada una; se podan por parsimonia (menos columnas que materializar y mantener con paridad, one-hot más chico). Son re-incorporables en un reentreno futuro si una medición dedicada lo justifica — basta agregarlas a `selected_features` y el retrain re-materializa el store solo.
 
 Se conserva el esquema de imputación **0 + flag** para las autorregresivas (ADR-039): es lo que hace que el cold-start sea *inspeccionable* (el flag distingue "sin historia" de "produjo 0").
+
+**Implementación (fuente única de verdad):** el set final vive en `ml.features.selected_features(target)`. Lo consumen las tres puntas sin poder divergir: el entrenamiento (`ml/train.py`), el feature store (`feature_store_build.py` materializa exactamente estas columnas, ADR-036) y el serving (`/forecast` lee esas filas, ADR-044/045). Los `BEST_PARAMS` vigentes se tunearon sobre el set candidato recursion-safe (35); el ADR-040 §*re-evaluación* cubre la re-confirmación: el retrain compara campeón vs persistencia en cada corrida y solo promueve si mejora (la vara no depende de este ADR).
 
 ## Consecuencias
 

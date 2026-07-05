@@ -15,11 +15,16 @@ Reentrenar **los dos modelos** (petróleo `prod_pet` y gas `prod_gas`, ADR-042) 
 features frescas y dejar los runs registrados en MLflow. El job `retrain` (Dagster,
 particionado por día) encadena:
 
-    features_refrescadas (materializa las 2 tablas del store) → modelo_reentrenado (entrena ambos targets + loguea a MLflow)
+    features_refrescadas (materializa las 2 tablas del store)
+      → modelo_reentrenado (entrena ambos targets + loguea a MLflow)
+        → forecast_precomputado (precomputa el pronóstico de 12 meses por pozo, ADR-045)
 
 `modelo_reentrenado` corre el entrenamiento una vez por target (`--target prod_pet` /
 `--target prod_gas`); cada uno usa su experimento/modelo de MLflow (`produccion-forecast` /
-`produccion-forecast-gas`).
+`produccion-forecast-gas`). `forecast_precomputado` escribe
+`features.pred_produccion_pozo_mensual` (+ `_gas`) con el modelo **Production** de cada
+target; la API sirve esas filas como lookup (con fallback on-the-fly). Si un target no
+tiene modelo en Production, el asset lo saltea con warning (no falla el job).
 
 Se ejecuta cuando:
 - **Cadencia mensual** (Schedule `retrain_mensual`, día 6): después del refresh del DW (ADR-021, cron día 5).
@@ -63,7 +68,7 @@ y activar `retrain_mensual` / `retrain_por_features_nuevas` en *Automation*.
 "Reentrenar como si fuera el día X" = materializar la partición X de los assets del retrain:
 
 ```bash
-dagster asset materialize --select "features_refrescadas,modelo_reentrenado" \
+dagster asset materialize --select "features_refrescadas,modelo_reentrenado,forecast_precomputado" \
   --partition 2026-04-06 -m data_pipeline.orchestration.definitions
 ```
 
@@ -104,6 +109,10 @@ for d in 2025-01-06 2025-02-06 2025-03-06; do
 done
 ```
 
+> En un backfill alcanza con `features_refrescadas,modelo_reentrenado`: el precómputo
+> (ADR-045) no honra `RETRAIN_ASOF` (siempre pronostica "desde hoy"), así que basta
+> correrlo una vez al final si se quiere refrescar el lookup.
+
 Cada partición re-materializa el feature store (desde el Bronze ya corregido) y reentrena,
 dejando un run por fecha en MLflow. Es **idempotente** (el store se reescribe y el run se vuelve a loguear).
 
@@ -121,3 +130,32 @@ dejando un run por fecha en MLflow. Es **idempotente** (el store se reescribe y 
   SELECT 'gas', count(*), max(periodo) FROM features.feat_produccion_pozo_mensual_gas;
   ```
   (El universo gasífero es más amplio → la tabla de gas suele tener más filas.)
+- El **precómputo** quedó fresco y alineado al store (12 filas por pozo, arrancando en el
+  mes siguiente al último observado):
+  ```sql
+  SELECT count(*) AS filas, count(DISTINCT idpozo) AS pozos,
+         min(periodo) AS primer_mes, max(model_version) AS version
+  FROM features.pred_produccion_pozo_mensual;
+  -- frescura: debe dar 0 (todos los pozos precomputados desde su último mes real)
+  SELECT count(*) FROM (
+    SELECT f.idpozo, max(f.periodo) AS ultimo, max(p.ultimo_observado) AS visto
+    FROM features.feat_produccion_pozo_mensual f
+    JOIN features.pred_produccion_pozo_mensual p USING (idpozo)
+    GROUP BY f.idpozo
+  ) x WHERE ultimo <> visto;
+  ```
+- Sanity de la API: `GET /api/v1/forecast` de un pozo con precómputo responde igual que
+  siempre (contrato de Fase 1); si se borra la tabla `pred_*`, responde idéntico vía
+  motor on-the-fly (transparencia, ADR-045).
+
+## 7. Promoción manual de modelo → refrescar el precómputo
+
+El precómputo se genera con el Production vigente **al momento del retrain**. Si se
+promueve un modelo **a mano** fuera del ciclo (p. ej. desde la UI de MLflow), el lookup
+sigue sirviendo lo calculado con el modelo anterior (la frescura se mide por datos, no
+por versión). Tras una promoción manual, re-materializar solo el precómputo:
+
+```bash
+dagster asset materialize --select "forecast_precomputado" \
+  --partition "$(date +%F)" -m data_pipeline.orchestration.definitions
+```

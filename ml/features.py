@@ -71,6 +71,63 @@ def engineered_feature_names(target: str = "prod_pet") -> list[str]:
 ENGINEERED_FEATURES = engineered_feature_names("prod_pet")
 
 
+# --- Set de features del modelo (fuente única de verdad) --------------------
+
+# Features NO recursion-safe (ADR-043/044): no se pueden recalcular en un mes futuro
+# desde la trayectoria del propio target. Genéricas (mismo nombre para los dos targets);
+# la producción CRUZADA (el otro target) la resuelve `recursion_safe_cols`.
+NON_RECURSION_SAFE = ["prod_vecinos_mean", "water_cut", "prod_agua", "tef"]
+
+
+def recursion_safe_cols(feature_cols: list[str], target: str = "prod_pet") -> list[str]:
+    """Filtra las features NO recursion-safe para el forecast recursivo (ADR-043/044).
+
+    Quita ``prod_vecinos_mean`` (cross-well), ``water_cut``/``prod_agua``/``tef`` (series
+    medidas que no se forecastean) y la producción **cruzada** (el otro target). El resto
+    —autorregresivas del propio target + estáticas + calendario— se puede recalcular en
+    cada paso recursivo. Es el **set candidato** que rankean los notebooks 02/03; el set
+    **final** del modelo es `selected_features`.
+    """
+    cross = "prod_gas" if target == "prod_pet" else "prod_pet"
+    excluir = set(NON_RECURSION_SAFE) | {cross}
+    return [c for c in feature_cols if c not in excluir]
+
+
+def selected_features(target: str = "prod_pet") -> list[str]:
+    """Set **final** de features del modelo (ADR-043): las que la selección por
+    permutation importance marcó *Mantener*, en dos capas. Es lo que entrena
+    `ml/train.py`, lo que materializa el feature store (ADR-036) y lo que consume
+    el forecast recursivo (ADR-044) — única fuente de verdad de las tres puntas.
+
+    - **Capa 1 — motor autorregresivo** (pozos con historial): el nivel del mes ``t``
+      (``{target}``) + 8 derivadas de su trayectoria.
+    - **Capa 2 — anclas estáticas** (sostienen el cold-start): reservorio, física,
+      ubicación y edad del pozo.
+
+    Las *borderline* y las de importancia ≈ 0 del ranking quedan **fuera** (poda por
+    parsimonia); son re-evaluables en un reentreno futuro sin tocar este contrato.
+    Mismo criterio para gas (ADR-042): ``prod_gas_*`` en vez de ``prod_pet_*``.
+    """
+    return [
+        # Capa 1 — motor autorregresivo del propio target
+        target,
+        f"{target}_roll3",
+        f"{target}_ratio1",
+        f"{target}_acum12",
+        f"{target}_roll6",
+        f"{target}_acum6",
+        f"{target}_cummax",
+        f"{target}_lag2",
+        f"{target}_delta1",
+        # Capa 2 — anclas estáticas (cold-start)
+        "areayacimiento",
+        "profundidad",
+        "coordenadax",
+        "coordenaday",
+        "well_age_months",
+    ]
+
+
 def _calendar_lag(df: pd.DataFrame, col: str, months: int) -> np.ndarray:
     """Valor de ``col`` en ``periodo - months`` para el mismo pozo, alineado por
     calendario (NaN si ese mes no existe en la serie del pozo).

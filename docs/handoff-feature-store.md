@@ -1,5 +1,11 @@
 # Handoff — feature store materializado (Fase 3)
 
+> ⚠️ **HISTÓRICO (jul-2026):** los pedidos de este documento ya se cumplieron y el contrato
+> evolucionó dos veces: `/predict` fue subsumido por `/forecast` (ADR-044) y el store quedó
+> en el **set final de la selección — 14 features / 18 columnas** (ADR-043) + las tablas de
+> **pronóstico precomputado** (ADR-045). El contrato vigente es [docs/feature-store.md](feature-store.md);
+> handoffs vigentes en `docs/handoffs/`. Se conserva como registro de la integración.
+
 > **De:** Rol 2 (Feature Store + Orquestación). **Para:** Rol 1 (entrenamiento) y Rol 3 (inferencia).
 > Acompaña al contrato [docs/feature-store.md](feature-store.md) y a [ADR-036](adr/0036-feature-store.md) (sección *Revisión*). Responde al handoff de Rol 1 en [docs/handoffs/rol2-feature-store.md](handoffs/rol2-feature-store.md).
 

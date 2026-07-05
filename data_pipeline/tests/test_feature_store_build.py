@@ -1,9 +1,9 @@
 """Tests de la materialización del feature store (build_store_features).
 
 La lógica reusa `ml/features` (sklearn) → se saltea si sklearn no está disponible.
-Valida estructura y comportamiento clave (columnas, idpozo int, target left-join,
-`mes` = mes del target) sobre un panel sintético, sin red ni DB. Cubre los **dos
-targets** (petróleo y gas, ADR-042) y el mapeo de tablas.
+Valida estructura y comportamiento clave (columnas = set FINAL de la selección
+ADR-043, idpozo int, target left-join) sobre un panel sintético, sin red ni DB.
+Cubre los **dos targets** (petróleo y gas, ADR-042) y el mapeo de tablas.
 """
 import pandas as pd
 import pytest
@@ -12,7 +12,7 @@ pytest.importorskip("sklearn")  # add_engineered_features usa NearestNeighbors
 
 from data_pipeline.orchestration import feature_store_build as fsb  # noqa: E402
 from ml import features as mlf  # noqa: E402
-from ml.dataset import BASIC_CATEGORICAL_FEATURES, BASIC_NUMERIC_FEATURES  # noqa: E402
+from ml.dataset import BASIC_CATEGORICAL_FEATURES  # noqa: E402
 
 
 def _panel_crudo(n_pozos=6, meses=5) -> pd.DataFrame:
@@ -33,26 +33,39 @@ def _panel_crudo(n_pozos=6, meses=5) -> pd.DataFrame:
 
 
 def test_columnas_y_grano():
+    # El store materializa EXACTAMENTE el set final de la selección (ADR-043): la
+    # misma lista que entrena ml/train.py (`selected_features`) + claves + y_next.
     out = fsb.build_store_features(_panel_crudo())
     esperadas = (
         ["idpozo", "periodo", "periodo_objetivo"]
-        + BASIC_NUMERIC_FEATURES + mlf.ENGINEERED_FEATURES
-        + BASIC_CATEGORICAL_FEATURES + ["y_next"]
+        + mlf.selected_features("prod_pet") + ["y_next"]
     )
     assert list(out.columns) == esperadas
     assert str(out["idpozo"].dtype).startswith("int")
     assert len(out) == 6 * 5  # left-join: conserva todas las filas
 
 
-def test_target_left_join_y_mes_es_del_objetivo():
+def test_solo_features_seleccionadas():
+    # Las descartadas/borderline del ranking (ADR-043) NO se persisten: ni las
+    # no-recursion-safe, ni delta3 (ruido), ni las categóricas de imp. ≈ 0, ni `mes`.
+    out = fsb.build_store_features(_panel_crudo())
+    fuera = {"prod_vecinos_mean", "water_cut", "prod_agua", "tef", "prod_gas",
+             "prod_pet_delta3", "prod_pet_lag12", "mes", "empresa", "cuenca",
+             "provincia", "formacion", "tipopozo", "produjo_mes_pasado"}
+    assert not fuera & set(out.columns)
+    # las anclas estáticas del cold-start SÍ están (Capa 2 de la selección)
+    for ancla in ("areayacimiento", "profundidad", "coordenadax", "coordenaday",
+                  "well_age_months"):
+        assert ancla in out.columns
+
+
+def test_target_left_join():
     out = fsb.build_store_features(_panel_crudo()).sort_values(["idpozo", "periodo"])
     un_pozo = out[out.idpozo == 100].reset_index(drop=True)
     # y_next = prod_pet del mes siguiente; la última fila queda NULL (para inferencia)
     assert un_pozo["y_next"].iloc[:-1].notna().all()
     assert pd.isna(un_pozo["y_next"].iloc[-1])
     assert un_pozo["y_next"].iloc[0] == un_pozo["prod_pet"].iloc[1]
-    # `mes` = mes del MES OBJETIVO (t+1): para periodo 2020-01 → mes 2
-    assert un_pozo["mes"].iloc[0] == 2
 
 
 def test_table_for_mapea_petroleo_y_gas():
@@ -62,12 +75,11 @@ def test_table_for_mapea_petroleo_y_gas():
 
 
 def test_build_gas_usa_features_de_gas_y_su_target():
-    # El modelo de gas materializa las features de ingeniería sobre prod_gas y su y_next.
+    # El modelo de gas materializa las autorregresivas sobre prod_gas y su y_next.
     out = fsb.build_store_features(_panel_crudo(), target="prod_gas")
     esperadas = (
         ["idpozo", "periodo", "periodo_objetivo"]
-        + BASIC_NUMERIC_FEATURES + mlf.engineered_feature_names("prod_gas")
-        + BASIC_CATEGORICAL_FEATURES + ["y_next"]
+        + mlf.selected_features("prod_gas") + ["y_next"]
     )
     assert list(out.columns) == esperadas
     # los nombres autorregresivos llevan el prefijo del target gas

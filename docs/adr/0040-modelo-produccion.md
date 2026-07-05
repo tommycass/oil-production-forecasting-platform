@@ -82,6 +82,24 @@ Cómo conviven petróleo y gas sin duplicar trabajo:
 - La **confirmación en `test`** ya se ejecutó una vez por target; en sucesivos reentrenos, test debe usarse con moderación para no "ajustar a test".
 - Mantener **dos campeones** exige que la comparación/promoción esté **automatizada** para los dos (encaja con el job de retrain).
 
+## Revisión (jul-2026): set final de features (ADR-043)
+
+La evidencia de arriba se midió sobre el **set candidato recursion-safe (35 features)**.
+Después, la Decisión del ADR-043 fijó el **set final del modelo en 14 features**
+(`ml.features.selected_features`: núcleo autorregresivo + anclas estáticas), que es lo que
+`ml/train.py` entrena, el store materializa y `/forecast` consume. El propio ADR-043 (§4)
+validó el recorte en val **y** test: el set compacto cede ~3% de val RMSE frente al de 35
+(RF 234,5 vs 227,8) y en test mantiene R² ~0,86, superando a la persistencia.
+
+Esto **no cambia** las decisiones de este ADR: el campeón (Random Forest), el criterio de
+promoción y la mecánica del registry son independientes del tamaño del set, y el punto 3
+("el campeón no es fijo, la métrica decide en cada corrida") es exactamente la salvaguarda:
+en cada retrain el candidato entrenado con el set final se compara contra la persistencia y
+contra el Production vigente, y **solo se promueve si mejora**. Queda como pendiente de
+Rol 1 re-correr el tuning (`BEST_PARAMS`) sobre el set final con datos reales para
+re-confirmar hiperparámetros y refrescar los números de este ADR (los grids actuales
+siguen siendo válidos como punto de partida).
+
 ---
 
-> Relacionados: **ADR-034** (algoritmo y validación temporal, que este ADR refina), **ADR-042** (segundo modelo de gas: diseño, universo y anti-leakage), **ADR-029** (baseline / vara de éxito), **ADR-039** (preprocesamiento), **ADR-030** (MLflow), **ADR-037** (servidor MLflow), **ADR-038** (serving) y **ADR-041** (retrain, a extender a ambos modelos).
+> Relacionados: **ADR-034** (algoritmo y validación temporal, que este ADR refina), **ADR-042** (segundo modelo de gas: diseño, universo y anti-leakage), **ADR-043** (selección de features: set final del modelo), **ADR-029** (baseline / vara de éxito), **ADR-039** (preprocesamiento), **ADR-030** (MLflow), **ADR-037** (servidor MLflow), **ADR-038** (serving) y **ADR-041** (retrain, a extender a ambos modelos).
