@@ -11,6 +11,14 @@ services:
       - "8000:8000"
     env_file:
       - ../api/.env
+    volumes:
+      # mlflow.sklearn.load_model resuelve URIs file:// directamente (no via proxy),
+      # por eso el container necesita acceso al path donde el training dejó los artefactos.
+      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts
+      # El Pipeline fue entrenado con transformers del paquete ml/. Sklearn los necesita
+      # importar al deserializar (pickle). Se monta en /app/ml para que sea importable
+      # (el working dir del container es /app, que está en sys.path).
+      - ../ml:/app/ml:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
@@ -248,7 +256,9 @@ services:
 
   # MLflow tracking server + model registry (ADR-032). Perfil "ml".
   # Backend: Postgres (misma instancia que el DW, base separada mlflow_db).
-  # Artifacts: volumen local con --serve-artifacts (la API descarga vía HTTP, sin montar el volumen).
+  # Artifacts: el training corre en el host y escribe a mlartifacts/ con URI file://.
+  # La API los lee directamente (mlflow.sklearn.load_model resuelve file:// sin proxy),
+  # por eso tanto mlflow como api montan el mismo path del host.
   # Uso local: docker compose --profile ml --profile local-db up
   # Staging/prod: POSTGRES_HOST apunta al RDS; la base mlflow_db debe existir previamente.
   mlflow:
@@ -277,6 +287,11 @@ services:
           --serve-artifacts
     volumes:
       - mlartifacts:/mlartifacts
+      # El training corre en el host y escribe artefactos a mlartifacts/ del proyecto.
+      # Este bind-mount expone ese path dentro del contenedor para que el servidor
+      # pueda servirlos vía proxy (--serve-artifacts). Mismo path absoluto que el
+      # artifact_uri registrado en Postgres.
+      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts:ro
     restart: unless-stopped
     logging:
       driver: "json-file"
