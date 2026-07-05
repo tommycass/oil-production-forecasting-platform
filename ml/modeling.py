@@ -39,11 +39,32 @@ TARGET_COL = "y_next"
 # modelos que requieren normalización (escala) de las features
 NEEDS_SCALING = {"reg_lineal"}
 
+# Features NO recursion-safe (ADR-043/044): no se pueden recalcular en un mes futuro
+# desde la trayectoria del propio target, así que un modelo entrenado con ellas no se
+# puede usar en el forecast recursivo. Estas son genéricas (mismo nombre para los dos
+# targets); además hay que excluir la producción CRUZADA (el otro target: prod_gas para
+# el modelo de petróleo y prod_pet para el de gas), que resuelve `recursion_safe_cols`.
+NON_RECURSION_SAFE = ["prod_vecinos_mean", "water_cut", "prod_agua", "tef"]
+
+
+def recursion_safe_cols(feature_cols: list[str], target: str = "prod_pet") -> list[str]:
+    """Filtra las features NO recursion-safe para el forecast recursivo (ADR-043/044).
+
+    Quita ``prod_vecinos_mean`` (cross-well), ``water_cut``/``prod_agua``/``tef`` (series
+    medidas que no forecasteamos) y la producción **cruzada** (el otro target). Es
+    exactamente el filtro ``NO_RECURSION_SAFE`` del notebook 02/03. El resto —
+    autorregresivas del propio target + estáticas + calendario — se puede recalcular en
+    cada paso recursivo.
+    """
+    cross = "prod_gas" if target == "prod_pet" else "prod_pet"
+    excluir = set(NON_RECURSION_SAFE) | {cross}
+    return [c for c in feature_cols if c not in excluir]
+
 
 # --- Matriz de features y split --------------------------------------------
 
 def build_feature_matrix(
-    ds: pd.DataFrame | None = None, target: str = "prod_pet"
+    ds: pd.DataFrame | None = None, target: str = "prod_pet", recursion_safe: bool = False
 ) -> tuple[pd.DataFrame, list[str]]:
     """Devuelve ``(ds, feature_cols)``: el dataset con las features **crudas**
     (numéricas + categóricas sin codificar) y la lista de columnas que son features.
@@ -52,10 +73,17 @@ def build_feature_matrix(
     poder ajustarlo por fold durante la CV. Si no se pasa ``ds``, se construye con
     ``ml.dataset.build_basic_dataset`` para el ``target`` indicado (``prod_pet`` por
     defecto; ``prod_gas`` para el modelo de gas, ADR-042).
+
+    ``recursion_safe=True`` deja **solo las features recursion-safe** (ADR-043/044,
+    vía ``recursion_safe_cols``): el modelo entrenado con ellas se puede usar en el
+    forecast recursivo (``/forecast``). Es el mismo set con el que trabaja el notebook
+    02/03. Por defecto ``False`` (todas las features, modelo de un paso).
     """
     if ds is None:
         ds = dataset.build_basic_dataset(target=target)
     feature_cols = [c for c in ds.columns if c not in KEYS + [TARGET_COL]]
+    if recursion_safe:
+        feature_cols = recursion_safe_cols(feature_cols, target)
     return ds, feature_cols
 
 
@@ -136,35 +164,37 @@ def get_models(random_state: int = RANDOM_STATE) -> dict:
     }
 
 
-# Mejores hiperparámetros registrados (del tuning con CV temporal). Indexados por
-# **target**: petróleo (notebook 03_modeling §4.1) y gas (notebook 04_modeling_gas
-# §4); ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos
-# en vez de defaults
-# arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
+# Mejores hiperparámetros registrados (del tuning con CV temporal sobre el set
+# **recursion-safe**, ADR-043/044). Indexados por **target**: petróleo (notebook
+# 02_feature_selection_pet §3.1) y gas (notebook 03_feature_selection_gas §3.1);
+# ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos en vez de
+# defaults arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
 # ahora se mantienen acá como "últimos mejores registrados".)
-# Nota: los hiperparámetros de RF y XGBoost coincidieron entre petróleo y gas
-# (mismo grid + misma semilla del random search); solo difiere el alpha de Ridge.
+# Nota: XGBoost coincidió entre petróleo y gas (mismo grid + misma semilla del random
+# search); RF difirió (petróleo: 200 árboles / prof. 24; gas: 400 / 16) y el alpha de
+# Ridge es data-dependiente. min_samples_leaf=5 en RF (más regularización que el set
+# completo previo) sale del re-tuneo sobre las features recursion-safe.
 BEST_PARAMS = {
     "prod_pet": {
-        "ridge": {"alpha": 1128.8378916846884},
+        "ridge": {"alpha": 10000.0},
         "random_forest": {
-            "n_estimators": 400, "max_depth": 16,
-            "max_features": 0.5, "min_samples_leaf": 2,
+            "n_estimators": 200, "max_depth": 24,
+            "max_features": 0.5, "min_samples_leaf": 5,
         },
         "xgboost": {
-            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
-            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+            "n_estimators": 50, "learning_rate": 0.1, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.8, "colsample_bytree": 0.8,
         },
     },
     "prod_gas": {
-        "ridge": {"alpha": 29.76351441631316},
+        "ridge": {"alpha": 3.359818286283781},
         "random_forest": {
             "n_estimators": 400, "max_depth": 16,
-            "max_features": 0.5, "min_samples_leaf": 2,
+            "max_features": 0.5, "min_samples_leaf": 5,
         },
         "xgboost": {
-            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
-            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+            "n_estimators": 50, "learning_rate": 0.1, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.8, "colsample_bytree": 0.8,
         },
     },
 }

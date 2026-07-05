@@ -1,8 +1,10 @@
 # Título: ADR-035: Contrato del endpoint de predicción de producción
 
-**Estado:** Propuesta
+**Estado:** Reemplazado por [ADR-044](0044-forecast-recursivo.md)
 
-> Relacionado con [ADR-001](0001-framework-backend.md) (FastAPI), [ADR-010](0010-api-key-validation-strategy.md) (autenticación), [ADR-038](0038-serving-strategy.md) (estrategia de serving) y [ADR-042](0042-modelo-prediccion-gas.md) (segundo modelo, gas). Este ADR documenta el diseño del contrato HTTP del endpoint `POST /api/v1/predict`.
+> **Reemplazado (ADR-044):** el endpoint `POST /api/v1/predict` (predicción de un mes) se **retiró**. El `GET /api/v1/forecast` recursivo lo **subsume**: un rango de un solo mes equivale a la predicción de un mes, y el parámetro `target` (petróleo/gas) pasa a `/forecast` como opcional. Este ADR queda como registro del diseño original del paso unitario, cuya lógica (leer features → pipeline → valor) vive ahora dentro del forecast.
+
+> Relacionado con [ADR-001](0001-framework-backend.md) (FastAPI), [ADR-010](0010-api-key-validation-strategy.md) (autenticación), [ADR-038](0038-serving-strategy.md) (estrategia de serving), [ADR-042](0042-modelo-prediccion-gas.md) (segundo modelo, gas) y [ADR-044](0044-forecast-recursivo.md) (que lo reemplaza). Este ADR documentaba el diseño del contrato HTTP del endpoint `POST /api/v1/predict`.
 
 ---
 

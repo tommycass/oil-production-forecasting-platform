@@ -8,7 +8,7 @@ El ADR-029 fijó la **vara de éxito** (la persistencia: un modelo solo se justi
 
 El problema (ADR-028) es una **regresión tabular global** de `prod_pet(t+1)`. El dataset (ADR-031/033) tiene ~380 columnas (mayormente dummies ralas del one-hot, ADR-032), target muy asimétrico (cola larga + ~25% de ceros) y fuerte autocorrelación. La comparación se hace **entrenando en train y midiendo en val** (ADR-028); `test` queda intacto. Métricas: **RMSE** (m³, penaliza errores grandes) y **R²**.
 
-La implementación reutilizable vive en `ml/modeling.py` y la comparación en `notebooks/03_modeling_pet.ipynb`.
+La implementación reutilizable vive en `ml/modeling.py` y la comparación (tuning + campeón) en `notebooks/02_feature_selection_pet.ipynb` (petróleo) y `notebooks/03_feature_selection_gas.ipynb` (gas).
 
 ## Análisis de Alternativas
 

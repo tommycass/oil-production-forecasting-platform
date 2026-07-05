@@ -1,62 +1,67 @@
-"""Lee features del feature store para inferencia en tiempo real.
+"""Lectura del feature store para el **forecast recursivo** (ADR-044).
 
-El feature store (ADR-036) materializa **una tabla por target** (ADR-042):
-petróleo y gas. Cada fila es el **mes base `t`** (clave `idpozo` + `periodo`) con las
-29 features con las que el modelo predice el target del **mes siguiente `t+1`**.
+El forecast recursivo necesita, para arrancar, la fila de features del **mes base** (último
+mes observado del pozo) y la **serie mensual observada** del target. Con la fila base se
+predice el primer mes (t+1) **usando las features pre-computadas del store** (sin recalcular,
+RNF de Fase 3); con la serie se recalculan las features de los meses futuros (t+2+), que no
+existen en el store. Todo se lee de la **misma tabla** que materializa el training
+(``feature_store_build.py``, ADR-036) → paridad training-serving garantizada.
 
-Para inferir `t+1 = (año, mes)`, la API lee la fila del mes base
-`t = (año, mes) − 1 mes` en la tabla del target pedido y pasa **todas** las features
-al Pipeline del modelo (que hace one-hot/imputación internamente). No recalcula nada
-(evita el training-serving skew, RNF de la Fase 3).
-
-Contrato completo de columnas: docs/feature-store.md.
+Contrato de columnas del store: docs/feature-store.md.
 """
 
 from __future__ import annotations
 
-from datetime import date
-
 from app.core.database import fetch_all
 
 # Tabla del store por target (ADR-036 Rev. 2 / ADR-042). Petróleo mantiene el nombre
-# histórico; gas usa el sufijo _gas. La API elige la tabla según el target pedido.
+# histórico; gas usa el sufijo _gas. El reader elige la tabla según el target.
 FEATURE_TABLE_BY_TARGET = {
     "prod_pet": "features.feat_produccion_pozo_mensual",
     "prod_gas": "features.feat_produccion_pozo_mensual_gas",
 }
 
-# Columnas que NO son features del modelo: claves de lookup y el target de training.
-# Se descartan de la fila; el resto (las 29 features) va al Pipeline. Derivar las
-# features "por descarte" evita hardcodear los nombres engineered, que cambian por
-# target (prod_pet_* vs prod_gas_*), y mantiene una sola fuente de verdad (el store).
+# Columnas que NO son features del modelo: claves de lookup y el target de training. Se
+# descartan de la fila del store. Excluir ``y_next`` es además una **guarda anti-leak**: es
+# el target del mes siguiente (justo lo que se predice) y no debe entrar como feature.
 NON_FEATURE_COLUMNS = {"idpozo", "periodo", "periodo_objetivo", "y_next"}
 
+# Atributos ESTÁTICOS del pozo que el modelo recursion-safe usa como features (ADR-043):
+# no cambian mes a mes, así que se leen una vez y se replican en cada paso de la recursión.
+STATIC_FEATURE_COLUMNS = [
+    "profundidad", "coordenadax", "coordenaday",
+    "tipoextraccion", "tipoestado", "tipopozo", "empresa", "formprod", "formacion",
+    "areapermisoconcesion", "areayacimiento", "cuenca", "provincia", "proyecto",
+    "clasificacion", "subclasificacion", "sub_tipo_recurso",
+]
 
-def _mes_base(anio: int, mes: int) -> date:
-    """Primer día del mes base `t` = primer día del mes objetivo `(anio, mes)` menos
-    un mes. Es la clave `periodo` con la que se busca la fila en el store."""
-    if mes == 1:
-        return date(anio - 1, 12, 1)
-    return date(anio, mes - 1, 1)
 
-
-def get_features_for_inference(idpozo: int, anio: int, mes: int, target: str) -> dict:
-    """Retorna las 29 features del mes base `t` para predecir el target del mes
-    `t+1 = (anio, mes)` en el pozo dado.
+def get_history_for_forecast(idpozo: int, target: str):
+    """Datos del feature store para el forecast recursivo de un pozo (ADR-044).
 
     Args:
         idpozo: ID numérico del pozo.
-        anio: Año del mes a PREDECIR (t+1).
-        mes: Mes a predecir (1-12, t+1).
         target: ``prod_pet`` (petróleo) o ``prod_gas`` (gas) — elige la tabla del store.
 
     Returns:
-        Dict ``{columna_feature: valor}`` con las 29 features del mes base `t`
-        (sin ``idpozo``/``periodo``/``periodo_objetivo``/``y_next``).
+        Tupla ``(base_features, series, static)``:
+          - ``base_features``: ``dict`` ``{columna: valor}`` con las **features del mes base**
+            ``t`` (último mes observado), leídas **directamente del store** (sin ``y_next`` ni
+            claves). Se usan para predecir el **primer** mes (t+1) **sin recalcular** — el store
+            se usa en inferencia (RNF Fase 3).
+          - ``series``: ``pandas.DataFrame`` con **una fila por mes observado**, columnas
+            ``periodo`` y ``target``, ordenada ascendente. Se usa para **recalcular** las
+            features de los meses futuros (t+2+), que no existen en el store.
+          - ``static``: ``dict`` con los atributos de ``STATIC_FEATURE_COLUMNS`` (+ ``idpozo``).
 
     Raises:
-        ValueError: Si el ``target`` no está soportado, o si el pozo no tiene fila en
-            el mes base (pozo nuevo o sin historia a esa fecha).
+        ValueError: si el ``target`` no está soportado, o si el pozo no tiene serie en el
+            store (fuera del universo / sin historia) → el servicio lo traduce a 404.
+
+    El store conserva la fila del **último mes** de cada pozo (con ``y_next`` NULL;
+    ``feature_store_build`` usa left-join justo para habilitar la inferencia del mes
+    siguiente), así que ``base_features`` del mes base **existe**. ``target`` y el nombre de
+    tabla salen de una allowlist (no del input), así que interpolarlos en el SQL es seguro.
     """
     tabla = FEATURE_TABLE_BY_TARGET.get(target)
     if tabla is None:
@@ -64,23 +69,28 @@ def get_features_for_inference(idpozo: int, anio: int, mes: int, target: str) ->
             f"Target '{target}' no soportado. Opciones: {sorted(FEATURE_TABLE_BY_TARGET)}"
         )
 
-    periodo_t = _mes_base(anio, mes)
-
-    # SELECT * y se descartan las no-feature: así el reader no depende de los nombres
-    # engineered (distintos por target) y toma automáticamente cualquier feature nueva
-    # que el Rol 2 re-materialice (el nombre de tabla es de una allowlist, no del input).
-    sql = f"""
-        SELECT *
-        FROM {tabla}
-        WHERE idpozo = :idpozo
-          AND periodo = :periodo
-        LIMIT 1
-    """
-    rows = fetch_all(sql, {"idpozo": idpozo, "periodo": periodo_t})
-    if not rows:
+    # Fila del MES BASE (último mes observado): todas las columnas, se descartan las
+    # no-feature (claves + y_next → guarda anti-leak). Es la fila que consumía /predict.
+    base_rows = fetch_all(
+        f"SELECT * FROM {tabla} WHERE idpozo = :idpozo ORDER BY periodo DESC LIMIT 1",
+        {"idpozo": idpozo},
+    )
+    if not base_rows:
         raise ValueError(
-            f"Pozo {idpozo} sin features en el mes base {periodo_t.isoformat()} "
-            f"(para predecir {target} de {anio}-{mes:02d})"
+            f"Pozo {idpozo} sin serie en el feature store del target '{target}' "
+            f"(fuera del universo o sin historia)"
         )
+    base_row = base_rows[0]
+    base_features = {k: v for k, v in base_row.items() if k not in NON_FEATURE_COLUMNS}
+    static = {c: base_row[c] for c in STATIC_FEATURE_COLUMNS if c in base_row}
+    static["idpozo"] = idpozo
 
-    return {k: v for k, v in rows[0].items() if k not in NON_FEATURE_COLUMNS}
+    # Serie observada (periodo + valor del target por mes) para recalcular los meses futuros.
+    serie_rows = fetch_all(
+        f"SELECT periodo, {target} FROM {tabla} WHERE idpozo = :idpozo ORDER BY periodo",
+        {"idpozo": idpozo},
+    )
+    import pandas as pd
+
+    series = pd.DataFrame(serie_rows, columns=["periodo", target])
+    return base_features, series, static

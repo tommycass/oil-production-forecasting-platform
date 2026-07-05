@@ -34,9 +34,10 @@ from ml import modeling
 from ml.config import PROJECT_ROOT, TARGET, TARGETS
 
 MODELS_DIR = PROJECT_ROOT / "models"
-# Campeón según la comparación TUNEADA en val (notebook 03_modeling §4.1, ADR-040):
-# random_forest (val RMSE 226.8 / R² 0.903) supera a xgboost, ridge y la persistencia.
-# Ojo: xgboost ganaba SIN tunear, pero tuneado lo supera random_forest.
+# Campeón según la comparación TUNEADA en val sobre el set recursion-safe (notebooks
+# 02/03 §3.1, ADR-043/044): random_forest (val RMSE ~227.1 / R² 0.903 en petróleo;
+# ~576.6 / 0.861 en gas) supera a xgboost, ridge y la persistencia. Se entrena siempre
+# recursion-safe (ver train()), así que este campeón sirve para /predict y /forecast.
 CHAMPION = "random_forest"
 MODELOS = ("ridge", "random_forest", "xgboost")
 
@@ -54,8 +55,14 @@ def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
     métricas en train/val + la persistencia (baseline a batir, ADR-029). El
     ``pipeline`` devuelto es el artefacto a versionar/loguear (gancho para Rol 3).
     ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
+
+    Entrena **siempre con el set recursion-safe** (ADR-043/044, notebooks 02/03): es el
+    modelo por defecto y único de producción, apto tanto para ``/predict`` (un paso)
+    como para el forecast recursivo (``/forecast``). Se excluyen las features que no se
+    pueden recalcular en un mes futuro desde la trayectoria del target
+    (``prod_vecinos_mean``, ``water_cut``, la producción cruzada, ``prod_agua``, ``tef``).
     """
-    ds, feats = modeling.build_feature_matrix(target=target)
+    ds, feats = modeling.build_feature_matrix(target=target, recursion_safe=True)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
 
     if tune:
@@ -109,8 +116,10 @@ def train_final(model_name: str = CHAMPION, params: dict | None = None, target: 
     hiperparámetros registrados (``BEST_PARAMS``, ADR-040) y lo evalúa **una vez en
     test**. Es la confirmación final del campeón; no re-tunea. Devuelve ``(pipe, info)``.
     ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
+
+    Usa **siempre el set recursion-safe** (ADR-043/044), igual que ``train``.
     """
-    ds, feats = modeling.build_feature_matrix(target=target)
+    ds, feats = modeling.build_feature_matrix(target=target, recursion_safe=True)
     X_dev, y_dev, X_te, y_te = modeling.split_dev_test(ds, feats)
     pipe = modeling.build_pipeline(
         modeling.make_estimator(model_name, params, target=target), model_name == "ridge", feats
@@ -140,8 +149,9 @@ def _print_final(info: dict) -> None:
 
 
 def compare(target: str = TARGET) -> None:
-    """Compara los 3 modelos sin tunear sobre val (como la sección 3 del notebook)."""
-    ds, feats = modeling.build_feature_matrix(target=target)
+    """Compara los 3 modelos sin tunear sobre val (como la sección 3 del notebook).
+    Sobre el set recursion-safe (ADR-043/044), igual que el resto del entrenamiento."""
+    ds, feats = modeling.build_feature_matrix(target=target, recursion_safe=True)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
     tabla, _ = modeling.train_eval_models(X_tr, y_tr, X_va, y_va)
     import pandas as pd
@@ -171,7 +181,9 @@ def main() -> None:
     args = parser.parse_args()
 
     # sufijo de gas en el nombre del archivo para no pisar el modelo de petróleo
-    # (petróleo mantiene su nombre histórico: random_forest.joblib, etc.)
+    # (petróleo mantiene su nombre histórico: random_forest.joblib, etc.). El modelo
+    # es recursion-safe por defecto (ADR-043/044), así que no lleva sufijo extra: es
+    # el único campeón de producción, usado por /predict y /forecast.
     suf = "" if args.target == "prod_pet" else f"_{args.target}"
 
     if args.compare:

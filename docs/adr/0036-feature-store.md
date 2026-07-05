@@ -42,7 +42,7 @@ Un asset de Dagster que calcula las features en pandas (reusando `ml/dataset.py`
 Decisiones de diseño asociadas:
 
 1. **Una sola definición de features (anti-skew).** El modelo dbt reproduce **exacto** las features de `ml/dataset.py` (`lag1/2/3`, `roll3` con min_periods=3, `antiguedad` 0-based, `tef_lag1`, target `y_next`). `ml/dataset.py` se refactoriza para **leer del store** en vez de recalcular, y la API lee del **mismo** store. Así la feature se calcula **una vez** y es idéntica en training e inferencia.
-2. **Encuadre "fila = mes base `t`"** (alineado con `ml/dataset.py`, `y_next = shift(-1)`): coherente con `POST /api/v1/predict` y con `/forecast`.
+2. **Encuadre "fila = mes base `t`"** (alineado con `ml/dataset.py`, `y_next = shift(-1)`): coherente con la inferencia de `/forecast` (ADR-044).
 3. **Categóricas crudas en el store; encoding en el modelo.** El store guarda `tipopozo`, `cuenca`, etc. sin encodear; el one-hot/scaling vive en el pipeline del modelo y se serializa en MLflow, para que la inferencia lo replique. Evita acoplar el store a un algoritmo.
 4. **Deriva de Gold, no de Silver/CSV.** Mantiene la arquitectura Medallion y el linaje gobernado.
 
@@ -68,7 +68,7 @@ Decisiones de diseño asociadas:
 
 ## Revisión (Fase 3) — materialización del pipeline de ML
 
-**Contexto del cambio.** La decisión original (Alternativa A: reproducir las features en dbt SQL) se tomó cuando las features eran 6 autoregresivas simples (`lag1/2/3`, `roll3`, `antiguedad`, `tef_lag1`) que calzaban en SQL. Al integrar el trabajo de modelado (Rol 1), el modelo campeón (ADR-040) pasó a usar **~29 features** que incluyen ingeniería **en Python**: medias/lags **por calendario** (`prod_pet_roll3/delta1/lag12/acum6`), `water_cut`, y `prod_vecinos_mean` (media de los k pozos vecinos por **KNN** sobre coordenadas). Reproducir eso en SQL es impráctico (KNN) y, sobre todo, **se desincronizaría** de `ml/features.py` (reintroduciendo el training-serving skew que el store debe evitar). Además se detectó que el training calculaba features en pandas sin pasar por el store y la inferencia leía columnas viejas → **desalineación de tres puntas**.
+**Contexto del cambio.** La decisión original (Alternativa A: reproducir las features en dbt SQL) se tomó cuando las features eran 6 autoregresivas simples (`lag1/2/3`, `roll3`, `antiguedad`, `tef_lag1`) que calzaban en SQL. Al integrar el trabajo de modelado (Rol 1), el modelo campeón (ADR-040) pasó a usar features con ingeniería **en Python**: medias/lags **por calendario** (`prod_pet_roll3/delta1/lag12/acum6`, y las autorregresivas del forecast recursivo, ADR-043) que en SQL eran impracticables (p. ej. el KNN de vecinos que se probó y descartó). Reproducir eso en SQL es impráctico (KNN) y, sobre todo, **se desincronizaría** de `ml/features.py` (reintroduciendo el training-serving skew que el store debe evitar). Además se detectó que el training calculaba features en pandas sin pasar por el store y la inferencia leía columnas viejas → **desalineación de tres puntas**.
 
 **Decisión revisada.** El feature store **materializa la salida del pipeline de features de `ml/`** (única fuente de verdad), en vez de reimplementarlo en dbt:
 - Un **asset de Dagster** (Rol 2) ejecuta el pipeline de features de ML (importa `ml.features.add_engineered_features` + las listas `ml.dataset.BASIC_*`) y escribe `features.feat_produccion_pozo_mensual` con las columnas que consume el modelo, leyendo de `bronze.produccion`. Se materializa **dentro del job de retrain** (`features_refrescadas`, ADR-041), **no** en `dw_publish`, para no acoplar el refresh del DW (Fase 2) a las deps de `ml/`.
@@ -86,7 +86,7 @@ Decisiones de diseño asociadas:
 
 ### Alternativas evaluadas (layout del store)
 
-- **a) Una tabla por target (elegida).** `feat_produccion_pozo_mensual` (petróleo, nombre histórico) y `feat_produccion_pozo_mensual_gas` (gas), cada una con sus 29 features + `y_next` y su universo train-only.
+- **a) Una tabla por target (elegida).** `feat_produccion_pozo_mensual` (petróleo, nombre histórico) y `feat_produccion_pozo_mensual_gas` (gas), cada una con sus 35 features recursion-safe + `y_next` y su universo train-only.
   - **Ventajas:** el universo train-only de cada target queda **limpio y aislado** (sin filas de un target con `y_next` nulo del otro); cada modelo —training e inferencia— hace un `SELECT *` de **su** tabla sin lógica de selección de columnas; reusa `build_store_features(df, target=...)` dos veces (cero código nuevo de features); la tabla de petróleo **no cambia de nombre** (no rompe consumidores existentes); paridad validable por target. Es la recomendación de Rol 1 en el handoff.
   - **Desventajas:** **duplica** las 22 columnas compartidas (8 numéricas + 14 categóricas) entre tablas. Trivial al volumen (~6 k filas por tabla) y sin costo de mantenimiento (la lista sale del mismo código de `ml/`).
 - **b) Una tabla "ancha".** Las compartidas una sola vez + **ambos** bloques de ingeniería (`prod_pet_*` y `prod_gas_*`) + dos `y_next`, sobre la **unión** de universos.

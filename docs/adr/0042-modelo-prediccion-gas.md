@@ -45,7 +45,7 @@ Con esa confirmación, hay que pronosticar **ambas** producciones. Este ADR **ex
 ### 4. Features: crudas compartidas + ingeniería en versión gas
 
 - **Crudas compartidas** (sin cambios): `prod_pet`, `prod_gas`, `prod_agua`, `tef`, `profundidad`, `coordenadax/y`, `mes` y las 14 categóricas. Mantener `prod_pet(t)` como feature del modelo de gas es **válido** (es una medida del mes t, no del futuro) y aporta señal cruzada (petróleo y gas asociados).
-- **Ingeniería en versión gas:** las 7 features de `ml/features.py` están hoy construidas sobre `prod_pet` (`prod_pet_roll3`, `prod_pet_delta1`, `prod_pet_lag12`, `prod_pet_acum6`, vecinos, etc.). Para el modelo de gas se **espejan sobre `prod_gas`** (`prod_gas_roll3`, …), que es la señal autorregresiva y estacional propia del target. Se construyen con el **mismo mecanismo de lag por calendario** (ADR-033), así que heredan su garantía anti-leakage. `water_cut` (agua/(agua+petróleo)) y `produjo_mes_pasado` se mantienen o adaptan según aporten al gas; se decide en el notebook de modelado.
+- **Ingeniería en versión gas:** las features de ingeniería de `ml/features.py` están hoy construidas sobre `prod_pet` (`prod_pet_roll3`, `prod_pet_delta1`, `prod_pet_lag12`, `prod_pet_acum6`, vecinos, etc.). Para el modelo de gas se **espejan sobre `prod_gas`** (`prod_gas_roll3`, …), que es la señal autorregresiva y estacional propia del target. Se construyen con el **mismo mecanismo de lag por calendario** (ADR-033), así que heredan su garantía anti-leakage. `water_cut` (agua/(agua+petróleo)) y `produjo_mes_pasado` se mantienen o adaptan según aporten al gas; se decide en el notebook de modelado.
 
 ### 5. Confirmación anti-leakage (independiente del target)
 

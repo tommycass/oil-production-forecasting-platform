@@ -17,9 +17,10 @@ Tratamiento de NaN por grupo de features (ADR-039):
 
 | Grupo             | Features                                                     | NaN              |
 |-------------------|-------------------------------------------------------------|------------------|
-| Volúmenes         | prod_pet, prod_gas, prod_agua, roll3, acum6, lag12, vecinos | 0 + flag         |
-| Variación         | prod_pet_delta1                                              | 0 + flag         |
-| Ratios / flags    | water_cut, produjo_mes_pasado                               | 0                |
+| Volúmenes         | prod_*, roll3/6, acum6/12, lag12/2/3, std3, cummax, vecinos | 0 + flag         |
+| Variación         | delta1, delta3, ratio1                                       | 0 + flag         |
+| Ratios / flags    | water_cut, produjo_mes_pasado, frac_peak                    | 0                |
+| Edad (meses)      | well_age_months, meses_desde_pico                           | mediana (train)  |
 | Físicas estáticas | profundidad, coordenadax, coordenaday                       | mediana (train)  |
 | Operativa         | tef                                                         | mediana (train)  |
 | Calendario        | mes                                                         | —                |
@@ -46,9 +47,28 @@ VOLUMES = [
     "prod_pet_roll3", "prod_pet_acum6", "prod_pet_lag12",
     "prod_gas_roll3", "prod_gas_acum6", "prod_gas_lag12",
     "prod_vecinos_mean",
+    # nuevas de volumen/nivel (magnitudes de producción; NaN = sin historia -> 0 + flag)
+    "prod_pet_lag2", "prod_pet_lag3", "prod_pet_roll6", "prod_pet_acum12",
+    "prod_pet_std3", "prod_pet_cummax",
+    "prod_gas_lag2", "prod_gas_lag3", "prod_gas_roll6", "prod_gas_acum12",
+    "prod_gas_std3", "prod_gas_cummax",
 ]
-VARIATION = ["prod_pet_delta1", "prod_gas_delta1"]
-RATIOS_FLAGS = ["water_cut", "produjo_mes_pasado"]
+# variaciones/cocientes (pueden ser negativas o indefinidas; NaN -> 0 + flag)
+VARIATION = [
+    "prod_pet_delta1", "prod_gas_delta1",
+    "prod_pet_delta3", "prod_pet_ratio1",
+    "prod_gas_delta3", "prod_gas_ratio1",
+]
+# ratios acotados / flags (NaN -> 0, sin flag)
+RATIOS_FLAGS = [
+    "water_cut", "produjo_mes_pasado",
+    "prod_pet_frac_peak", "prod_gas_frac_peak",
+]
+# edad / antigüedad en meses (siempre definidas; mediana de train por robustez)
+AGE = [
+    "well_age_months",
+    "prod_pet_meses_desde_pico", "prod_gas_meses_desde_pico",
+]
 STATIC_PHYSICAL = ["profundidad", "coordenadax", "coordenaday"]
 OPERATIVA = ["tef"]
 CALENDAR = ["mes"]
@@ -136,6 +156,10 @@ def build_preprocessor(feature_cols: list[str]) -> ColumnTransformer:
     static = present(STATIC_PHYSICAL)
     if static:
         transformers.append(("static", SimpleImputer(strategy="median"), static))
+
+    age = present(AGE)
+    if age:
+        transformers.append(("age", SimpleImputer(strategy="median"), age))
 
     cal = present(CALENDAR)
     if cal:

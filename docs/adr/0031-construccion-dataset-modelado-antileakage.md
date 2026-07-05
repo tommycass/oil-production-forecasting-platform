@@ -6,7 +6,7 @@
 
 El ADR-028 fijó el **encuadre** del problema (regresión tabular global, target `prod_pet` del mes siguiente, universo petrolero, split temporal de 3 vías). Lo que faltaba decidir y documentar es **cómo se construye concretamente** el frame `(features, target)` que come el modelo, de forma que **ningún feature use información del mes que se predice** (leakage futuro→pasado) ni de los conjuntos de validación/test (leakage val/test→train).
 
-La construcción vive en `ml/dataset.py` (`build_basic_dataset`) y se exploró/validó en `notebooks/02_feature_engineering.ipynb`. Este ADR registra las decisiones de procesamiento y el resultado de la **auditoría de leakage** que se hizo sobre el dataset generado.
+La construcción vive en `ml/dataset.py` (`build_basic_dataset`). Este ADR registra las decisiones de procesamiento y el resultado de la **auditoría de leakage** que se hizo sobre el dataset generado.
 
 ### Evidencia del EDA / construcción
 

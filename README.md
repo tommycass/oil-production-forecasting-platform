@@ -47,15 +47,14 @@ oil-production-forecasting-platform/
 │   │   ├── routes/                 # Endpoints de la API
 │   │   │   ├── health.py           # GET /health
 │   │   │   ├── wells.py            # GET /api/v1/wells
-│   │   │   ├── forecast.py         # GET /api/v1/forecast
-│   │   │   ├── predict.py          # POST /api/v1/predict (inferencia ML, Fase 3)
+│   │   │   ├── forecast.py         # GET /api/v1/forecast (pronóstico ML recursivo, Fase 3)
 │   │   │   └── mock_error.py       # GET /mock-500 (testing)
 │   │   ├── schemas/                # Schemas Pydantic (request/response)
 │   │   ├── services/               # Lógica de negocio + serving ML
 │   │   │   ├── wells.py            # Lógica de /wells
-│   │   │   ├── forecast.py         # Lógica de /forecast
+│   │   │   ├── forecast.py         # Lógica de /forecast (motor recursivo + horizonte)
 │   │   │   ├── model_loader.py     # Carga el modelo del registry MLflow (stage Production)
-│   │   │   └── feature_reader.py   # Lee features del feature store para inferencia
+│   │   │   └── feature_reader.py   # Lee la serie histórica del feature store (seam Rol 2)
 │   │   ├── __init__.py
 │   │   └── main.py                 # Punto de entrada de la aplicación FastAPI
 │   ├── tests/                      # Tests unitarios y de integración (pytest)
@@ -532,27 +531,31 @@ usan solo datos del mes `t` o anteriores (lags **por calendario**, nunca el mes 
 materializan **dentro del job de retrain** (no en `dw_publish`), para no acoplar el refresh del
 DW de Fase 2 a las dependencias de `ml/`.
 
-Cada fila tiene **29 features** en tres grupos (las engineered llevan el prefijo del target):
+Cada fila tiene **35 features** (el set **recursion-safe**, ADR-043: las que el modelo usa y
+se pueden recalcular hacia el futuro para el forecast recursivo), en tres grupos:
 
-- **8 numéricas base** (medidas del mes `t` + atributos): `prod_pet`, `prod_gas`,
-  `prod_agua`, `tef`, `profundidad`, `coordenadax`, `coordenaday` y `mes` (mes del target
-  `t+1`, conocido de antemano).
-- **7 de ingeniería** (`ml/features.py`), las autorregresivas calculadas **sobre el target**
-  (`prod_pet` en el modelo de petróleo, `prod_gas` en el de gas):
+- **5 numéricas base** (del mes `t` + atributos): `{target}` (nivel del mes `t`),
+  `profundidad`, `coordenadax`, `coordenaday` y `mes` (mes del target `t+1`, conocido de
+  antemano).
+- **16 de ingeniería** (`ml/features.py`), autorregresivas sobre el target (`prod_pet` /
+  `prod_gas`):
 
   | Feature | Cálculo |
   |---|---|
-  | `{target}_roll3` | media móvil del target en {t, t-1, t-2} (nivel reciente) |
-  | `{target}_delta1` | `target(t) − target(t-1)` (declinación reciente) |
-  | `{target}_lag12` | `target(t-12)` (estacionalidad anual) |
-  | `{target}_acum6` | acumulado del target en {t … t-5} |
-  | `water_cut` | `prod_agua / (prod_agua + prod_pet)` en t (madurez del pozo) |
-  | `produjo_mes_pasado` | `1` si el target produjo (>0) en t, si no `0` |
-  | `prod_vecinos_mean` | media del target en t de los **5 pozos más cercanos** por coordenadas |
+  | `{target}_roll3` / `{target}_roll6` | media móvil {t..t-2} / {t..t-5} (nivel reciente) |
+  | `{target}_delta1` / `{target}_delta3` | `target(t) − target(t-1)` / `(t-3)` (declinación) |
+  | `{target}_ratio1` | `target(t) / target(t-1)` (declinación multiplicativa) |
+  | `{target}_lag2` / `{target}_lag3` / `{target}_lag12` | target en t-2 / t-3 / t-12 (nivel y estacionalidad anual) |
+  | `{target}_acum6` / `{target}_acum12` | acumulado en 6 / 12 meses |
+  | `{target}_std3` | desvío de {t, t-1, t-2} (volatilidad) |
+  | `{target}_cummax` / `{target}_frac_peak` / `{target}_meses_desde_pico` | pico histórico, fracción del pico y meses desde el pico |
+  | `well_age_months` | edad del pozo (meses desde su 1er mes observado) |
+  | `produjo_mes_pasado` | `1` si el target produjo (>0) en t |
 
-  Ninguna ajusta parámetros globales: cada fila se calcula solo con su mes `t` o anteriores
-  (los vecinos usan el mes `t`, con coordenadas estáticas), así que **no hay leakage** aunque
-  se computen sobre todo el histórico.
+  Ninguna ajusta parámetros globales: cada fila se calcula solo con su mes `t` o anteriores,
+  así que **no hay leakage** aunque se computen sobre todo el histórico. Todas se pueden
+  **recalcular a partir de la trayectoria del target**, que es lo que habilita el forecast
+  recursivo (ADR-044).
 - **14 categóricas** (atributos del pozo): `tipoextraccion`, `tipopozo`, `empresa`,
   `formacion`, `cuenca`, `provincia`, etc. Se guardan **crudas**; el one-hot vive en el
   modelo (ver abajo).
@@ -573,21 +576,29 @@ temporal** (*expanding window* por mes) + **random search** con semilla fija
 [ADR-039](docs/adr/0039-preprocesamiento-datos.md) y
 [ADR-040](docs/adr/0040-modelo-produccion.md).
 
-**Campeón (los dos targets): Random Forest tuneado** (`n_estimators=400, max_depth=16,
-max_features=0.5, min_samples_leaf=2`). En ambos, XGBoost gana sin tunear pero tuneado lo
-supera Random Forest; los hiperparámetros ganadores coincidieron (mismo grid + semilla).
+El modelo se entrena sobre el **set recursion-safe** (features que se pueden recalcular hacia
+el futuro; ADR-043), así el **mismo** campeón sirve para la predicción de un mes y para el
+**forecast recursivo** de `/forecast` (ADR-044). La selección de features y el tuning viven en
+los notebooks `notebooks/02_feature_selection_pet.ipynb` (petróleo) y
+`notebooks/03_feature_selection_gas.ipynb` (gas).
+
+**Campeón (los dos targets): Random Forest tuneado.** Hiperparámetros (difieren por target
+tras el re-tuneo sobre el set recursion-safe): petróleo `n_estimators=200, max_depth=24,
+max_features=0.5, min_samples_leaf=5`; gas `n_estimators=400, max_depth=16, max_features=0.5,
+min_samples_leaf=5`. En ambos, XGBoost gana sin tunear pero tuneado lo supera Random Forest.
 Métricas (RMSE en m³ / R²), comparadas contra la persistencia:
 
 | Target | val RMSE | val R² | **test RMSE** | **test R²** | persistencia (test) |
 |---|---|---|---|---|---|
-| **Petróleo** (`prod_pet`) | 229,9 | 0,900 | **154,4** | **0,874** | 166,2 / 0,854 |
-| **Gas** (`prod_gas`) | 579,9 | 0,859 | **401,0** | **0,856** | 457,8 / 0,813 |
+| **Petróleo** (`prod_pet`) | 227,1 | 0,903 | **157,9** | **0,868** | 166,2 / 0,854 |
+| **Gas** (`prod_gas`) | 580,4 | 0,859 | **408,2** | **0,851** | 457,8 / 0,813 |
 
 Los dos superan al baseline en val y en test → cumplen el criterio de promoción. (El RMSE
 de gas es mayor en valor absoluto porque la producción de gas tiene otra escala; el R²
 —comparable— es alto en ambos.) Ver
-[ADR-042](docs/adr/0042-modelo-prediccion-gas.md) (modelo de gas) y los notebooks
-`notebooks/03_modeling_pet.ipynb` (petróleo) y `notebooks/04_modeling_gas.ipynb` (gas).
+[ADR-042](docs/adr/0042-modelo-prediccion-gas.md) (modelo de gas), [ADR-043](docs/adr/0043-seleccion-features-forecast.md)
+(features recursion-safe) y los notebooks
+`notebooks/02_feature_selection_pet.ipynb` (petróleo) y `notebooks/03_feature_selection_gas.ipynb` (gas).
 
 **Correr el entrenamiento** (requiere acceso a la fuente de datos / feature store). El
 `--target` elige el modelo (por defecto `prod_pet`):
@@ -657,25 +668,27 @@ dagster job execute -j retrain --partition "2026-06-06" -m $MOD
 
 ### Inferencia (API)
 
-`POST /api/v1/predict` recibe `idpozo`, `anio`, `mes` (el mes a predecir) y un `target`
-opcional (`prod_pet` por defecto, o `prod_gas`), y devuelve la producción estimada más el
-**modelo y la versión** que la generaron. La API **carga el modelo en stage `Production`**
-del registry **de ese target** (y se actualiza al promoverse uno nuevo, sin reiniciar) y
-**lee las features del feature store** —de la tabla del target— sin recalcularlas. Un `target`
-inválido devuelve `422`; si el modelo del target no está disponible, `503`. Ver
-[ADR-035](docs/adr/0035-predict-api-contract.md) y
-[ADR-038](docs/adr/0038-serving-strategy.md).
+`GET /api/v1/forecast` devuelve el **pronóstico mensual** de producción de un pozo entre
+`date_start` y `date_end`, con el contrato de Fase 1 (`{id_well, data:[{date, prod}]}`). Es un
+pronóstico **recursivo multi-paso** (ADR-044): el modelo predice el mes t+1, esa predicción se
+**realimenta** como si fuera dato, se recalculan las features **recursion-safe** (ADR-043) y se
+predice t+2, y así. La salida es un punto **por mes** (fecha = 1° del mes), **solo meses
+futuros**; el horizonte se acota a **12 meses** desde el último dato del pozo (si el rango lo
+supera, se recorta hasta ahí). Un parámetro **opcional** `target` (`prod_pet` por defecto, o
+`prod_gas`) elige la producción. La API carga el modelo en stage `Production` del registry de
+ese target y se actualiza al promoverse uno nuevo, sin reiniciar; si el modelo no está
+disponible, `503`. El paso unitario (predecir un mes = rango de un mes) **subsume** al viejo
+`POST /predict`, que se retiró (ADR-035 queda reemplazado por ADR-044). Ver
+[ADR-044](docs/adr/0044-forecast-recursivo.md) y [ADR-038](docs/adr/0038-serving-strategy.md).
 
 ```bash
-# Petróleo (target por defecto)
-curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
-  -d '{"idpozo": 507, "anio": 2026, "mes": 6}' \
-  "<URL_DEL_SERVICIO>/api/v1/predict"
+# Petróleo (target por defecto): pronóstico mensual del rango
+curl -H "X-API-Key: <API_KEY>" \
+  "<URL_DEL_SERVICIO>/api/v1/forecast?id_well=507&date_start=2026-07-01&date_end=2026-12-01"
 
-# Gas (target explícito)
-curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
-  -d '{"idpozo": 507, "anio": 2026, "mes": 6, "target": "prod_gas"}' \
-  "<URL_DEL_SERVICIO>/api/v1/predict"
+# Gas (target explícito, parámetro opcional)
+curl -H "X-API-Key: <API_KEY>" \
+  "<URL_DEL_SERVICIO>/api/v1/forecast?id_well=507&date_start=2026-07-01&date_end=2026-12-01&target=prod_gas"
 ```
 
 ---
@@ -686,8 +699,7 @@ curl -X POST -H "X-API-Key: <API_KEY>" -H "Content-Type: application/json" \
 |---|---|---|---|
 | GET | `/health` | Health check del servicio | No |
 | GET | `/api/v1/wells` | Listado de pozos disponibles | Sí |
-| GET | `/api/v1/forecast` | Pronóstico de producción de un pozo | Sí |
-| POST | `/api/v1/predict` | Predicción ML de producción (t+1) de un pozo — petróleo o gas (`target`) | Sí |
+| GET | `/api/v1/forecast` | Pronóstico ML **mensual recursivo** de un pozo (petróleo o gas, `target` opcional) | Sí |
 
 Documentación interactiva disponible en `/docs` (Swagger UI) y `/redoc` (ReDoc) con el servicio corriendo. Detalle de parámetros y códigos de respuesta en [api/README.md](api/README.md).
 
@@ -877,7 +889,7 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [032](docs/adr/0032-encoding-categoricas-onehot.md) | Encoding de categóricas | One-hot con fallback `DESCONOCIDO` vs. ordinal/target encoding; ajuste solo en train |
 | [033](docs/adr/0033-feature-engineering.md) | Feature engineering | Lags por calendario vs. `shift`; vecinos por coordenadas vs. por área; features sin parámetros aprendidos |
 | [034](docs/adr/0034-algoritmo-modelo-validacion-temporal.md) | Algoritmo y validación temporal | Lineal vs. árboles vs. boosting; KFold vs. CV temporal; random search con `n_iter` |
-| [035](docs/adr/0035-predict-api-contract.md) | Contrato del endpoint de predicción | GET vs. POST; unitario vs. batch; clave de lookup vs. features explícitas |
+| [035](docs/adr/0035-predict-api-contract.md) | Contrato del endpoint de predicción (**reemplazado por ADR-044**) | GET vs. POST; unitario vs. batch; clave de lookup vs. features explícitas. `/predict` se retiró: `/forecast` recursivo lo subsume |
 | [036](docs/adr/0036-feature-store.md) | Feature store | Tabla en Postgres (dbt) vs. Feast vs. otra; store offline reutilizando el stack de Fase 2 |
 | [037](docs/adr/0037-mlflow-server.md) | Backend del servidor MLflow | Backend SQLite vs. Postgres; artifact store; servidor containerizado para tracking + registry |
 | [038](docs/adr/0038-serving-strategy.md) | Estrategia de serving del modelo | Redeploy del contenedor vs. recarga/polling del registry; actualización sin downtime |
@@ -885,3 +897,5 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [040](docs/adr/0040-modelo-produccion.md) | Modelos campeones (petróleo y gas) y criterio de promoción | Random Forest vs. XGBoost vs. Ridge (tuneados); campeón por target; criterio Staging→Production; gestión de los dos modelos |
 | [041](docs/adr/0041-orquestacion-retrain.md) | Orquestación del retrain | Job Dagster (features→entrenar→MLflow) + Schedule mensual + Sensor por datos nuevos; backfill por fecha |
 | [042](docs/adr/0042-modelo-prediccion-gas.md) | Segundo modelo: forecast de gas | Modelar `prod_gas` además de `prod_pet`; dos modelos vs. multi-salida; reuso del pipeline parametrizado; universo gasífero y anti-leakage |
+| [043](docs/adr/0043-seleccion-features-forecast.md) | Selección de features del forecast (recursion-safe) | Permutation importance en val; features recursion-safe (autorregresivas + estáticas); robustez a cold-start; poda de categóricas |
+| [044](docs/adr/0044-forecast-recursivo.md) | Forecast recursivo multi-paso en `/forecast` | Recursivo vs. directo; salida mensual vs. diaria; horizonte máximo; `/predict` subsumido; contrato de Fase 1 preservado |

@@ -1,19 +1,22 @@
 """Materialización del feature store (Fase 3, Rol 2) — handoff de Rol 1.
 
-Reproduce **exactamente** las features del entrenamiento (las 29 del modelo campeón)
-**reusando el código de `ml/`** (única fuente de verdad → cero training-serving skew):
-las 7 features de ingeniería salen de `ml.features.add_engineered_features` y las listas
-de columnas de `ml.dataset`. La única lógica propia es el ensamblado (lectura de Bronze,
-universo, drop de negativos, merge del target) que replica `ml.dataset.build_basic_dataset`,
-con una diferencia: el target se hace por **left-join** para conservar la última fila de
-cada pozo (con `y_next` NULL) y que la API pueda inferir el mes siguiente.
+Reproduce **exactamente** las features del entrenamiento **reusando el código de `ml/`**
+(única fuente de verdad → cero training-serving skew): la ingeniería sale de
+`ml.features.add_engineered_features` y las columnas base/categóricas de `ml.dataset`. Se
+materializa **solo el set recursion-safe** (ADR-043): las **35 features** que usa el modelo
+y se pueden recalcular hacia el futuro. Se excluyen las que ningún modelo consume porque no
+se proyectan (`prod_vecinos_mean`, `water_cut`, `prod_agua`, `tef` y la producción cruzada).
+La única lógica propia es el ensamblado (lectura de Bronze, universo, drop de negativos, merge
+del target) que replica `ml.dataset.build_basic_dataset`, con una diferencia: el target se
+hace por **left-join** para conservar la última fila de cada pozo (con `y_next` NULL) y que
+la API pueda inferir el mes siguiente.
 
 **Dos modelos (ADR-042):** se materializa **una tabla por target** — petróleo
 (`prod_pet`) en `feat_produccion_pozo_mensual` (nombre histórico) y gas (`prod_gas`)
 en `feat_produccion_pozo_mensual_gas`. Cada tabla tiene su **universo** (pozos con ese
 target > 0 en train), sus **features de ingeniería** sobre el target (`prod_pet_*` vs
-`prod_gas_*`) y su `y_next`. Las 8 numéricas base y las 14 categóricas son compartidas
-(se duplican entre tablas). Rol 3 lee la tabla del target que sirve.
+`prod_gas_*`) y su `y_next`. Las numéricas base compartidas y las 14 categóricas se duplican
+entre tablas. Rol 3 lee la tabla del target que sirve.
 
 Fuente: `bronze.produccion` (crudo, mismas columnas que el CSV que usa el training;
 gobernado en el DW). Ver docs/feature-store.md (contrato) y ADR-036 (Revisión).
@@ -69,7 +72,7 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
 
     Replica el ensamblado de `ml.dataset.build_basic_dataset` (tipado, universo
     train-only, drop de negativos, `mes` = mes del target, merge por calendario)
-    reusando `ml.features.add_engineered_features` para las 7 features de ingeniería.
+    reusando `ml.features.add_engineered_features` para las features de ingeniería.
     Target por **left-join** (conserva la última fila de cada pozo, `y_next` NULL)
     para habilitar la inferencia del mes siguiente.
 
@@ -98,7 +101,7 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     prod_cols = ["prod_pet", "prod_gas", "prod_agua"]
     df = df[~(df[prod_cols] < 0).any(axis=1)].reset_index(drop=True)
 
-    # 7 features de ingeniería sobre el target: REUSO del código de Rol 1 (paridad garantizada).
+    # features de ingeniería sobre el target: REUSO del código de Rol 1 (paridad garantizada).
     df = ml_features.add_engineered_features(df, target=target)
 
     # target = `target` del mes siguiente, alineado por calendario. LEFT para conservar
@@ -114,11 +117,20 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     # devolvemos a int64 para que el store tenga una clave limpia (lookup de la API).
     out["idpozo"] = out["idpozo"].astype("int64")
 
-    cols = (
-        ["idpozo", "periodo", "periodo_objetivo"]
-        + BASIC_NUMERIC_FEATURES + ml_features.engineered_feature_names(target)
-        + BASIC_CATEGORICAL_FEATURES + ["y_next"]
-    )
+    # Materializar SOLO las features **recursion-safe** (ADR-043): las que usa el modelo y se
+    # pueden recalcular hacia el futuro. Se excluyen las que ningún modelo consume porque no
+    # se pueden proyectar: `prod_vecinos_mean` (cross-well), `water_cut`, `prod_agua`, `tef` y
+    # la producción CRUZADA (el otro target). Mismo filtro que `ml.modeling.recursion_safe_cols`.
+    cross = "prod_gas" if target == "prod_pet" else "prod_pet"
+    no_recursion_safe = {"prod_vecinos_mean", "water_cut", "prod_agua", "tef", cross}
+    features = [
+        c
+        for c in BASIC_NUMERIC_FEATURES
+        + ml_features.engineered_feature_names(target)
+        + BASIC_CATEGORICAL_FEATURES
+        if c not in no_recursion_safe
+    ]
+    cols = ["idpozo", "periodo", "periodo_objetivo"] + features + ["y_next"]
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
 
