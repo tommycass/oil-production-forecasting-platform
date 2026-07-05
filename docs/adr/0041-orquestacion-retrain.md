@@ -65,9 +65,20 @@ El job invoca el comando de entrenamiento de forma **configurable** (`RETRAIN_CM
 - El "registrar en MLflow" del campeón depende de que Rol 3 enchufe el logging en `train.py`; hasta entonces la cadena se demuestra con `ml.baseline` (que sí loguea).
 - El Sensor consulta Postgres en cada tick; se acota con `minimum_interval_seconds` y tolera fallos de DB (skip, no rompe el daemon).
 
+## Revisión (jul-2026): tercer paso — precómputo del forecast (ADR-045)
+
+El job suma un asset final: `features_refrescadas → modelo_reentrenado → forecast_precomputado`.
+Tras reentrenar (y promover si corresponde), se precomputa el pronóstico de **12 meses por
+pozo** con el modelo Production y se escribe `features.pred_produccion_pozo_mensual` (+ `_gas`);
+la API lo sirve como lookup con fallback al motor on-the-fly. Decisión y alternativas en
+**ADR-045**. El asset no honra `RETRAIN_ASOF` (el precómputo es para servir hoy) y se saltea
+un target sin modelo en Production, así el job sigue corriendo end-to-end aunque el registry
+esté vacío (p. ej. primera corrida con `ml.baseline`).
+
 ## Relación con otros ADRs
 
 - **ADR-036:** el feature store (materialización) es el insumo; el job lo refresca antes de entrenar.
 - **ADR-018/021:** el retrain corre después del refresh mensual del DW.
 - **ADR-030/037/040:** el run/modelo se registran en MLflow (tracking de Rol 3); la promoción a `Production` (criterio ADR-040) la consume la API.
+- **ADR-045:** el precómputo del forecast es el último paso del job (este ADR orquesta, aquél decide el serving por lookup).
 - **ADR-011:** mismo orquestador (Dagster); este ADR agrega el daemon para Schedule/Sensor.

@@ -1,5 +1,12 @@
 # Handoff → Valen: feature store al set **recursion-safe** (35 features)
 
+> **Estado (jul-2026): COMPLETADO — y superado.** El store se re-materializa con el retrain
+> y quedó al **set final de la selección (14 features, 18 columnas)**: se implementó la
+> Decisión del ADR-043 (`ml.features.selected_features`), no el candidato de 35. La fila del
+> último mes con `y_next` NULL se conserva (left-join) y la paridad training↔store quedó
+> validada e2e. Contrato vigente: `docs/feature-store.md`. Además el retrain ahora deja el
+> pronóstico **precomputado** (ADR-045). Lo de abajo queda como registro histórico del pedido.
+
 **De:** Micol (ML) · **Contexto:** rediseño del forecast a **recursivo** (ADR-043/044). Esto toca el feature store que venís manejando.
 
 ## Qué cambió (y por qué)
