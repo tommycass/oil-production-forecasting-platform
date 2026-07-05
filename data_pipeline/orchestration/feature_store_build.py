@@ -3,9 +3,10 @@
 Reproduce **exactamente** las features del entrenamiento **reusando el código de `ml/`**
 (única fuente de verdad → cero training-serving skew): la ingeniería sale de
 `ml.features.add_engineered_features` y las columnas base/categóricas de `ml.dataset`. Se
-materializa **solo el set recursion-safe** (ADR-043): las **35 features** que usa el modelo
-y se pueden recalcular hacia el futuro. Se excluyen las que ningún modelo consume porque no
-se proyectan (`prod_vecinos_mean`, `water_cut`, `prod_agua`, `tef` y la producción cruzada).
+materializa **el set final de la selección** (`ml.features.selected_features`, ADR-043):
+las **14 features** que entrena el modelo — el núcleo autorregresivo del target + las
+anclas estáticas del cold-start —, recursion-safe por construcción (ADR-044). Es la misma
+lista que usa `ml/train.py`, así que store y modelo no pueden divergir.
 La única lógica propia es el ensamblado (lectura de Bronze, universo, drop de negativos, merge
 del target) que replica `ml.dataset.build_basic_dataset`, con una diferencia: el target se
 hace por **left-join** para conservar la última fila de cada pozo (con `y_next` NULL) y que
@@ -14,9 +15,9 @@ la API pueda inferir el mes siguiente.
 **Dos modelos (ADR-042):** se materializa **una tabla por target** — petróleo
 (`prod_pet`) en `feat_produccion_pozo_mensual` (nombre histórico) y gas (`prod_gas`)
 en `feat_produccion_pozo_mensual_gas`. Cada tabla tiene su **universo** (pozos con ese
-target > 0 en train), sus **features de ingeniería** sobre el target (`prod_pet_*` vs
-`prod_gas_*`) y su `y_next`. Las numéricas base compartidas y las 14 categóricas se duplican
-entre tablas. Rol 3 lee la tabla del target que sirve.
+target > 0 en train), sus **features autorregresivas** sobre el target (`prod_pet_*` vs
+`prod_gas_*`) y su `y_next`. Las 5 anclas estáticas se duplican entre tablas.
+Rol 3 lee la tabla del target que sirve.
 
 Fuente: `bronze.produccion` (crudo, mismas columnas que el CSV que usa el training;
 gobernado en el DW). Ver docs/feature-store.md (contrato) y ADR-036 (Revisión).
@@ -71,17 +72,17 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     """Construye la tabla de features del store a partir del crudo de producción.
 
     Replica el ensamblado de `ml.dataset.build_basic_dataset` (tipado, universo
-    train-only, drop de negativos, `mes` = mes del target, merge por calendario)
-    reusando `ml.features.add_engineered_features` para las features de ingeniería.
+    train-only, drop de negativos, merge por calendario) reusando
+    `ml.features.add_engineered_features` para las features de ingeniería.
     Target por **left-join** (conserva la última fila de cada pozo, `y_next` NULL)
     para habilitar la inferencia del mes siguiente.
 
     ``target`` (``prod_pet`` por defecto / ``prod_gas``, ADR-042) cambia el **universo**
-    (pozos con ese target > 0 en train), las **features de ingeniería autorregresivas**
-    (`{target}_roll3/delta1/lag12/acum6`, `prod_vecinos_mean` sobre el target) y el
-    `y_next` (= target del mes t+1). Las numéricas base y las categóricas no dependen
-    del target. No se llama a `df.copy()` defensivo más de lo necesario para poder
-    reusar el mismo crudo de Bronze en los dos targets sin recargar.
+    (pozos con ese target > 0 en train), las **features autorregresivas** del set final
+    (`{target}_roll3/ratio1/acum12/...`, ADR-043) y el `y_next` (= target del mes t+1).
+    Las anclas estáticas no dependen del target. No se llama a `df.copy()` defensivo
+    más de lo necesario para poder reusar el mismo crudo de Bronze en los dos targets
+    sin recargar.
     """
     df = df.copy()
     # idpozo como entero (en Bronze viene texto): clave del store y del lookup de la API.
@@ -111,26 +112,16 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     out = df.merge(nxt, on=["idpozo", "periodo"], how="left")
 
     out["periodo_objetivo"] = out["periodo"] + pd.DateOffset(months=1)
-    out["mes"] = out["periodo_objetivo"].dt.month  # mes del MES OBJETIVO (t+1), ADR-031
 
     # `add_prod_vecinos_mean` (ml/features) castea idpozo a object al hacer merge; lo
     # devolvemos a int64 para que el store tenga una clave limpia (lookup de la API).
     out["idpozo"] = out["idpozo"].astype("int64")
 
-    # Materializar SOLO las features **recursion-safe** (ADR-043): las que usa el modelo y se
-    # pueden recalcular hacia el futuro. Se excluyen las que ningún modelo consume porque no
-    # se pueden proyectar: `prod_vecinos_mean` (cross-well), `water_cut`, `prod_agua`, `tef` y
-    # la producción CRUZADA (el otro target). Mismo filtro que `ml.modeling.recursion_safe_cols`.
-    cross = "prod_gas" if target == "prod_pet" else "prod_pet"
-    no_recursion_safe = {"prod_vecinos_mean", "water_cut", "prod_agua", "tef", cross}
-    features = [
-        c
-        for c in BASIC_NUMERIC_FEATURES
-        + ml_features.engineered_feature_names(target)
-        + BASIC_CATEGORICAL_FEATURES
-        if c not in no_recursion_safe
-    ]
-    cols = ["idpozo", "periodo", "periodo_objetivo"] + features + ["y_next"]
+    # Materializar SOLO el set FINAL de la selección (ADR-043): las 14 features que
+    # entrena el modelo (`ml.features.selected_features` — la misma lista que usa
+    # `ml/train.py`, fuente única de verdad). Lo demás que calcula
+    # `add_engineered_features` (borderline / descartadas del ranking) no se persiste.
+    cols = ["idpozo", "periodo", "periodo_objetivo"] + ml_features.selected_features(target) + ["y_next"]
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
 
