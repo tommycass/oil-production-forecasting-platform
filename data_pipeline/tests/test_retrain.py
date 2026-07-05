@@ -17,6 +17,7 @@ from dagster import (
 from data_pipeline.orchestration import retrain
 from data_pipeline.orchestration.retrain import (
     features_refrescadas,
+    forecast_precomputado,
     modelo_reentrenado,
     retrain_mensual,
     retrain_por_features_nuevas,
@@ -33,15 +34,25 @@ def test_train_cmd_configurable_por_env(monkeypatch):
     assert retrain._train_cmd() == ["python", "-m", "ml.train", "--mlflow"]
 
 
-@pytest.mark.parametrize("asset_def", [features_refrescadas, modelo_reentrenado])
+_ASSETS = [features_refrescadas, modelo_reentrenado, forecast_precomputado]
+
+
+@pytest.mark.parametrize("asset_def", _ASSETS)
 def test_assets_particionados_por_dia(asset_def):
     assert isinstance(asset_def.partitions_def, DailyPartitionsDefinition)
 
 
-@pytest.mark.parametrize("asset_def", [features_refrescadas, modelo_reentrenado])
+@pytest.mark.parametrize("asset_def", _ASSETS)
 def test_assets_tienen_retry(asset_def):
     rp = asset_def.op.retry_policy
     assert rp is not None and rp.backoff == Backoff.EXPONENTIAL
+
+
+def test_precomputo_es_el_ultimo_paso_del_retrain():
+    # El precómputo (ADR-045) depende del entrenamiento: corre con el Production
+    # recién promovido, después de refrescar features y reentrenar.
+    deps = {k.to_user_string() for k in forecast_precomputado.asset_deps[forecast_precomputado.key]}
+    assert "modelo_reentrenado" in deps
 
 
 def test_schedule_mensual_dia_6():

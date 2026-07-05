@@ -3,11 +3,13 @@
 Job `retrain` particionado por día ("reentrenar como si fuera el día X") que
 encadena el flujo que pide la adenda:
 
-    refrescar features (materializa el feature store) → entrenar (ml/) → registrar en MLflow
+    refrescar features (feature store) → entrenar (ml/) → registrar en MLflow
+    → precomputar el forecast (ADR-045)
 
 **Dos modelos (ADR-042):** el job reentrena **petróleo y gas**: `features_refrescadas`
-materializa las dos tablas del store y `modelo_reentrenado` corre el entrenamiento una
-vez por target (`--target prod_pet` / `--target prod_gas`).
+materializa las dos tablas del store, `modelo_reentrenado` corre el entrenamiento una
+vez por target (`--target prod_pet` / `--target prod_gas`) y `forecast_precomputado`
+deja el pronóstico de 12 meses por pozo listo para que la API lo sirva como lookup.
 
 Disparo (adenda 2.4): además de correrlo a mano,
 - **Schedule mensual** alineado al refresh del DW (ADR-021, cron día 5): el retrain
@@ -116,9 +118,48 @@ def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     return MaterializeResult(metadata={"asof": asof, **{f"cmd_{t}": c for t, c in cmds.items()}})
 
 
+@asset(
+    partitions_def=_RETRAIN_PARTITIONS,
+    deps=[modelo_reentrenado],
+    group_name="retrain",
+    retry_policy=_RETRY,
+)
+def forecast_precomputado(context: AssetExecutionContext) -> MaterializeResult:
+    """Precomputa el pronóstico de 12 meses por pozo con el modelo Production (ADR-045).
+
+    Corre el mismo motor recursivo que sirve `/forecast` (ADR-044) sobre todos los
+    pozos del store recién refrescado, con el modelo **Production** del registry (el
+    que acaba de promover el paso anterior si superó el criterio del ADR-040), y
+    escribe `features.pred_produccion_pozo_mensual` (+ `_gas`). La API sirve estas
+    filas como lookup; si un target no tiene modelo en Production se lo **saltea**
+    (metadata `filas_<target> = "sin modelo Production"`) y la API sigue on-the-fly.
+
+    Corre siempre sobre el store y el Production **actuales** (no honra RETRAIN_ASOF:
+    el precómputo es para servir hoy, no un artefacto histórico) → re-ejecutarlo en un
+    backfill es idempotente e inofensivo.
+    """
+    from data_pipeline.orchestration import forecast_precompute as fp
+
+    resultados = fp.precomputar_todos(fp.engine_from_env())
+    for target, filas in resultados.items():
+        if filas is None:
+            context.log.warning(f"precomputo {target}: sin modelo Production, salteado")
+    return MaterializeResult(
+        metadata={
+            "asof": context.partition_key,
+            **{
+                f"filas_{t}": (n if n is not None else "sin modelo Production")
+                for t, n in resultados.items()
+            },
+        }
+    )
+
+
 retrain_job = define_asset_job(
     name="retrain",
-    selection=AssetSelection.assets("features_refrescadas", "modelo_reentrenado"),
+    selection=AssetSelection.assets(
+        "features_refrescadas", "modelo_reentrenado", "forecast_precomputado"
+    ),
 )
 
 
