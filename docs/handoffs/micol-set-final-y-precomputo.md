@@ -16,6 +16,15 @@ Tu ADR-043 decidía un set de **14 features** (Capa 1 autorregresiva + Capa 2 an
 1. **Re-tunear `BEST_PARAMS` sobre el set final** (hoy quedaron los del candidato de 35 — siguen siendo un punto de partida razonable y tu §4 mostró que el set compacto rinde ~3% peor en val con esos params). Refrescar los números de ADR-040/README (sobre todo **gas**, que no tiene medición del set compacto).
 2. Si una borderline vuelve a justificarse, agregala a `selected_features` y listo: store y serving se re-materializan solos en el próximo retrain.
 
+> **Respuesta (Micol, jul-2026) — resuelto:** revisé la Decisión del ADR-043 y en vez del set compacto de 14 adopté el **set de ganancia positiva** (todas las features con `imp_mean > 0` del ranking): **27 en petróleo, 19 en gas** ([ADR-046](0046-seleccion-features-ganancia-positiva.md), que revisa el 043). Esto además responde tu punto 2: las borderline que el 043 había podado por parsimonia (`std3`, `frac_peak`, `lag12`, `lag3`, `meses_desde_pico`, `mes`, `areapermisoconcesion`, `tipopozo`, `empresa`, …) vuelven a entrar porque su ganancia es positiva.
+>
+> **Números refrescados** (ADR-040 / ADR-046 / README), val de los notebooks + **test** corrido con `--final` sobre el set nuevo — los dos targets, gas incluido:
+> - Petróleo (27): val RMSE 227,5 / R² 0,902 · **test 157,5 / 0,869** · persistencia 166,2 / 0,854.
+> - Gas (19): val RMSE 576,6 / R² 0,861 · **test 409,2 / 0,850** · persistencia 457,8 / 0,813.
+> - Los dos superan la persistencia en val y test. En petróleo el set nuevo **mejora** el test del compacto (157,5 vs 164,7); en gas queda igual.
+>
+> **Sobre re-tunear `BEST_PARAMS`: decidí NO hacerlo, a propósito.** El tuneo (notebooks 02/03) se corrió sobre el candidato de **35**, y las 27/19 son un **subconjunto** de ese — o sea los params ya se eligieron sobre un espacio que contiene al set final, y el campeón con esos mismos params ya se validó sobre el recorte en **val** (cell 21) y en **test** (`--final`), superando la persistencia. Re-tunear ahora se apartaría de la propia metodología del 043 (tunear sobre 35, evaluar el recorte). La única sensibilidad real al tamaño del set es `max_features=0.5` (una **fracción**: ~17 features/split con 35, ~13 con 27), pero su efecto ya queda absorbido por esa validación empírica. Los params vigentes se mantienen: petróleo `n_estimators=200, max_depth=24, max_features=0.5, min_samples_leaf=5`; gas `400/16/0.5/5`.
+
 ## 3. Fixes que venían de tu rama (ya resueltos, FYI)
 
 - `data_pipeline/tests/test_feature_store_build.py` esperaba las columnas viejas → actualizado al set final (+ test de que las descartadas NO se persisten).
