@@ -1,7 +1,7 @@
 # Título: ADR-028: Diseño del problema predictivo y estrategia de validación temporal
 **Estado:** Propuesta
 
-> **Enmienda (ADR-042):** la decisión de alcance "solo petróleo" (§2 *Target y grano* y §3 *Universo de entrenamiento*) quedó **extendida**: la cátedra confirmó que se esperan **ambas** producciones, así que se agrega un **segundo modelo** con target `prod_gas` (universo gasífero), reutilizando este mismo encuadre. Ver **ADR-042**.
+> **Nota:** la plataforma pronostica **ambas** producciones, petróleo (`prod_pet`) y gas (`prod_gas`), con **un modelo por target** (ADR-039). Este ADR fija el **encuadre común** (grano, métrica, split, tratamiento de outliers, anti-leakage) usando `prod_pet` como caso trabajado del EDA; el modelo de gas reutiliza el mismo encuadre con su propio universo gasífero. La decisión de los dos modelos y sus campeones vive en **ADR-039**.
 
 ## Contexto
 
@@ -51,9 +51,9 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 **Alternativas de métrica:** MAE / RMSE / MAPE / sMAPE. **Alternativas de target:** crudo / `log1p` / con capeo de outliers.
 
 **Decisión:**
-- **Métrica principal: RMSE** (raíz del error cuadrático medio, en m³): penaliza los errores grandes, que es lo que importa en un target de **cola pesada** donde los pozos de mayor producción concentran el error y **son la señal a captar** (coherente con ADR-039). Se reportan **R²** (comparable entre períodos) y **MAE** (referencia interpretable) en paralelo. Se **descarta MAPE/sMAPE** por la gran proporción de ceros y valores chicos, que las vuelven inestables.
+- **Métrica principal: RMSE** (raíz del error cuadrático medio, en m³): penaliza los errores grandes, que es lo que importa en un target de **cola pesada** donde los pozos de mayor producción concentran el error y **son la señal a captar** (coherente con ADR-038). Se reportan **R²** (comparable entre períodos) y **MAE** (referencia interpretable) en paralelo. Se **descarta MAPE/sMAPE** por la gran proporción de ceros y valores chicos, que las vuelven inestables.
   > La selección de modelo/hiperparámetros se hace por **RMSE en val** (ADR-029/034); el baseline reporta además MAE (ADR-029).
-- Dado el fuerte sesgo de `prod_pet`, se **evaluó** transformar el target con **`log1p`** y/o capear outliers extremos; la evidencia (ADR-039) mostró que **en RMSE los extremos son señal**, así que el target se deja en **escala original** (sin transformar ni capear).
+- Dado el fuerte sesgo de `prod_pet`, se **evaluó** transformar el target con **`log1p`** y/o capear outliers extremos; la evidencia (ADR-038) mostró que **en RMSE los extremos son señal**, así que el target se deja en **escala original** (sin transformar ni capear).
 
 ### 5. Estrategia de validación temporal (split)
 
@@ -86,7 +86,7 @@ Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**.
 
 **Negativas / trade-offs:**
 - El target sesgado obliga a **cuidar transformación y métrica**; un modelo ingenuo sobre el target crudo puede dominar por outliers.
-- Restringir al universo petrolero **deja afuera el gas** (decisión de alcance); si el equipo quisiera pronosticar gas, habría que revisar este ADR.
+- El universo petrolero descrito acá es el del modelo de petróleo; el modelo de gas usa su **universo gasífero análogo** (pozos con `prod_gas > 0`, train-only) con el mismo criterio (ADR-039).
 - El split por volumen concentra el test en una **ventana reciente y corta** en el tiempo (aunque amplia en registros); mitigado porque cubre >12 meses. Una validación **walk-forward** sería más robusta y queda como mejora futura.
 - `prod_pet` como target fija el alcance; `tipo_de_recurso` se **descarta como feature** por ser constante.
 

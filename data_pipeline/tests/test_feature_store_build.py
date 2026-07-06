@@ -2,8 +2,8 @@
 
 La lógica reusa `ml/features` (sklearn) → se saltea si sklearn no está disponible.
 Valida estructura y comportamiento clave (columnas = set FINAL de la selección
-ADR-043, idpozo int, target left-join) sobre un panel sintético, sin red ni DB.
-Cubre los **dos targets** (petróleo y gas, ADR-042) y el mapeo de tablas.
+ADR-041, idpozo int, target left-join) sobre un panel sintético, sin red ni DB.
+Cubre los **dos targets** (petróleo y gas, ADR-039) y el mapeo de tablas.
 """
 import pandas as pd
 import pytest
@@ -33,7 +33,7 @@ def _panel_crudo(n_pozos=6, meses=5) -> pd.DataFrame:
 
 
 def test_columnas_y_grano():
-    # El store materializa EXACTAMENTE el set final de la selección (ADR-043): la
+    # El store materializa EXACTAMENTE el set final de la selección (ADR-041): la
     # misma lista que entrena ml/train.py (`selected_features`) + claves + y_next.
     out = fsb.build_store_features(_panel_crudo())
     esperadas = (
@@ -46,17 +46,22 @@ def test_columnas_y_grano():
 
 
 def test_solo_features_seleccionadas():
-    # Las descartadas/borderline del ranking (ADR-043) NO se persisten: ni las
-    # no-recursion-safe, ni delta3 (ruido), ni las categóricas de imp. ≈ 0, ni `mes`.
+    # Solo se persisten las features de ganancia positiva (imp_mean > 0, ADR-041).
+    # Las de imp. ≤ 0 NO entran: las no-recursion-safe, delta3 (ruido negativo) y las
+    # categóricas de imp. ≤ 0.
     out = fsb.build_store_features(_panel_crudo())
     fuera = {"prod_vecinos_mean", "water_cut", "prod_agua", "tef", "prod_gas",
-             "prod_pet_delta3", "prod_pet_lag12", "mes", "empresa", "cuenca",
-             "provincia", "formacion", "tipopozo", "produjo_mes_pasado"}
+             "prod_pet_delta3", "provincia", "formacion", "formprod",
+             "clasificacion", "tipoestado", "sub_tipo_recurso"}
     assert not fuera & set(out.columns)
-    # las anclas estáticas del cold-start SÍ están (Capa 2 de la selección)
+    # las anclas estáticas del cold-start SÍ están (petróleo)
     for ancla in ("areayacimiento", "profundidad", "coordenadax", "coordenaday",
                   "well_age_months"):
         assert ancla in out.columns
+    # y las features de ganancia positiva antes podadas ahora también (imp > 0)
+    for feat in ("mes", "empresa", "tipopozo", "cuenca", "prod_pet_lag12",
+                 "produjo_mes_pasado"):
+        assert feat in out.columns
 
 
 def test_target_left_join():
@@ -69,7 +74,7 @@ def test_target_left_join():
 
 
 def test_table_for_mapea_petroleo_y_gas():
-    # petróleo mantiene el nombre histórico; gas lleva sufijo (convención _gas, ADR-042)
+    # petróleo mantiene el nombre histórico; gas lleva sufijo (convención _gas, ADR-039)
     assert fsb.table_for("prod_pet") == "feat_produccion_pozo_mensual"
     assert fsb.table_for("prod_gas") == "feat_produccion_pozo_mensual_gas"
 

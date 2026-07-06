@@ -18,7 +18,7 @@ router = APIRouter()
     description=(
         "Pronóstico **mensual** de producción de un pozo entre `date_start` y `date_end`: "
         "un punto por mes (fecha = primer día del mes), **solo meses futuros**. Usa el modelo "
-        "de ML de forma **recursiva** (ADR-044): predice t+1, realimenta la predicción y sigue. "
+        "de ML de forma **recursiva** (ADR-042): predice t+1, realimenta la predicción y sigue. "
         f"El horizonte se acota a {MAX_FORECAST_MONTHS} meses desde el último dato del pozo; si "
         "el rango pedido lo supera, se **recorta** hasta ahí (se devuelven los meses hasta el "
         "tope). Parámetro **opcional** `target`: `prod_pet` (petróleo, por defecto) o `prod_gas`."

@@ -64,7 +64,7 @@ Adoptar las **7 features derivadas** de la tabla, implementadas como funciones m
 - **Lags y ventanas por merge de calendario** (no `shift`), robustos a huecos.
 - **Sin parámetros aprendidos** en las features (el escalado se delega al Pipeline del entrenamiento, ADR-034).
 - **Vecinos espaciales** por k-vecinos de coordenadas, promediando producción del mes t.
-- Los `NaN` de las features de historia (primeros meses de cada pozo) se **imputan en el Pipeline de entrenamiento, no acá** (las de volumen/lags con **0 + flag `*_isna`**; ver ADR-039 para el esquema por feature).
+- Los `NaN` de las features de historia (primeros meses de cada pozo) se **imputan en el Pipeline de entrenamiento, no acá** (las de volumen/lags con **0 + flag `*_isna`**; ver ADR-038 para el esquema por feature).
 
 Cada feature queda documentada (origen Gold + cálculo) como **contrato del feature store**, donde se materializan para que entrenamiento e inferencia las calculen igual (evitar *training-serving skew*).
 

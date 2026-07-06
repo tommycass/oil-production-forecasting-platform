@@ -4,20 +4,20 @@
 (Schedule + Sensor), retrain manual y **reproceso por fecha** (backfill cuando una fuente
 corrige datos históricos).
 
-Complementa el [ADR-041](../adr/0041-orquestacion-retrain.md) (orquestación del retrain),
-el [ADR-036](../adr/0036-feature-store.md) (feature store) y el [contrato del feature store](../feature-store.md).
+Complementa el [ADR-040](../adr/0040-orquestacion-retrain.md) (orquestación del retrain),
+el [ADR-035](../adr/0035-feature-store.md) (feature store) y el [contrato del feature store](../feature-store.md).
 
 ---
 
 ## 1. Propósito y disparador
 
-Reentrenar **los dos modelos** (petróleo `prod_pet` y gas `prod_gas`, ADR-042) a partir de
+Reentrenar **los dos modelos** (petróleo `prod_pet` y gas `prod_gas`, ADR-039) a partir de
 features frescas y dejar los runs registrados en MLflow. El job `retrain` (Dagster,
 particionado por día) encadena:
 
     features_refrescadas (materializa las 2 tablas del store)
       → modelo_reentrenado (entrena ambos targets + loguea a MLflow)
-        → forecast_precomputado (precomputa el pronóstico de 12 meses por pozo, ADR-045)
+        → forecast_precomputado (precomputa el pronóstico de 12 meses por pozo, ADR-043)
 
 `modelo_reentrenado` corre el entrenamiento una vez por target (`--target prod_pet` /
 `--target prod_gas`); cada uno usa su experimento/modelo de MLflow (`produccion-forecast` /
@@ -36,7 +36,7 @@ Se ejecuta cuando:
 - **Dueño:** Rol 2 (Feature Store + Orquestación).
 - **Accesos:** credenciales del DW (`POSTGRES_*` en `infra/.env`), repo en la EC2.
 - **Venv del daemon** (`~/dagster-venv`): deps de `data_pipeline/requirements.txt` **+** las de `ml/requirements.txt` (mlflow, scikit-learn, xgboost, pandas, numpy). La materialización del store y el training reusan `ml/`. Instalar ambos: `pip install -r data_pipeline/requirements.txt -r ml/requirements.txt`.
-- **`MLFLOW_TRACKING_URI`**: apuntar al servidor MLflow de Rol 3 (ADR-037). Si no se setea, el tracking cae al SQLite local de `ml/config.py`.
+- **`MLFLOW_TRACKING_URI`**: apuntar al servidor MLflow de Rol 3 (ADR-036). Si no se setea, el tracking cae al SQLite local de `ml/config.py`.
 - **`DAGSTER_HOME`** (p. ej. `~/dagster-runtime`) para persistir runs y el cursor del sensor.
 
 ## 3. Setup del daemon (disparo automático)
@@ -77,11 +77,11 @@ dagster asset materialize --select "features_refrescadas,modelo_reentrenado,fore
 
 El paso de entrenamiento corre `RETRAIN_CMD` (default `python -m ml.baseline`, que ya loguea a
 MLflow) **una vez por target** — el asset le agrega `--target prod_pet` y `--target prod_gas`
-(ADR-042), así que una corrida reentrena los dos modelos. Para reentrenar y **registrar/promover
+(ADR-039), así que una corrida reentrena los dos modelos. Para reentrenar y **registrar/promover
 el campeón** en cada corrida (Rol 3 ya enchufó el logging en `train.py`, 1.4/1.5) se exporta:
 
 ```bash
-export RETRAIN_CMD="python -m ml.train --mlflow"   # loguea, registra y promueve (ADR-040)
+export RETRAIN_CMD="python -m ml.train --mlflow"   # loguea, registra y promueve (ADR-039)
 ```
 
 `ml.train --mlflow` entrena el campeón final, loguea el run (params, métricas dev/test, versión
@@ -90,7 +90,7 @@ de datos, `Pipeline`), lo registra como nueva versión del modelo del target y l
 `--no-promote` lo deja en `Staging`). La fecha de
 corte llega en `RETRAIN_ASOF` y el entrenamiento la **honra**: `build_basic_dataset` recorta
 `periodo <= asof`, así un reproceso de fecha pasada no usa datos posteriores (anti-leakage; ver
-ADR-041). Si `asof` cae antes de `VAL_END`, los splits que aún no existen (p. ej. `test`) se omiten.
+ADR-040). Si `asof` cae antes de `VAL_END`, los splits que aún no existen (p. ej. `test`) se omiten.
 
 ## 5. Reproceso por fecha / backfill (corrección histórica)
 
@@ -110,7 +110,7 @@ done
 ```
 
 > En un backfill alcanza con `features_refrescadas,modelo_reentrenado`: el precómputo
-> (ADR-045) no honra `RETRAIN_ASOF` (siempre pronostica "desde hoy"), así que basta
+> (ADR-043) no honra `RETRAIN_ASOF` (siempre pronostica "desde hoy"), así que basta
 > correrlo una vez al final si se quiere refrescar el lookup.
 
 Cada partición re-materializa el feature store (desde el Bronze ya corregido) y reentrena,
@@ -146,7 +146,7 @@ dejando un run por fecha en MLflow. Es **idempotente** (el store se reescribe y 
   ```
 - Sanity de la API: `GET /api/v1/forecast` de un pozo con precómputo responde igual que
   siempre (contrato de Fase 1); si se borra la tabla `pred_*`, responde idéntico vía
-  motor on-the-fly (transparencia, ADR-045).
+  motor on-the-fly (transparencia, ADR-043).
 
 ## 7. Promoción manual de modelo → refrescar el precómputo
 

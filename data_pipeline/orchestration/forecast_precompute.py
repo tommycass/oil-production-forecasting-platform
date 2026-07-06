@@ -1,6 +1,6 @@
-"""Precómputo del pronóstico mensual por pozo (Fase 3, Rol 2, ADR-045).
+"""Precómputo del pronóstico mensual por pozo (Fase 3, Rol 2, ADR-043).
 
-Corre el **mismo motor recursivo** que sirve `/forecast` (`ml.forecast`, ADR-044) sobre
+Corre el **mismo motor recursivo** que sirve `/forecast` (`ml.forecast`, ADR-042) sobre
 **todos los pozos** del feature store, con el modelo **Production** del registry MLflow,
 y persiste el resultado en `features.pred_produccion_pozo_mensual` (petróleo) y
 `..._gas` (gas): 12 meses hacia adelante por pozo, contados desde su último mes
@@ -8,7 +8,7 @@ observado. La API sirve estas filas como **lookup** cuando están frescas (mismo
 `ultimo_observado` que el store) y recae al motor on-the-fly si no — transparente
 para el usuario: mismo modelo + mismas features ⇒ **mismos valores**.
 
-Se materializa **dentro del job de retrain** (asset `forecast_precomputado`, ADR-041),
+Se materializa **dentro del job de retrain** (asset `forecast_precomputado`, ADR-040),
 después de refrescar el store y reentrenar/promover: así el precómputo siempre refleja
 el último modelo Production sobre las últimas features. Si un target no tiene modelo en
 Production todavía, se lo saltea (la API sigue funcionando por el camino on-the-fly).
@@ -30,20 +30,20 @@ from data_pipeline.orchestration.feature_store_build import (
 )
 from ml.config import TARGETS, experiment_name
 
-# Horizonte del precómputo, en meses = MAX_FORECAST_MONTHS de la API (ADR-044/045).
+# Horizonte del precómputo, en meses = MAX_FORECAST_MONTHS de la API (ADR-042/043).
 # Deben coincidir: si la API pidiera más meses de los precomputados caería al motor
 # on-the-fly (guarda de completitud del servicio), correcto pero sin lookup.
 N_STEPS = 12
 
 PRED_TABLE = "pred_produccion_pozo_mensual"  # petróleo (misma convención que el store)
 
-# Claves/target de la tabla del store: todo lo demás es feature del modelo (ADR-036).
+# Claves/target de la tabla del store: todo lo demás es feature del modelo (ADR-035).
 _NON_FEATURE = {"idpozo", "periodo", "periodo_objetivo", "y_next"}
 
 
 def pred_table_for(target: str) -> str:
     """Tabla de predicciones para un ``target`` (petróleo sin sufijo; gas ``_gas``,
-    misma convención que `table_for` del store, ADR-042)."""
+    misma convención que `table_for` del store, ADR-039)."""
     return PRED_TABLE if target == "prod_pet" else f"{PRED_TABLE}_{target.removeprefix('prod_')}"
 
 
@@ -159,9 +159,9 @@ def precomputar(engine, target: str, n_steps: int = N_STEPS) -> int | None:
 
 
 def precomputar_todos(engine, targets=TARGETS, n_steps: int = N_STEPS) -> dict[str, int | None]:
-    """Precomputa las predicciones de **todos los targets** (petróleo + gas, ADR-042).
+    """Precomputa las predicciones de **todos los targets** (petróleo + gas, ADR-039).
 
-    Es lo que invoca el asset `forecast_precomputado` del job de retrain (ADR-041/045).
+    Es lo que invoca el asset `forecast_precomputado` del job de retrain (ADR-040/043).
     Devuelve ``{target: filas | None}`` (``None`` = sin modelo Production, salteado).
     """
     return {target: precomputar(engine, target, n_steps) for target in targets}

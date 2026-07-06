@@ -20,10 +20,10 @@ DATA_CSV = PROJECT_ROOT / "data" / "_explore" / "produccion_full.csv"
 # versionarlo ni tocar el original.
 DATASET_BASICO_CSV = PROJECT_ROOT / "data" / "processed" / "dataset_basico.csv"
 
-# Target por defecto: petróleo (ADR-028). El segundo modelo (ADR-042) pasa
+# Target por defecto: petróleo (ADR-028). El segundo modelo (ADR-039) pasa
 # "prod_gas" como target; el pipeline está parametrizado para ambos.
 TARGET = "prod_pet"  # m³ de petróleo (ADR-028)
-TARGETS = ("prod_pet", "prod_gas")  # targets soportados (petróleo / gas, ADR-042)
+TARGETS = ("prod_pet", "prod_gas")  # targets soportados (petróleo / gas, ADR-039)
 
 # --- Reproducibilidad ---
 # Semilla única para todo lo aleatorio del modelado (modelos, muestreo de
@@ -39,12 +39,12 @@ TRAIN_END = pd.Timestamp("2023-07-01")
 VAL_END = pd.Timestamp("2024-11-01")
 
 
-# --- Reproceso por fecha (retrain "como si fuera el día X", ADR-041) ---
+# --- Reproceso por fecha (retrain "como si fuera el día X", ADR-040) ---
 def retrain_asof() -> pd.Timestamp | None:
     """Fecha de corte del reproceso, leída de la env var ``RETRAIN_ASOF``
     (``YYYY-MM-DD``), o ``None`` si no está seteada.
 
-    El job de retrain la pasa para reentrenar **"como si fuera el día X"** (ADR-041,
+    El job de retrain la pasa para reentrenar **"como si fuera el día X"** (ADR-040,
     handoff de Rol 2): el dataset se recorta a ``periodo <= asof`` para **no usar
     datos posteriores** a esa fecha (anti-leakage al backfillear fechas pasadas). En
     una corrida normal (sin la env var) no recorta nada."""
@@ -63,5 +63,5 @@ EXPERIMENT_NAME = "produccion-forecast"
 def experiment_name(target: str = TARGET) -> str:
     """Experimento MLflow según el target: petróleo usa el experimento histórico
     (``produccion-forecast``) y gas uno propio (``produccion-forecast-gas``), para
-    no mezclar los runs de los dos modelos (ADR-042)."""
+    no mezclar los runs de los dos modelos (ADR-039)."""
     return EXPERIMENT_NAME if target == "prod_pet" else f"{EXPERIMENT_NAME}-gas"

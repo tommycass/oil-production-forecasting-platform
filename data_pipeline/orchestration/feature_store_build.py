@@ -3,16 +3,17 @@
 Reproduce **exactamente** las features del entrenamiento **reusando el código de `ml/`**
 (única fuente de verdad → cero training-serving skew): la ingeniería sale de
 `ml.features.add_engineered_features` y las columnas base/categóricas de `ml.dataset`. Se
-materializa **el set final de la selección** (`ml.features.selected_features`, ADR-043):
-las **14 features** que entrena el modelo — el núcleo autorregresivo del target + las
-anclas estáticas del cold-start —, recursion-safe por construcción (ADR-044). Es la misma
-lista que usa `ml/train.py`, así que store y modelo no pueden divergir.
+materializa **el set de ganancia positiva de la selección** (`ml.features.selected_features`,
+ADR-041): las features que entrena el modelo (27 en petróleo, 19 en gas) — el núcleo
+autorregresivo del target + las anclas estáticas/categóricas del cold-start —, recursion-safe
+por construcción (ADR-042). Es la misma lista que usa `ml/train.py`, así que store y modelo
+no pueden divergir.
 La única lógica propia es el ensamblado (lectura de Bronze, universo, drop de negativos, merge
 del target) que replica `ml.dataset.build_basic_dataset`, con una diferencia: el target se
 hace por **left-join** para conservar la última fila de cada pozo (con `y_next` NULL) y que
 la API pueda inferir el mes siguiente.
 
-**Dos modelos (ADR-042):** se materializa **una tabla por target** — petróleo
+**Dos modelos (ADR-039):** se materializa **una tabla por target** — petróleo
 (`prod_pet`) en `feat_produccion_pozo_mensual` (nombre histórico) y gas (`prod_gas`)
 en `feat_produccion_pozo_mensual_gas`. Cada tabla tiene su **universo** (pozos con ese
 target > 0 en train), sus **features autorregresivas** sobre el target (`prod_pet_*` vs
@@ -20,7 +21,7 @@ target > 0 en train), sus **features autorregresivas** sobre el target (`prod_pe
 Rol 3 lee la tabla del target que sirve.
 
 Fuente: `bronze.produccion` (crudo, mismas columnas que el CSV que usa el training;
-gobernado en el DW). Ver docs/feature-store.md (contrato) y ADR-036 (Revisión).
+gobernado en el DW). Ver docs/feature-store.md (contrato) y ADR-035 (Revisión).
 
 No importa dagster: la lógica es testeable aislada (paridad vs `build_basic_dataset`).
 """
@@ -48,7 +49,7 @@ _RAW_COLS = list(dict.fromkeys(["idpozo", "anio", "mes", *BASIC_NUMERIC_FEATURES
 def table_for(target: str) -> str:
     """Tabla del store para un ``target``. Petróleo mantiene el nombre histórico
     (`feat_produccion_pozo_mensual`); gas (y futuros targets) llevan sufijo, siguiendo
-    la convención `_gas` del pipeline de `ml/` (ADR-042): `feat_produccion_pozo_mensual_gas`.
+    la convención `_gas` del pipeline de `ml/` (ADR-039): `feat_produccion_pozo_mensual_gas`.
     """
     return FEATURE_TABLE if target == "prod_pet" else f"{FEATURE_TABLE}_{target.removeprefix('prod_')}"
 
@@ -77,9 +78,9 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     Target por **left-join** (conserva la última fila de cada pozo, `y_next` NULL)
     para habilitar la inferencia del mes siguiente.
 
-    ``target`` (``prod_pet`` por defecto / ``prod_gas``, ADR-042) cambia el **universo**
+    ``target`` (``prod_pet`` por defecto / ``prod_gas``, ADR-039) cambia el **universo**
     (pozos con ese target > 0 en train), las **features autorregresivas** del set final
-    (`{target}_roll3/ratio1/acum12/...`, ADR-043) y el `y_next` (= target del mes t+1).
+    (`{target}_roll3/ratio1/acum12/...`, ADR-041) y el `y_next` (= target del mes t+1).
     Las anclas estáticas no dependen del target. No se llama a `df.copy()` defensivo
     más de lo necesario para poder reusar el mismo crudo de Bronze en los dos targets
     sin recargar.
@@ -94,11 +95,11 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
 
     # universo train-only (anti-leakage de selección, ADR-031): pozos con `target`>0
     # en algún mes <= TRAIN_END. El universo gasífero es distinto (y más amplio) que el
-    # petrolero (ADR-042).
+    # petrolero (ADR-039).
     pozos = df.loc[(df[target] > 0) & (df.periodo <= TRAIN_END), "idpozo"].unique()
     df = df[df.idpozo.isin(pozos)].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
-    # descartar producción negativa (errores de dato, ADR-039) antes del feature eng.
+    # descartar producción negativa (errores de dato, ADR-038) antes del feature eng.
     prod_cols = ["prod_pet", "prod_gas", "prod_agua"]
     df = df[~(df[prod_cols] < 0).any(axis=1)].reset_index(drop=True)
 
@@ -117,10 +118,10 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     # devolvemos a int64 para que el store tenga una clave limpia (lookup de la API).
     out["idpozo"] = out["idpozo"].astype("int64")
 
-    # Materializar SOLO el set FINAL de la selección (ADR-043): las 14 features que
-    # entrena el modelo (`ml.features.selected_features` — la misma lista que usa
-    # `ml/train.py`, fuente única de verdad). Lo demás que calcula
-    # `add_engineered_features` (borderline / descartadas del ranking) no se persiste.
+    # Materializar SOLO el set de ganancia positiva de la selección (ADR-041): las
+    # features que entrena el modelo (27 petróleo / 19 gas, `ml.features.selected_features`
+    # — la misma lista que usa `ml/train.py`, fuente única de verdad). Lo demás que calcula
+    # `add_engineered_features` (importancia ≈ 0 / negativa en el ranking) no se persiste.
     cols = ["idpozo", "periodo", "periodo_objetivo"] + ml_features.selected_features(target) + ["y_next"]
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
@@ -136,11 +137,11 @@ def materializar(engine, target: str = TARGET) -> int:
 
 
 def materializar_todos(engine, targets=TARGETS) -> dict[str, int]:
-    """Materializa **una tabla por target** (petróleo + gas, ADR-042).
+    """Materializa **una tabla por target** (petróleo + gas, ADR-039).
 
     Lee Bronze **una sola vez** (las columnas crudas son las mismas para ambos) y
     reescribe cada tabla con su universo/ingeniería/`y_next`. Devuelve `{target: filas}`.
-    Es lo que invoca el job de retrain (`features_refrescadas`, ADR-041).
+    Es lo que invoca el job de retrain (`features_refrescadas`, ADR-040).
     """
     raw = leer_bronze(engine)
     with engine.begin() as conn:

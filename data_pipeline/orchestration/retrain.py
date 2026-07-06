@@ -1,12 +1,12 @@
-"""Orquestación del reentrenamiento del modelo (Fase 3, Rol 2, ADR-041).
+"""Orquestación del reentrenamiento del modelo (Fase 3, Rol 2, ADR-040).
 
 Job `retrain` particionado por día ("reentrenar como si fuera el día X") que
 encadena el flujo que pide la adenda:
 
     refrescar features (feature store) → entrenar (ml/) → registrar en MLflow
-    → precomputar el forecast (ADR-045)
+    → precomputar el forecast (ADR-043)
 
-**Dos modelos (ADR-042):** el job reentrena **petróleo y gas**: `features_refrescadas`
+**Dos modelos (ADR-039):** el job reentrena **petróleo y gas**: `features_refrescadas`
 materializa las dos tablas del store, `modelo_reentrenado` corre el entrenamiento una
 vez por target (`--target prod_pet` / `--target prod_gas`) y `forecast_precomputado`
 deja el pronóstico de 12 meses por pozo listo para que la API lo sirva como lookup.
@@ -15,7 +15,7 @@ Disparo (adenda 2.4): además de correrlo a mano,
 - **Schedule mensual** alineado al refresh del DW (ADR-021, cron día 5): el retrain
   corre el día 6, cuando ya hay features nuevas del mes.
 - **Sensor por llegada de datos**: dispara cuando el feature store
-  (`features.feat_produccion_pozo_mensual`, ADR-036) tiene un período nuevo.
+  (`features.feat_produccion_pozo_mensual`, ADR-035) tiene un período nuevo.
 
 Ambos requieren el **dagster-daemon** corriendo (ver runbook ml-retrain). Todo es
 env-driven (`POSTGRES_*`, `MLFLOW_TRACKING_URI`): el mismo código sirve a staging y prod.
@@ -67,9 +67,9 @@ def _train_cmd() -> list[str]:
 def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
     """Refresca el feature store (lo materializa) antes de entrenar.
 
-    Reusa la materialización del store (ADR-036): corre el pipeline de features de
+    Reusa la materialización del store (ADR-035): corre el pipeline de features de
     `ml/` sobre el crudo de Bronze y reescribe **las dos tablas** del store —
-    `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-042).
+    `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-039).
     Asume que Bronze ya está fresco (lo deja el refresh mensual del DW, ADR-018).
     """
     from data_pipeline.orchestration import feature_store_build as fsb
@@ -89,14 +89,14 @@ def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
 def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     """Entrena y registra el run en MLflow para la fecha de la partición.
 
-    Reentrena **los dos modelos** (petróleo y gas, ADR-042): corre `RETRAIN_CMD`
+    Reentrena **los dos modelos** (petróleo y gas, ADR-039): corre `RETRAIN_CMD`
     (default `ml.baseline`, que loguea a MLflow) **una vez por target**, agregándole
     `--target <target>`. Cada target usa su propio experimento/modelo en MLflow
     (`experiment_name(target)`). La fecha de corte ("como si fuera el día X") se pasa
     por `RETRAIN_ASOF`; el entrenamiento la respeta (`ml.config.retrain_asof` →
     `build_basic_dataset` recorta `periodo <= asof`) para no usar datos posteriores
     (anti-leakage). El tracking apunta a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3,
-    ADR-037) si está seteado.
+    ADR-036) si está seteado.
     """
     import subprocess
 
@@ -125,11 +125,11 @@ def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     retry_policy=_RETRY,
 )
 def forecast_precomputado(context: AssetExecutionContext) -> MaterializeResult:
-    """Precomputa el pronóstico de 12 meses por pozo con el modelo Production (ADR-045).
+    """Precomputa el pronóstico de 12 meses por pozo con el modelo Production (ADR-043).
 
-    Corre el mismo motor recursivo que sirve `/forecast` (ADR-044) sobre todos los
+    Corre el mismo motor recursivo que sirve `/forecast` (ADR-042) sobre todos los
     pozos del store recién refrescado, con el modelo **Production** del registry (el
-    que acaba de promover el paso anterior si superó el criterio del ADR-040), y
+    que acaba de promover el paso anterior si superó el criterio del ADR-039), y
     escribe `features.pred_produccion_pozo_mensual` (+ `_gas`). La API sirve estas
     filas como lookup; si un target no tiene modelo en Production se lo **saltea**
     (metadata `filas_<target> = "sin modelo Production"`) y la API sigue on-the-fly.

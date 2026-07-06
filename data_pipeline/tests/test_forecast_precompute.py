@@ -1,4 +1,4 @@
-"""Tests del precómputo del forecast (forecast_precompute, ADR-045).
+"""Tests del precómputo del forecast (forecast_precompute, ADR-043).
 
 `build_predicciones` corre el motor recursivo real (`ml.forecast`) con un pipeline
 *stub* sobre un store sintético en memoria — sin DB ni MLflow. Reusa `ml/features`
@@ -25,7 +25,7 @@ class _Stub:
 
 
 def _store(n_pozos=3, meses=6, target="prod_pet") -> pd.DataFrame:
-    """Tabla del store sintética con el contrato del set seleccionado (ADR-036/043)."""
+    """Tabla del store sintética con el contrato del set seleccionado (ADR-035/041)."""
     filas = []
     for p in range(n_pozos):
         for m in range(1, meses + 1):

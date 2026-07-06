@@ -2,7 +2,7 @@
 
 Plataforma Predictiva de Producción de Hidrocarburos — Trabajo Integrador de Ingeniería de Software.
 
-El sistema integra datos reales de producción de hidrocarburos (datos.gob.ar) en una **plataforma de datos** sobre arquitectura Medallion: ingesta orquestada con **Dagster**, transformación con **dbt** (Bronze → Silver → Gold con modelo estrella), checks de **calidad de datos** persistidos, exploración para usuarios de negocio en **Metabase** (BI) y linaje/gobierno en **DataHub**. Por encima, expone una **API REST** que sirve esos datos, con infraestructura reproducible con Docker, pipeline de **CI/CD** y monitoreo con **Prometheus y Grafana**. Sobre la capa Gold se entrena un **modelo de Machine Learning** que pronostica la producción de petróleo del mes siguiente, con tracking de experimentos en **MLflow** y servido por la API desde el model registry.
+El sistema integra datos reales de producción de hidrocarburos (datos.gob.ar) en una **plataforma de datos** sobre arquitectura Medallion: ingesta orquestada con **Dagster**, transformación con **dbt** (Bronze → Silver → Gold con modelo estrella), checks de **calidad de datos** persistidos, exploración para usuarios de negocio en **Metabase** (BI) y linaje/gobierno en **DataHub**. Por encima, expone una **API REST** que sirve esos datos, con infraestructura reproducible con Docker, pipeline de **CI/CD** y monitoreo con **Prometheus y Grafana**. Sobre la capa Gold se entrenan **modelos de Machine Learning** que pronostican la producción de petróleo y de gas del mes siguiente (un modelo por target), con tracking de experimentos en **MLflow** y servidos por la API desde el model registry.
 
 > **Fase 1** construyó la API, la infraestructura (Docker/AWS), el CI/CD y el monitoreo. **Fase 2** agregó la integración de datos: pipeline Medallion, DW dimensional, calidad de datos, BI y gobierno. **Fase 3** (esta entrega) suma el **Machine Learning**: feature store, pipeline de entrenamiento, tracking/registry con MLflow, **retrain orquestado con Dagster** (Schedule + Sensor) y un endpoint de inferencia. Ver [Arquitectura de datos](#arquitectura-de-datos) y [Machine Learning — Forecast de producción](#machine-learning--forecast-de-producción-fase-3).
 
@@ -73,9 +73,9 @@ oil-production-forecasting-platform/
 │   │   ├── assets.py               # Bronze(parquet) → Bronze(Postgres) → dbt (Silver/Gold/DQ)
 │   │   ├── definitions.py          # Punto de entrada + jobs dw_publish y retrain (+ schedule/sensor)
 │   │   ├── dbt_project.py          # Proyecto dbt expuesto a dagster-dbt
-│   │   ├── feature_store_build.py  # Materializa el feature store reusando ml/ (Fase 3, ADR-036)
-│   │   ├── retrain.py              # Job de retrain + Schedule mensual + Sensor por datos nuevos (ADR-041)
-│   │   ├── forecast_precompute.py  # Precómputo del forecast 12 meses por pozo (ADR-045)
+│   │   ├── feature_store_build.py  # Materializa el feature store reusando ml/ (Fase 3, ADR-035)
+│   │   ├── retrain.py              # Job de retrain + Schedule mensual + Sensor por datos nuevos (ADR-040)
+│   │   ├── forecast_precompute.py  # Precómputo del forecast 12 meses por pozo (ADR-043)
 │   │   └── run_pipeline.sh         # Refresh headless para cron (full reload, env-driven)
 │   ├── tests/                      # Tests del pipeline (pytest)
 │   ├── requirements.txt
@@ -107,10 +107,14 @@ oil-production-forecasting-platform/
 │   ├── eda.py                      # Helpers de análisis exploratorio (para notebooks)
 │   ├── train.py                    # Entrenamiento/evaluación (leer → entrenar → evaluar)
 │   ├── baseline.py                 # Baselines deterministas (persistencia, etc.)
+│   ├── selection.py                # Selección de features por permutation importance (ADR-041)
+│   ├── forecast.py                 # Motor de forecast recursivo multi-paso (ADR-042)
 │   ├── tracking.py                 # Helper de setup de MLflow
+│   ├── registry.py                 # Log / registro / promoción del modelo en MLflow (ADR-039)
+│   ├── tests/                      # Tests del paquete ml/ (forecast, registry)
 │   └── requirements.txt            # Dependencias del paquete ml/ (validadas por Dagster en el retrain)
 │
-├── notebooks/                      # EDA, feature engineering y comparación de modelos
+├── notebooks/                      # EDA (01) + selección de features por target: petróleo (02) y gas (03)
 │
 ├── docs/
 │   ├── consigna-fase1.md
@@ -118,10 +122,7 @@ oil-production-forecasting-platform/
 │   ├── adenda_tecnica_fase2.md
 │   ├── adenda_tecnica_fase_3.md    # Adenda técnica de la Fase 3 (ML)
 │   ├── data-model.md               # Contrato Gold: grano, dims, surrogate keys, SCD
-│   ├── feature-store.md            # Contrato del feature store (Fase 3, ADR-036)
-│   ├── handoff-dw-bi-gobierno.md   # Traspaso del DW de B a C (BI + gobierno)
-│   ├── handoff-feature-store.md    # Traspaso del feature store entre roles de ML
-│   ├── handoffs/                   # Handoffs entre roles (MLflow tracking/registry, feature store)
+│   ├── feature-store.md            # Contrato del feature store (Fase 3, ADR-035)
 │   ├── runbooks/                   # Runbooks por rol
 │   │   ├── data-engineer.md        # Reprocesar un mes corregido por la fuente
 │   │   ├── analytics-engineer.md   # Reconstruir Silver/Gold y resolver gate de calidad
@@ -163,13 +164,15 @@ oil-production-forecasting-platform/
 │       ├── 0032-encoding-categoricas-onehot.md
 │       ├── 0033-feature-engineering.md
 │       ├── 0034-algoritmo-modelo-validacion-temporal.md
-│       ├── 0035-predict-api-contract.md
-│       ├── 0036-feature-store.md
-│       ├── 0037-mlflow-server.md
-│       ├── 0038-serving-strategy.md
-│       ├── 0039-preprocesamiento-datos.md
-│       ├── 0040-modelo-produccion.md
-│       └── 0041-orquestacion-retrain.md
+│       ├── 0035-feature-store.md
+│       ├── 0036-mlflow-server.md
+│       ├── 0037-serving-strategy.md
+│       ├── 0038-preprocesamiento-datos.md
+│       ├── 0039-modelo-produccion.md
+│       ├── 0040-orquestacion-retrain.md
+│       ├── 0041-seleccion-features-forecast.md
+│       ├── 0042-forecast-recursivo.md
+│       └── 0043-forecast-precomputado.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
@@ -506,7 +509,7 @@ registry.
 ### Problema y validación
 
 - **Targets:** `prod_pet` (petróleo) y `prod_gas` (gas) del mes `t+1` — **un modelo por
-  producción** (decisión de la cátedra, [ADR-042](docs/adr/0042-modelo-prediccion-gas.md)).
+  producción** (decisión de la cátedra, [ADR-039](docs/adr/0039-modelo-produccion.md)).
   **Grano:** una fila por **(pozo, mes)**.
 - **Métrica:** **RMSE** (m³) como métrica de selección —penaliza los errores grandes,
   que dominan en un target de cola pesada—, con **R²** y **MAE** de apoyo.
@@ -519,48 +522,42 @@ registry.
 ### Feature store y features
 
 El **feature store offline** vive en Postgres (esquema `features`) con **una tabla por
-target** (ADR-042): `features.feat_produccion_pozo_mensual` (petróleo) y
+target** (ADR-039): `features.feat_produccion_pozo_mensual` (petróleo) y
 `features.feat_produccion_pozo_mensual_gas` (gas). Cada una tiene una fila por
 `(idpozo, periodo)` con las mismas features que consume el entrenamiento de ese modelo, para
 que **train e inferencia calculen lo mismo** (evita *training-serving skew*). Se
 **materializan con código Python** (`data_pipeline/orchestration/feature_store_build.py`,
 parametrizado por target) que **reusa directamente el pipeline de `ml/`** como única fuente de
-verdad —reemplaza al modelo dbt original (ADR-036, revisión)—, leyendo de `bronze.produccion`.
+verdad —reemplaza al modelo dbt original (ADR-035, revisión)—, leyendo de `bronze.produccion`.
 Cada tabla tiene su **universo** (pozos con ese target `> 0` en train; el gasífero es más
 amplio) y sus features de ingeniería sobre el target. Todas las features son **anti-leakage**:
 usan solo datos del mes `t` o anteriores (lags **por calendario**, nunca el mes a predecir). Se
 materializan **dentro del job de retrain** (no en `dw_publish`), para no acoplar el refresh del
 DW de Fase 2 a las dependencias de `ml/`.
 
-Cada fila tiene **14 features**: el **set final de la selección** (ADR-043, elegido por
-*permutation importance* en val + retención explícita de anclas para el cold-start), en
-dos capas. La lista canónica vive en `ml.features.selected_features(target)` — la misma
-que entrena `ml/train.py`, así store y modelo no pueden divergir:
+Cada fila tiene las features de **ganancia positiva** de la selección ([ADR-041](docs/adr/0041-seleccion-features-forecast.md)):
+se conserva toda feature con *permutation importance* en val `> 0` (empíricamente reduce el
+error), sin recorte manual.
+Los sets **difieren por target**: **27 features en petróleo, 19 en gas** (cada uno rankeó
+distinto). La lista canónica vive en `ml.features.selected_features(target)` — la misma que
+entrena `ml/train.py`, así store y modelo no pueden divergir; la **tabla completa con la
+importancia de cada feature** está en el [ADR-041](docs/adr/0041-seleccion-features-forecast.md).
+A grandes rasgos, cada set combina:
 
-- **Capa 1 — motor autorregresivo (9)**, sobre el target (`prod_pet` / `prod_gas`):
+- **Núcleo autorregresivo** sobre el target (`{target}` + medias móviles `roll3/roll6`,
+  ratios/deltas de declinación, acumulados `acum6/acum12`, `cummax`, lags `lag2/lag3/lag12`,
+  volatilidad `std3`, …): **recalculables desde la trayectoria del target**, lo que habilita
+  el forecast recursivo (ADR-042). No hay leakage: cada fila usa solo su mes `t` o anteriores.
+- **Anclas estáticas / categóricas del pozo:** en **petróleo** sostienen el cold-start
+  `areayacimiento`, `profundidad`, `coordenadax/y`, `well_age_months` + categóricas
+  (`tipopozo`, `empresa`, …); en **gas** la señal estática se reduce a `tipoestado` (las
+  geográficas/físicas quedaron con importancia ≤ 0 y no entran — asimetría documentada en el
+  ADR-041). Para un pozo **sin historial** las autorregresivas quedan `0 + flag` (ADR-038) y
+  estas anclas son la única señal disponible.
 
-  | Feature | Cálculo |
-  |---|---|
-  | `{target}` | nivel del mes `t` (señal de persistencia) |
-  | `{target}_roll3` / `{target}_roll6` | media móvil {t..t-2} / {t..t-5} (nivel reciente) |
-  | `{target}_ratio1` | `target(t) / target(t-1)` (declinación multiplicativa) |
-  | `{target}_delta1` | `target(t) − target(t-1)` (declinación absoluta) |
-  | `{target}_acum6` / `{target}_acum12` | acumulado en 6 / 12 meses (volumen) |
-  | `{target}_cummax` | pico histórico de producción |
-  | `{target}_lag2` | target en t-2 |
-
-  Ninguna ajusta parámetros globales: cada fila se calcula solo con su mes `t` o anteriores,
-  así que **no hay leakage** aunque se computen sobre todo el histórico. Todas se pueden
-  **recalcular a partir de la trayectoria del target**, que es lo que habilita el forecast
-  recursivo (ADR-044).
-- **Capa 2 — anclas estáticas del cold-start (5):** `areayacimiento` (categórica cruda; el
-  one-hot vive en el modelo), `profundidad`, `coordenadax`, `coordenaday` y
-  `well_age_months`. Para un pozo **sin historial** las autorregresivas quedan `0 + flag`
-  (ADR-039) y estas anclas son la única señal disponible — por eso se retienen aunque su
-  importancia global sea modesta (ADR-043).
-
-Ver [ADR-033](docs/adr/0033-feature-engineering.md) y
-[ADR-036](docs/adr/0036-feature-store.md); contrato en
+Ver [ADR-033](docs/adr/0033-feature-engineering.md),
+[ADR-035](docs/adr/0035-feature-store.md) y
+[ADR-041](docs/adr/0041-seleccion-features-forecast.md); contrato en
 [docs/feature-store.md](docs/feature-store.md).
 
 ### Entrenamiento y modelo campeón
@@ -572,37 +569,39 @@ train de cada fold** durante la validación cruzada (anti-leakage). El tuning us
 temporal** (*expanding window* por mes) + **random search** con semilla fija
 (reproducible). Se comparan **Ridge, Random Forest y XGBoost**. Ver
 [ADR-034](docs/adr/0034-algoritmo-modelo-validacion-temporal.md),
-[ADR-039](docs/adr/0039-preprocesamiento-datos.md) y
-[ADR-040](docs/adr/0040-modelo-produccion.md).
+[ADR-038](docs/adr/0038-preprocesamiento-datos.md) y
+[ADR-039](docs/adr/0039-modelo-produccion.md).
 
-El modelo se entrena con el **set final de la selección** (14 features, ADR-043),
-recursion-safe por construcción: el **mismo** campeón sirve para la predicción de un mes y
-para el **forecast recursivo** de `/forecast` (ADR-044). La selección (ranking por
-*permutation importance* + validación del recorte en val y test) y el tuning viven en los
-notebooks `notebooks/02_feature_selection_pet.ipynb` (petróleo) y
+El modelo se entrena con el **set de ganancia positiva** de la selección (27 petróleo / 19
+gas, ADR-041), recursion-safe por construcción: el **mismo** campeón sirve para la
+predicción de un mes y para el **forecast recursivo** de `/forecast` (ADR-042). La selección
+(ranking por *permutation importance* en val) y el tuning viven en los notebooks
+`notebooks/02_feature_selection_pet.ipynb` (petróleo) y
 `notebooks/03_feature_selection_gas.ipynb` (gas).
 
 **Campeón (los dos targets): Random Forest tuneado.** Hiperparámetros (re-tuneo sobre el
 set candidato recursion-safe): petróleo `n_estimators=200, max_depth=24, max_features=0.5,
 min_samples_leaf=5`; gas `n_estimators=400, max_depth=16, max_features=0.5,
 min_samples_leaf=5`. En ambos, XGBoost gana sin tunear pero tuneado lo supera Random Forest.
-Métricas de referencia (RMSE en m³ / R²). Petróleo: medido con el **set compacto** de la
-selección (ADR-043 §4, cede ~3% de val RMSE frente al candidato de 35). Gas: medido con el
-set candidato (la re-medición con el set final queda para el próximo retrain — en cada
-corrida el campeón se re-evalúa y **solo se promueve si supera a la persistencia y al
-Production vigente**, ADR-040, así que la vara no depende de esta tabla):
+Métricas con el **set de ganancia positiva** (RMSE en m³ / R²): **val** de los notebooks
+02/03 (campeón reajustado sobre el set); **test** del entrenamiento final (`--final`: dev =
+train+val, evaluado una vez en test). En cada retrain el campeón se re-evalúa y **solo se
+promueve si supera a la persistencia y al Production vigente** (ADR-039), así que la vara no
+depende de esta tabla:
 
 | Target | val RMSE | val R² | **test RMSE** | **test R²** | persistencia (test) |
 |---|---|---|---|---|---|
-| **Petróleo** (`prod_pet`) | 234,5 | 0,896 | **164,7** | **0,856** | 166,2 / 0,854 |
-| **Gas** (`prod_gas`) | 580,4 | 0,859 | **408,2** | **0,851** | 457,8 / 0,813 |
+| **Petróleo** (`prod_pet`) | 227,5 | 0,902 | **157,5** | **0,869** | 166,2 / 0,854 |
+| **Gas** (`prod_gas`) | 576,6 | 0,861 | **409,2** | **0,850** | 457,8 / 0,813 |
 
 Los dos superan al baseline en val y en test → cumplen el criterio de promoción. (El RMSE
 de gas es mayor en valor absoluto porque la producción de gas tiene otra escala; el R²
 —comparable— es alto en ambos.) Ver
-[ADR-042](docs/adr/0042-modelo-prediccion-gas.md) (modelo de gas), [ADR-043](docs/adr/0043-seleccion-features-forecast.md)
-(selección de features) y los notebooks
-`notebooks/02_feature_selection_pet.ipynb` (petróleo) y `notebooks/03_feature_selection_gas.ipynb` (gas).
+[ADR-039](docs/adr/0039-modelo-produccion.md) (modelo de gas),
+[ADR-041](docs/adr/0041-seleccion-features-forecast.md) /
+[ADR-041](docs/adr/0041-seleccion-features-forecast.md) (selección de features) y
+los notebooks `notebooks/02_feature_selection_pet.ipynb` (petróleo) y
+`notebooks/03_feature_selection_gas.ipynb` (gas).
 
 **Correr el entrenamiento** (requiere acceso a la fuente de datos / feature store). El
 `--target` elige el modelo (por defecto `prod_pet`):
@@ -629,20 +628,20 @@ target** (`produccion-forecast` para petróleo y `produccion-forecast-gas` para 
 mezclar runs ni versiones. `python -m ml.train --mlflow --target <target>` entrena el campeón
 final y **loguea** el run (hiperparámetros, métricas dev/test, versión de datos y el `Pipeline`
 serializado), lo **registra** como nueva versión y **promueve** a Production con el criterio del
-ADR-040 (`ml/registry.py`). El **model registry** versiona los modelos y marca cada campeón
+ADR-039 (`ml/registry.py`). El **model registry** versiona los modelos y marca cada campeón
 con stages **Staging → Production**: un candidato pasa a `Production` solo si supera a la
 persistencia y mejora al `Production` actual del target (si no, queda en `Staging`);
-[ADR-040](docs/adr/0040-modelo-produccion.md). La plataforma (MLflow vs W&B) se justifica
+[ADR-039](docs/adr/0039-modelo-produccion.md). La plataforma (MLflow vs W&B) se justifica
 en [ADR-030](docs/adr/0030-plataforma-tracking-experimentos.md) y el servidor en
-[ADR-037](docs/adr/0037-mlflow-server.md).
+[ADR-036](docs/adr/0036-mlflow-server.md).
 
 ### Reentrenamiento orquestado (Dagster)
 
 El retrain está orquestado con **Dagster** (`data_pipeline/orchestration/retrain.py`): un
 job `retrain` particionado por día que encadena **refrescar features → entrenar/registrar
 en MLflow → precomputar el forecast** (assets `features_refrescadas` → `modelo_reentrenado`
-→ `forecast_precomputado`, ADR-041/045) y reentrena **los dos
-modelos** (petróleo y gas, ADR-042) en la misma corrida: `features_refrescadas` materializa
+→ `forecast_precomputado`, ADR-040/043) y reentrena **los dos
+modelos** (petróleo y gas, ADR-039) en la misma corrida: `features_refrescadas` materializa
 las dos tablas del store y `modelo_reentrenado` corre `RETRAIN_CMD` en un subproceso **una vez
 por target** (`--target prod_pet` / `--target prod_gas`). Por defecto es `python -m ml.baseline`
 (loguea baselines); para reentrenar y **registrar/promover el campeón** en cada corrida se
@@ -654,7 +653,7 @@ con la fecha de corte de la partición pasada por
 los splits aún inexistentes se omiten. Al final, `forecast_precomputado` deja el
 **pronóstico de 12 meses por pozo** calculado con el modelo Production en
 `features.pred_produccion_pozo_mensual` (+ `_gas`), que la API sirve como lookup
-(ADR-045; si un target no tiene Production, se saltea y la API sigue on-the-fly).
+(ADR-043; si un target no tiene Production, se saltea y la API sigue on-the-fly).
 Se dispara de tres formas:
 
 - **Schedule mensual** (`retrain_mensual`, cron `0 6 6 * *`): el día 6, después del refresh
@@ -667,7 +666,7 @@ Se dispara de tres formas:
 El Schedule y el Sensor requieren el **dagster-daemon** corriendo. Todo es env-driven
 (`POSTGRES_*`, `MLFLOW_TRACKING_URI`), así el mismo código sirve a staging y producción.
 Procedimiento completo en el [runbook de retrain](docs/runbooks/ml-retrain.md) y diseño en
-[ADR-041](docs/adr/0041-orquestacion-retrain.md).
+[ADR-040](docs/adr/0040-orquestacion-retrain.md).
 
 ```bash
 # Retrain manual de una fecha puntual (la partición usa AAAA-MM-DD)
@@ -679,24 +678,24 @@ dagster job execute -j retrain --partition "2026-06-06" -m $MOD
 
 `GET /api/v1/forecast` devuelve el **pronóstico mensual** de producción de un pozo entre
 `date_start` y `date_end`, con el contrato de Fase 1 (`{id_well, data:[{date, prod}]}`). Es un
-pronóstico **recursivo multi-paso** (ADR-044): el modelo predice el mes t+1, esa predicción se
-**realimenta** como si fuera dato, se recalculan las features **recursion-safe** (ADR-043) y se
+pronóstico **recursivo multi-paso** (ADR-042): el modelo predice el mes t+1, esa predicción se
+**realimenta** como si fuera dato, se recalculan las features **recursion-safe** (ADR-041) y se
 predice t+2, y así. La salida es un punto **por mes** (fecha = 1° del mes), **solo meses
 futuros**; el horizonte se acota a **12 meses** desde el último dato del pozo (si el rango lo
 supera, se recorta hasta ahí). Un parámetro **opcional** `target` (`prod_pet` por defecto, o
 `prod_gas`) elige la producción.
 
-**Serving en dos caminos, transparente (ADR-045):** si el job de retrain dejó el pronóstico
+**Serving en dos caminos, transparente (ADR-043):** si el job de retrain dejó el pronóstico
 del pozo **precomputado y fresco** (tabla `features.pred_produccion_pozo_mensual`), la API
 responde con un **lookup** (milisegundos, sin tocar MLflow); si no —precómputo inexistente o
 viejo respecto del store—, corre el motor recursivo **on-the-fly** con el modelo en stage
 `Production` del registry (que se recarga al promoverse uno nuevo, sin reiniciar). Mismo
 motor + mismo modelo + mismas features ⇒ **misma respuesta por cualquiera de los dos
 caminos**; el `503` (modelo no disponible) solo puede ocurrir en el on-the-fly. El paso
-unitario (predecir un mes = rango de un mes) **subsume** al viejo `POST /predict`, que se
-retiró (ADR-035 queda reemplazado por ADR-044). Ver
-[ADR-044](docs/adr/0044-forecast-recursivo.md), [ADR-045](docs/adr/0045-forecast-precomputado.md)
-y [ADR-038](docs/adr/0038-serving-strategy.md).
+unitario (predecir un mes = rango de un mes) **subsume** la predicción de un solo mes, que
+no tiene endpoint propio (ADR-042). Ver
+[ADR-042](docs/adr/0042-forecast-recursivo.md), [ADR-043](docs/adr/0043-forecast-precomputado.md)
+y [ADR-037](docs/adr/0037-serving-strategy.md).
 
 ```bash
 # Petróleo (target por defecto): pronóstico mensual del rango
@@ -825,7 +824,7 @@ Una vez terminada la rama, abrir un PR hacia `staging`. Otro integrante debe rev
 - **XGBoost** — gradient boosting (modelo comparado en el tuning)
 - **MLflow** — tracking de experimentos y model registry (stages Staging → Production)
 - **Dagster** — orquestación del retrain (job features→entrenar→MLflow + Schedule + Sensor)
-- **feature store en Postgres** — una tabla por target (`features.feat_produccion_pozo_mensual` y `..._gas`), materializadas reusando el código de `ml/` (ADR-036/042), + el **forecast precomputado** (`features.pred_produccion_pozo_mensual` y `..._gas`, ADR-045) que la API sirve como lookup
+- **feature store en Postgres** — una tabla por target (`features.feat_produccion_pozo_mensual` y `..._gas`), materializadas reusando el código de `ml/` (ADR-035/039), + el **forecast precomputado** (`features.pred_produccion_pozo_mensual` y `..._gas`, ADR-043) que la API sirve como lookup
 
 **Infraestructura**
 - **Docker / Docker Compose** — contenerización y orquestación local
@@ -906,14 +905,12 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [032](docs/adr/0032-encoding-categoricas-onehot.md) | Encoding de categóricas | One-hot con fallback `DESCONOCIDO` vs. ordinal/target encoding; ajuste solo en train |
 | [033](docs/adr/0033-feature-engineering.md) | Feature engineering | Lags por calendario vs. `shift`; vecinos por coordenadas vs. por área; features sin parámetros aprendidos |
 | [034](docs/adr/0034-algoritmo-modelo-validacion-temporal.md) | Algoritmo y validación temporal | Lineal vs. árboles vs. boosting; KFold vs. CV temporal; random search con `n_iter` |
-| [035](docs/adr/0035-predict-api-contract.md) | Contrato del endpoint de predicción (**reemplazado por ADR-044**) | GET vs. POST; unitario vs. batch; clave de lookup vs. features explícitas. `/predict` se retiró: `/forecast` recursivo lo subsume |
-| [036](docs/adr/0036-feature-store.md) | Feature store | Tabla en Postgres (dbt) vs. Feast vs. otra; store offline reutilizando el stack de Fase 2 |
-| [037](docs/adr/0037-mlflow-server.md) | Backend del servidor MLflow | Backend SQLite vs. Postgres; artifact store; servidor containerizado para tracking + registry |
-| [038](docs/adr/0038-serving-strategy.md) | Estrategia de serving del modelo | Redeploy del contenedor vs. recarga/polling del registry; actualización sin downtime |
-| [039](docs/adr/0039-preprocesamiento-datos.md) | Preprocesamiento de datos | Imputación por feature vs. uniforme; clip/log1p vs. sin tratar outliers; descarte de negativos |
-| [040](docs/adr/0040-modelo-produccion.md) | Modelos campeones (petróleo y gas) y criterio de promoción | Random Forest vs. XGBoost vs. Ridge (tuneados); campeón por target; criterio Staging→Production; gestión de los dos modelos |
-| [041](docs/adr/0041-orquestacion-retrain.md) | Orquestación del retrain | Job Dagster (features→entrenar→MLflow) + Schedule mensual + Sensor por datos nuevos; backfill por fecha |
-| [042](docs/adr/0042-modelo-prediccion-gas.md) | Segundo modelo: forecast de gas | Modelar `prod_gas` además de `prod_pet`; dos modelos vs. multi-salida; reuso del pipeline parametrizado; universo gasífero y anti-leakage |
-| [043](docs/adr/0043-seleccion-features-forecast.md) | Selección de features del forecast | Permutation importance en val sobre el candidato recursion-safe; set final de 14 (motor autorregresivo + anclas cold-start); poda de borderline y categóricas |
-| [044](docs/adr/0044-forecast-recursivo.md) | Forecast recursivo multi-paso en `/forecast` | Recursivo vs. directo; salida mensual vs. diaria; horizonte máximo; `/predict` subsumido; contrato de Fase 1 preservado |
-| [045](docs/adr/0045-forecast-precomputado.md) | Precómputo del forecast en el retrain | On-demand vs. precómputo puro vs. híbrido con fallback; generación en el retrain vs. en la ingesta; frescura exacta por `ultimo_observado`; serving transparente por lookup |
+| [035](docs/adr/0035-feature-store.md) | Feature store | Materialización Python del pipeline de `ml/` vs. dbt SQL vs. Feast; una tabla por target |
+| [036](docs/adr/0036-mlflow-server.md) | Backend del servidor MLflow | Backend SQLite vs. Postgres; artifact store; servidor containerizado para tracking + registry |
+| [037](docs/adr/0037-serving-strategy.md) | Estrategia de serving del modelo | Redeploy del contenedor vs. recarga/polling del registry; actualización sin downtime |
+| [038](docs/adr/0038-preprocesamiento-datos.md) | Preprocesamiento de datos | Imputación por feature vs. uniforme; clip/log1p vs. sin tratar outliers; descarte de negativos |
+| [039](docs/adr/0039-modelo-produccion.md) | Modelos de producción (petróleo y gas), campeones y promoción | Dos modelos vs. multi-salida; Random Forest vs. XGBoost vs. Ridge (tuneados); campeón por target; criterio Staging→Production; universo gasífero, reuso parametrizado y anti-leakage |
+| [040](docs/adr/0040-orquestacion-retrain.md) | Orquestación del retrain | Job Dagster (features→entrenar→MLflow→precómputo) + Schedule mensual + Sensor por datos nuevos; backfill por fecha |
+| [041](docs/adr/0041-seleccion-features-forecast.md) | Selección de features del forecast | Permutation importance en val; corte por ganancia positiva (`imp_mean > 0`): 27 features en petróleo / 19 en gas; ranking, cold-start y anclas; métricas val + test |
+| [042](docs/adr/0042-forecast-recursivo.md) | Forecast recursivo multi-paso en `/forecast` | Recursivo vs. directo; salida mensual vs. diaria; horizonte máximo; paso unitario subsumido; contrato de Fase 1 preservado |
+| [043](docs/adr/0043-forecast-precomputado.md) | Precómputo del forecast en el retrain | On-demand vs. precómputo puro vs. híbrido con fallback; generación en el retrain vs. en la ingesta; frescura exacta por `ultimo_observado`; serving transparente por lookup |

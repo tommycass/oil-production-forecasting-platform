@@ -1,13 +1,13 @@
-"""Lectura del feature store y del precómputo para ``/forecast`` (ADR-044/045).
+"""Lectura del feature store y del precómputo para ``/forecast`` (ADR-042/043).
 
 El forecast recursivo necesita, para arrancar, la fila de features del **mes base** (último
 mes observado del pozo) y la **serie mensual observada** del target. Con la fila base se
 predice el primer mes (t+1) **usando las features pre-computadas del store** (sin recalcular,
 RNF de Fase 3); con la serie se recalculan las features de los meses futuros (t+2+), que no
 existen en el store. Todo se lee de la **misma tabla** que materializa el training
-(``feature_store_build.py``, ADR-036) → paridad training-serving garantizada.
+(``feature_store_build.py``, ADR-035) → paridad training-serving garantizada.
 
-Además (ADR-045) el retrain deja el pronóstico de 12 meses **precomputado** en
+Además (ADR-043) el retrain deja el pronóstico de 12 meses **precomputado** en
 ``features.pred_produccion_pozo_mensual`` (y ``_gas``): ``get_precomputed_forecast``
 lo lee y el servicio lo sirve como lookup cuando está **fresco** (mismo último mes
 observado que el store); si no, cae al motor recursivo on-the-fly. Transparente
@@ -20,14 +20,14 @@ from __future__ import annotations
 
 from app.core.database import fetch_all
 
-# Tabla del store por target (ADR-036 Rev. 2 / ADR-042). Petróleo mantiene el nombre
+# Tabla del store por target (ADR-035 Rev. 2 / ADR-039). Petróleo mantiene el nombre
 # histórico; gas usa el sufijo _gas. El reader elige la tabla según el target.
 FEATURE_TABLE_BY_TARGET = {
     "prod_pet": "features.feat_produccion_pozo_mensual",
     "prod_gas": "features.feat_produccion_pozo_mensual_gas",
 }
 
-# Tabla de pronósticos precomputados por target (ADR-045), misma convención de sufijo.
+# Tabla de pronósticos precomputados por target (ADR-043), misma convención de sufijo.
 PRED_TABLE_BY_TARGET = {
     "prod_pet": "features.pred_produccion_pozo_mensual",
     "prod_gas": "features.pred_produccion_pozo_mensual_gas",
@@ -38,16 +38,25 @@ PRED_TABLE_BY_TARGET = {
 # el target del mes siguiente (justo lo que se predice) y no debe entrar como feature.
 NON_FEATURE_COLUMNS = {"idpozo", "periodo", "periodo_objetivo", "y_next"}
 
-# Anclas ESTÁTICAS del pozo que el set final del modelo usa como features (Capa 2 de la
-# selección, ADR-043): no cambian mes a mes, así que se leen una vez y se replican en
-# cada paso de la recursión. (`well_age_months` no va acá: se recalcula por paso.)
+# Anclas ESTÁTICAS del pozo que el set de ganancia positiva usa como features (ADR-041):
+# no cambian mes a mes, así que se leen una vez y se replican en cada paso de la
+# recursión. (`well_age_months` no va acá: se recalcula por paso; `mes` lo pone el motor
+# con el mes objetivo.) Es la UNIÓN de las categóricas estáticas de ambos targets: el
+# lector filtra por `if c in base_row`, así cada tabla (petróleo / gas) toma solo las que
+# existen en su store.
 STATIC_FEATURE_COLUMNS = [
     "areayacimiento", "profundidad", "coordenadax", "coordenaday",
+    # petróleo
+    "areapermisoconcesion", "tipopozo", "empresa", "proyecto", "cuenca",
+    # gas
+    "tipoestado", "clasificacion", "sub_tipo_recurso", "provincia", "formprod",
+    # compartida
+    "tipoextraccion",
 ]
 
 
 def get_history_for_forecast(idpozo: int, target: str):
-    """Datos del feature store para el forecast recursivo de un pozo (ADR-044).
+    """Datos del feature store para el forecast recursivo de un pozo (ADR-042).
 
     Args:
         idpozo: ID numérico del pozo.
@@ -109,7 +118,7 @@ def get_history_for_forecast(idpozo: int, target: str):
 def get_ultimo_periodo_observado(idpozo: int, target: str):
     """Último mes con dato real del pozo en el feature store (``max(periodo)``), o
     ``None`` si el pozo no tiene serie. Es el chequeo de **frescura** del precómputo
-    (ADR-045): las predicciones precomputadas solo se sirven si arrancan exactamente
+    (ADR-043): las predicciones precomputadas solo se sirven si arrancan exactamente
     después de este mes; si el store avanzó, el servicio recae al motor on-the-fly."""
     tabla = FEATURE_TABLE_BY_TARGET.get(target)
     if tabla is None:
@@ -124,7 +133,7 @@ def get_ultimo_periodo_observado(idpozo: int, target: str):
 
 
 def get_precomputed_forecast(idpozo: int, target: str):
-    """Pronóstico **precomputado** del pozo (ADR-045): las filas que dejó el job de
+    """Pronóstico **precomputado** del pozo (ADR-043): las filas que dejó el job de
     retrain en ``features.pred_produccion_pozo_mensual`` (o ``_gas``), ordenadas por mes.
 
     Returns:

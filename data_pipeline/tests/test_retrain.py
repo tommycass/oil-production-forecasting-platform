@@ -1,4 +1,4 @@
-"""Tests de la orquestación del reentrenamiento (Dagster, ADR-041).
+"""Tests de la orquestación del reentrenamiento (Dagster, ADR-040).
 
 Cubren la estructura del job (partición por día, retries), el comando de
 entrenamiento configurable y la lógica de disparo del Schedule y el Sensor. No
@@ -49,7 +49,7 @@ def test_assets_tienen_retry(asset_def):
 
 
 def test_precomputo_es_el_ultimo_paso_del_retrain():
-    # El precómputo (ADR-045) depende del entrenamiento: corre con el Production
+    # El precómputo (ADR-043) depende del entrenamiento: corre con el Production
     # recién promovido, después de refrescar features y reentrenar.
     deps = {k.to_user_string() for k in forecast_precomputado.asset_deps[forecast_precomputado.key]}
     assert "modelo_reentrenado" in deps

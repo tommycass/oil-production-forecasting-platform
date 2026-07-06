@@ -1,12 +1,12 @@
-"""Motor de **forecast recursivo multi-paso** para el pronóstico mensual (ADR-044).
+"""Motor de **forecast recursivo multi-paso** para el pronóstico mensual (ADR-042).
 
 El modelo predice **un mes hacia adelante** (t+1). Para cubrir un rango se encadenan
 predicciones: se predice t+1, se trata esa predicción como si fuera dato observado, se
-**recalculan las features recursion-safe** (ADR-043) sobre la serie extendida y se
+**recalculan las features recursion-safe** (ADR-041) sobre la serie extendida y se
 predice t+2, y así sucesivamente (*recursivo / multi-paso*).
 
 Esto es posible **solo** porque el modelo se entrena con features recursion-safe
-(ADR-043): las que quedaron (autorregresivas del propio target + estáticas + calendario)
+(ADR-041): las que quedaron (autorregresivas del propio target + estáticas + calendario)
 se pueden **recalcular en cada paso** a partir de la trayectoria del target. Las que se
 excluyeron (`prod_vecinos_mean`, `water_cut`, la producción cruzada, `prod_agua`, `tef`)
 no se pueden proyectar hacia el futuro; por eso no entran al modelo y el motor no las
@@ -17,7 +17,7 @@ observada** del pozo y sus **atributos estáticos**, y devuelve la serie pronost
 toca la base de datos ni la API; leer la historia del pozo del feature store/DW es
 responsabilidad del serving (``api/app/services``).
 
-**Estrategia de features (feature store en inferencia, ADR-036/044):**
+**Estrategia de features (feature store en inferencia, ADR-035/042):**
 - **Primer mes (t+1):** se usan las **features pre-computadas del feature store** (la fila del
   mes base ``base_features``), **sin recalcular** — el store se usa en inferencia (RNF Fase 3).
 - **Meses futuros (t+2+):** se **recalculan** las features recursion-safe desde la serie
@@ -44,7 +44,7 @@ from ml import features as F
 def _add_recursion_safe_features(df: pd.DataFrame, target: str) -> pd.DataFrame:
     """Agrega, sobre el panel de **un** pozo, las features autorregresivas recursion-safe
     del ``target`` (más ``well_age_months``). Reusa las mismas funciones que el training
-    (``ml/features.py``) para garantizar **paridad training-serving** (ADR-036)."""
+    (``ml/features.py``) para garantizar **paridad training-serving** (ADR-035)."""
     df = df.sort_values(["idpozo", "periodo"]).reset_index(drop=True)
     df = F.add_prod_pet_roll3(df, col=target)
     df = F.add_prod_pet_delta1(df, col=target)
@@ -100,7 +100,7 @@ def recursive_forecast(
     """Pronostica ``n_steps`` meses hacia adelante de forma **recursiva**.
 
     **Primer paso (t+1): features del feature store, sin recalcular** (RNF de Fase 3,
-    ADR-036). El mes base ``t`` = último mes observado ya está materializado en el store con
+    ADR-035). El mes base ``t`` = último mes observado ya está materializado en el store con
     todas sus features; ``base_features`` es esa fila y se usa **directamente** para predecir
     t+1 (es lo mismo que hacía ``/predict``). **Pasos futuros (t+2, t+3, …): se recalculan**
     las features recursion-safe desde la serie extendida, porque esos meses **no existen** en

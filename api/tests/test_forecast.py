@@ -1,4 +1,4 @@
-"""Tests de ``/forecast`` — pronóstico recursivo mensual (ADR-044).
+"""Tests de ``/forecast`` — pronóstico recursivo mensual (ADR-042).
 
 El endpoint mantiene el **contrato de Fase 1** (``id_well``, ``date_start``, ``date_end``
 → ``{id_well, data:[{date, prod}]}``) y agrega el parámetro **opcional** ``target``
@@ -7,7 +7,7 @@ El endpoint mantiene el **contrato de Fase 1** (``id_well``, ``date_start``, ``d
 Se mockean las dependencias externas: la **lectura del feature store**
 (``get_history_for_forecast``), el **modelo** (``get_loader``) y el **precómputo**
 (``get_precomputed_forecast`` — sin mock explícito degrada a ``None`` = sin precómputo,
-así los tests del camino on-the-fly quedan igual que antes del ADR-045). El motor
+así los tests del camino on-the-fly quedan igual que antes del ADR-043). El motor
 recursivo (``ml.forecast``) corre de verdad sobre la historia mockeada.
 """
 import pandas as pd
@@ -207,7 +207,7 @@ def test_forecast_invalid_target_is_422():
     assert r.status_code == 422
 
 
-# --- precómputo (ADR-045): lookup transparente con fallback ------------------
+# --- precómputo (ADR-043): lookup transparente con fallback ------------------
 
 def _precomputed_rows(last="2025-06-01", n=12, start_val=880.0):
     """Filas como las deja el job de retrain en features.pred_produccion_pozo_mensual."""

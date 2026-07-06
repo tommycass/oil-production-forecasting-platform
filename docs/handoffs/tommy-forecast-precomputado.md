@@ -1,6 +1,6 @@
-# Handoff → Tommy: /forecast con precómputo (ADR-045) + set final de features — revisar y re-promover
+# Handoff → Tommy: /forecast con precómputo (ADR-043) + set final de features — revisar y re-promover
 
-**De:** Valen (Rol 2) · **Contexto:** toqué serving (tu zona) para que `/forecast` sirva el pronóstico **precomputado** que deja el retrain, con fallback al motor de siempre. El contrato NO cambia. También cambió el set de features del modelo (ADR-043) → hay que **re-entrenar y re-promover** después del merge.
+**De:** Valen (Rol 2) · **Contexto:** toqué serving (tu zona) para que `/forecast` sirva el pronóstico **precomputado** que deja el retrain, con fallback al motor de siempre. El contrato NO cambia. También cambió el set de features del modelo (ADR-041) → hay que **re-entrenar y re-promover** después del merge.
 
 ## 1. Qué cambió en la API (revisá estos archivos)
 
@@ -20,9 +20,10 @@
 
 ## 2. ⚠️ Acción post-merge: re-entrenar y RE-PROMOVER ambos targets
 
-El modelo pasó a entrenarse con el **set final de 14 features** (ADR-043) y el store ahora
-materializa **solo esas columnas**. Un modelo viejo en Production (entrenado con 35) frente al
-store nuevo recibiría NaN/DESCONOCIDO en las columnas que ya no existen → **predicción
+El modelo pasó a entrenarse con el **set de ganancia positiva** (27 petróleo / 19 gas,
+[ADR-041](0041-seleccion-features-forecast.md)) y el store ahora
+materializa **solo esas columnas**. Un modelo viejo en Production (entrenado con otro set)
+frente al store nuevo recibiría NaN/DESCONOCIDO en las columnas que no coinciden → **predicción
 degradada en silencio**. Después del merge, en el entorno con MLflow:
 
 ```bash
@@ -32,7 +33,7 @@ python -m ml.train --mlflow --target prod_gas
 
 (o correr el job `retrain` con `RETRAIN_CMD="python -m ml.train --mlflow"`, que además
 re-materializa el store y deja el precómputo listo — es el camino recomendado, ver runbook
-ml-retrain §4). La promoción usa tu criterio del ADR-040; contra un Production viejo con
+ml-retrain §4). La promoción usa tu criterio del ADR-039; contra un Production viejo con
 `test_rmse` taggeado puede requerir `--no-promote` + promoción manual si la comparación
 histórica no aplica (sets distintos) — criterio tuyo.
 
