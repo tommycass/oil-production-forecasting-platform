@@ -114,6 +114,13 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
 
     out["periodo_objetivo"] = out["periodo"] + pd.DateOffset(months=1)
 
+    # `mes` = mes del MES OBJETIVO (t+1), NO el de las medidas: idéntico a
+    # `ml.dataset.build_basic_dataset` (paridad training-serving del feature `mes`,
+    # ADR-041). El motor de forecast lo re-setea igual en cada paso (ml/forecast.py),
+    # así que el serving no depende de este valor; se materializa consistente igual
+    # para que el store no contradiga el contrato ni un lector directo del `mes`.
+    out["mes"] = out["periodo_objetivo"].dt.month
+
     # `add_prod_vecinos_mean` (ml/features) castea idpozo a object al hacer merge; lo
     # devolvemos a int64 para que el store tenga una clave limpia (lookup de la API).
     out["idpozo"] = out["idpozo"].astype("int64")

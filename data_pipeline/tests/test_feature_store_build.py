@@ -73,6 +73,13 @@ def test_target_left_join():
     assert un_pozo["y_next"].iloc[0] == un_pozo["prod_pet"].iloc[1]
 
 
+def test_mes_es_mes_objetivo():
+    # `mes` (feature del set, ADR-041) = mes del período OBJETIVO (t+1), igual que
+    # ml/dataset.build_basic_dataset → sin skew si un consumidor lo lee del store.
+    out = fsb.build_store_features(_panel_crudo())
+    assert (out["mes"] == out["periodo_objetivo"].dt.month).all()
+
+
 def test_table_for_mapea_petroleo_y_gas():
     # petróleo mantiene el nombre histórico; gas lleva sufijo (convención _gas, ADR-039)
     assert fsb.table_for("prod_pet") == "feat_produccion_pozo_mensual"
