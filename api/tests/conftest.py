@@ -1,3 +1,12 @@
+import sys
+from pathlib import Path
+
+# La API importa `ml/` (raíz del repo) en el camino on-the-fly de /forecast
+# (`from ml import forecast`). pytest solo agrega `api/` al sys.path (raíz del
+# paquete de tests), así que la raíz del repo hay que sumarla a mano — si no,
+# `pytest api/tests/` desde la raíz (como corre CI) falla con ModuleNotFoundError.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import pytest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
