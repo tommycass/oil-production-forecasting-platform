@@ -10,6 +10,12 @@ dagster>=1.7            # orquestador: define los assets del pipeline
 dagster-webserver>=1.7  # UI web de Dagster (logs, status, materializaciones)
 dagster-dbt>=0.23       # integra los modelos dbt (Silver/Gold/DQ) como assets + asset checks
 
+# grpcio-health-checking 1.82 (dep transitiva de dagster) trae gencode de protobuf 7.35,
+# que rompe al importar dagster_dbt contra el protobuf<7 que exigen dbt/dagster (VersionError:
+# runtime 6.x < gencode 7.35). Se capa por debajo de esa release hasta que el ecosistema alinee.
+grpcio<1.82
+grpcio-health-checking<1.82
+
 # El grafo se extiende al DW: los assets de carga corren transform/scripts/load_bronze.py
 # y los modelos dbt corren vía el CLI de dbt. Ese paso necesita además las deps de
 # transform/requirements.txt (dbt-core, dbt-postgres, SQLAlchemy, psycopg2). En la EC2
