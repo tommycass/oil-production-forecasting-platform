@@ -11,8 +11,19 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # --- Datos ---
-# Fuente provisoria: export de producción. Cuando el Rol 2 publique el feature
-# store, este origen se reemplaza por una lectura del store (mismo contrato).
+# FEATURE STORE como fuente de entrenamiento/evaluación. El
+# training, la evaluación y los baselines leen la tabla del store por target (misma
+# fuente que sirve la inferencia; cero training-serving skew, sin paths locales).
+# El store se construye desde Bronze reusando el código de ml/ (paridad validada).
+FEATURE_STORE_SCHEMA = "features"
+FEATURE_STORE_TABLE = {
+    "prod_pet": "feat_produccion_pozo_mensual",       # petróleo (nombre histórico)
+    "prod_gas": "feat_produccion_pozo_mensual_gas",   # gas
+}
+
+# CSV crudo: SOLO referencia offline / validación de paridad del store (ver
+# data_pipeline feature_store_build). NO es la fuente del entrenamiento (ese lee el
+# store). Se mantiene para `build_basic_dataset` (assembly de referencia) y utilidades.
 DATA_CSV = PROJECT_ROOT / "data" / "_explore" / "produccion_full.csv"
 
 # Dataset básico ya procesado (features del mes t + target t+1). Es un derivado

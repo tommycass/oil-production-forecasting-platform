@@ -12,12 +12,11 @@ services:
     env_file:
       - ../api/.env
     volumes:
-      # mlflow.sklearn.load_model resuelve URIs file:// directamente (no via proxy),
-      # por eso el container necesita acceso al path donde el training dejó los artefactos.
-      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts
       # El Pipeline fue entrenado con transformers del paquete ml/. Sklearn los necesita
       # importar al deserializar (pickle). Se monta en /app/ml para que sea importable
-      # (el working dir del container es /app, que está en sys.path).
+      # (el working dir del container es /app, que está en sys.path). Ruta relativa al
+      # repo → portable (local y EC2). Los artefactos NO se montan: MLflow los sirve por
+      # HTTP (--serve-artifacts) y la API los descarga por red (ADR-036).
       - ../ml:/app/ml:ro
     restart: unless-stopped
     healthcheck:
@@ -254,11 +253,11 @@ services:
         max-size: "20m"
         max-file: "2"
 
-  # MLflow tracking server + model registry (ADR-032). Perfil "ml".
+  # MLflow tracking server + model registry (ADR-036). Perfil "ml".
   # Backend: Postgres (misma instancia que el DW, base separada mlflow_db).
-  # Artifacts: el training corre en el host y escribe a mlartifacts/ con URI file://.
-  # La API los lee directamente (mlflow.sklearn.load_model resuelve file:// sin proxy),
-  # por eso tanto mlflow como api montan el mismo path del host.
+  # Artifacts: se guardan en el volumen Docker `mlartifacts` y se sirven por HTTP con
+  # --serve-artifacts. El training (con MLFLOW_TRACKING_URI=http://mlflow:5000) los sube
+  # por HTTP y la API los descarga por HTTP → sin montar rutas del host (ADR-036).
   # Uso local: docker compose --profile ml --profile local-db up
   # Staging/prod: POSTGRES_HOST apunta al RDS; la base mlflow_db debe existir previamente.
   mlflow:
@@ -286,12 +285,9 @@ services:
           --artifacts-destination /mlartifacts \
           --serve-artifacts
     volumes:
+      # Artefactos servidos por HTTP (--serve-artifacts) desde este volumen Docker.
+      # No se monta ninguna ruta del host: la API los descarga por red (ADR-036).
       - mlartifacts:/mlartifacts
-      # El training corre en el host y escribe artefactos a mlartifacts/ del proyecto.
-      # Este bind-mount expone ese path dentro del contenedor para que el servidor
-      # pueda servirlos vía proxy (--serve-artifacts). Mismo path absoluto que el
-      # artifact_uri registrado en Postgres.
-      - ../mlartifacts:/home/ubuntu/oil-production-forecasting-platform/mlartifacts:ro
     restart: unless-stopped
     logging:
       driver: "json-file"

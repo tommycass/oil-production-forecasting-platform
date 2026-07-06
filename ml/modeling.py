@@ -69,7 +69,9 @@ def build_feature_matrix(
     defecto ambos ``False`` (todas las features crudas del dataset).
     """
     if ds is None:
-        ds = dataset.build_basic_dataset(target=target)
+        # Fuente única de verdad: el feature store (misma tabla que sirve la inferencia
+        # cero skew, ADR-041). Ya no se lee el CSV local.
+        ds = dataset.build_dataset_from_store(target=target)
     if selected:
         feature_cols = selected_features(target)
     else:
