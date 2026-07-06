@@ -532,35 +532,29 @@ usan solo datos del mes `t` o anteriores (lags **por calendario**, nunca el mes 
 materializan **dentro del job de retrain** (no en `dw_publish`), para no acoplar el refresh del
 DW de Fase 2 a las dependencias de `ml/`.
 
-Cada fila tiene **14 features**: el **set final de la selección** (ADR-043, elegido por
-*permutation importance* en val + retención explícita de anclas para el cold-start), en
-dos capas. La lista canónica vive en `ml.features.selected_features(target)` — la misma
-que entrena `ml/train.py`, así store y modelo no pueden divergir:
+Cada fila tiene las features de **ganancia positiva** de la selección (ADR-043, revisada por
+[ADR-046](docs/adr/0046-seleccion-features-ganancia-positiva.md)): se conserva toda feature
+con *permutation importance* en val `> 0` (empíricamente reduce el error), sin recorte manual.
+Los sets **difieren por target**: **27 features en petróleo, 19 en gas** (cada uno rankeó
+distinto). La lista canónica vive en `ml.features.selected_features(target)` — la misma que
+entrena `ml/train.py`, así store y modelo no pueden divergir; la **tabla completa con la
+importancia de cada feature** está en el [ADR-046](docs/adr/0046-seleccion-features-ganancia-positiva.md).
+A grandes rasgos, cada set combina:
 
-- **Capa 1 — motor autorregresivo (9)**, sobre el target (`prod_pet` / `prod_gas`):
+- **Núcleo autorregresivo** sobre el target (`{target}` + medias móviles `roll3/roll6`,
+  ratios/deltas de declinación, acumulados `acum6/acum12`, `cummax`, lags `lag2/lag3/lag12`,
+  volatilidad `std3`, …): **recalculables desde la trayectoria del target**, lo que habilita
+  el forecast recursivo (ADR-044). No hay leakage: cada fila usa solo su mes `t` o anteriores.
+- **Anclas estáticas / categóricas del pozo:** en **petróleo** sostienen el cold-start
+  `areayacimiento`, `profundidad`, `coordenadax/y`, `well_age_months` + categóricas
+  (`tipopozo`, `empresa`, …); en **gas** la señal estática se reduce a `tipoestado` (las
+  geográficas/físicas quedaron con importancia ≤ 0 y no entran — asimetría documentada en el
+  ADR-046). Para un pozo **sin historial** las autorregresivas quedan `0 + flag` (ADR-039) y
+  estas anclas son la única señal disponible.
 
-  | Feature | Cálculo |
-  |---|---|
-  | `{target}` | nivel del mes `t` (señal de persistencia) |
-  | `{target}_roll3` / `{target}_roll6` | media móvil {t..t-2} / {t..t-5} (nivel reciente) |
-  | `{target}_ratio1` | `target(t) / target(t-1)` (declinación multiplicativa) |
-  | `{target}_delta1` | `target(t) − target(t-1)` (declinación absoluta) |
-  | `{target}_acum6` / `{target}_acum12` | acumulado en 6 / 12 meses (volumen) |
-  | `{target}_cummax` | pico histórico de producción |
-  | `{target}_lag2` | target en t-2 |
-
-  Ninguna ajusta parámetros globales: cada fila se calcula solo con su mes `t` o anteriores,
-  así que **no hay leakage** aunque se computen sobre todo el histórico. Todas se pueden
-  **recalcular a partir de la trayectoria del target**, que es lo que habilita el forecast
-  recursivo (ADR-044).
-- **Capa 2 — anclas estáticas del cold-start (5):** `areayacimiento` (categórica cruda; el
-  one-hot vive en el modelo), `profundidad`, `coordenadax`, `coordenaday` y
-  `well_age_months`. Para un pozo **sin historial** las autorregresivas quedan `0 + flag`
-  (ADR-039) y estas anclas son la única señal disponible — por eso se retienen aunque su
-  importancia global sea modesta (ADR-043).
-
-Ver [ADR-033](docs/adr/0033-feature-engineering.md) y
-[ADR-036](docs/adr/0036-feature-store.md); contrato en
+Ver [ADR-033](docs/adr/0033-feature-engineering.md),
+[ADR-036](docs/adr/0036-feature-store.md) y
+[ADR-046](docs/adr/0046-seleccion-features-ganancia-positiva.md); contrato en
 [docs/feature-store.md](docs/feature-store.md).
 
 ### Entrenamiento y modelo campeón
@@ -575,34 +569,36 @@ temporal** (*expanding window* por mes) + **random search** con semilla fija
 [ADR-039](docs/adr/0039-preprocesamiento-datos.md) y
 [ADR-040](docs/adr/0040-modelo-produccion.md).
 
-El modelo se entrena con el **set final de la selección** (14 features, ADR-043),
-recursion-safe por construcción: el **mismo** campeón sirve para la predicción de un mes y
-para el **forecast recursivo** de `/forecast` (ADR-044). La selección (ranking por
-*permutation importance* + validación del recorte en val y test) y el tuning viven en los
-notebooks `notebooks/02_feature_selection_pet.ipynb` (petróleo) y
+El modelo se entrena con el **set de ganancia positiva** de la selección (27 petróleo / 19
+gas, ADR-043/046), recursion-safe por construcción: el **mismo** campeón sirve para la
+predicción de un mes y para el **forecast recursivo** de `/forecast` (ADR-044). La selección
+(ranking por *permutation importance* en val) y el tuning viven en los notebooks
+`notebooks/02_feature_selection_pet.ipynb` (petróleo) y
 `notebooks/03_feature_selection_gas.ipynb` (gas).
 
 **Campeón (los dos targets): Random Forest tuneado.** Hiperparámetros (re-tuneo sobre el
 set candidato recursion-safe): petróleo `n_estimators=200, max_depth=24, max_features=0.5,
 min_samples_leaf=5`; gas `n_estimators=400, max_depth=16, max_features=0.5,
 min_samples_leaf=5`. En ambos, XGBoost gana sin tunear pero tuneado lo supera Random Forest.
-Métricas de referencia (RMSE en m³ / R²). Petróleo: medido con el **set compacto** de la
-selección (ADR-043 §4, cede ~3% de val RMSE frente al candidato de 35). Gas: medido con el
-set candidato (la re-medición con el set final queda para el próximo retrain — en cada
-corrida el campeón se re-evalúa y **solo se promueve si supera a la persistencia y al
-Production vigente**, ADR-040, así que la vara no depende de esta tabla):
+Métricas con el **set de ganancia positiva** (RMSE en m³ / R²): **val** de los notebooks
+02/03 (campeón reajustado sobre el set); **test** del entrenamiento final (`--final`: dev =
+train+val, evaluado una vez en test). En cada retrain el campeón se re-evalúa y **solo se
+promueve si supera a la persistencia y al Production vigente** (ADR-040), así que la vara no
+depende de esta tabla:
 
 | Target | val RMSE | val R² | **test RMSE** | **test R²** | persistencia (test) |
 |---|---|---|---|---|---|
-| **Petróleo** (`prod_pet`) | 234,5 | 0,896 | **164,7** | **0,856** | 166,2 / 0,854 |
-| **Gas** (`prod_gas`) | 580,4 | 0,859 | **408,2** | **0,851** | 457,8 / 0,813 |
+| **Petróleo** (`prod_pet`) | 227,5 | 0,902 | **157,5** | **0,869** | 166,2 / 0,854 |
+| **Gas** (`prod_gas`) | 576,6 | 0,861 | **409,2** | **0,850** | 457,8 / 0,813 |
 
 Los dos superan al baseline en val y en test → cumplen el criterio de promoción. (El RMSE
 de gas es mayor en valor absoluto porque la producción de gas tiene otra escala; el R²
 —comparable— es alto en ambos.) Ver
-[ADR-042](docs/adr/0042-modelo-prediccion-gas.md) (modelo de gas), [ADR-043](docs/adr/0043-seleccion-features-forecast.md)
-(selección de features) y los notebooks
-`notebooks/02_feature_selection_pet.ipynb` (petróleo) y `notebooks/03_feature_selection_gas.ipynb` (gas).
+[ADR-042](docs/adr/0042-modelo-prediccion-gas.md) (modelo de gas),
+[ADR-043](docs/adr/0043-seleccion-features-forecast.md) /
+[ADR-046](docs/adr/0046-seleccion-features-ganancia-positiva.md) (selección de features) y
+los notebooks `notebooks/02_feature_selection_pet.ipynb` (petróleo) y
+`notebooks/03_feature_selection_gas.ipynb` (gas).
 
 **Correr el entrenamiento** (requiere acceso a la fuente de datos / feature store). El
 `--target` elige el modelo (por defecto `prod_pet`):

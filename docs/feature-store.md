@@ -37,22 +37,22 @@ Todo lo demás del contrato es **idéntico** entre las dos tablas (grano, claves
 
 Cada fila es el **mes base `t`**: todas las features están disponibles al cierre de `t` (anti-leakage) y sirven para predecir el **target** (`prod_pet` o `prod_gas`) del **mes siguiente `t+1`**. Para inferir `t+1`, la API lee la fila del mes base `t = (t+1) − 1 mes` **en la tabla del target pedido**.
 
-> El lookup de inferencia usa siempre `periodo` (mes base). (La antigua sutileza del feature `mes` ya no aplica: `mes` quedó fuera del set final de la selección, ADR-043.)
+> El lookup de inferencia usa siempre `periodo` (mes base). El feature `mes` vuelve al set (ADR-046) y se define como el mes del **período objetivo** (`t+1`, `ml/dataset.py`), conocido de antemano (no es leakage); el motor de forecast lo setea igual en cada paso (`ml/forecast.py`), así que no hay training-serving skew.
 
 ## Columnas (contrato)
 
-El store materializa **el set final de la selección** (ADR-043): las **14 features** que entrena el modelo, en dos capas. La **fuente de verdad** es el código de ML (`ml.features.selected_features(target)` — la misma lista que usa `ml/train.py`, así store y modelo no pueden divergir). Cada tabla tiene **18 columnas** (3 claves + 14 features + `y_next`). Las **autorregresivas cambian de nombre por target** (prefijo `prod_pet_` / `prod_gas_`); las anclas son idénticas:
+El store materializa el **set de ganancia positiva de la selección** (ADR-043, revisado por [ADR-046](adr/0046-seleccion-features-ganancia-positiva.md)): las features con *permutation importance* en val `> 0` que entrena el modelo. La **fuente de verdad** es el código de ML (`ml.features.selected_features(target)` — la misma lista que usa `ml/train.py`, así store y modelo no pueden divergir). Los sets **difieren por target**: **27 features en petróleo, 19 en gas** (rankearon distinto), así que las tablas tienen **distinto ancho**: **31 columnas** en petróleo (3 claves + 27 features + `y_next`) y **23** en gas (3 + 19 + 1). La **lista completa con la importancia de cada feature** está en el [ADR-046](adr/0046-seleccion-features-ganancia-positiva.md); en estructura, cada tabla combina:
 
 - **Claves / lookup:** `idpozo` (bigint), `periodo` (date, mes base), `periodo_objetivo` (date, `t+1`).
-- **Capa 1 — motor autorregresivo (9):** `{target}` (nivel del mes `t`) + `{target}_roll3`, `{target}_ratio1`, `{target}_acum12`, `{target}_roll6`, `{target}_acum6`, `{target}_cummax`, `{target}_lag2`, `{target}_delta1`.
-- **Capa 2 — anclas estáticas del cold-start (5):** `areayacimiento` (categórica cruda), `profundidad`, `coordenadax`, `coordenaday`, `well_age_months`.
+- **Núcleo autorregresivo** (prefijo `prod_pet_` / `prod_gas_` según el target): nivel del mes `t` + medias móviles, ratios/deltas, acumulados, `cummax`, lags, `std3`, etc. (recalculables → habilitan el forecast recursivo).
+- **Estáticas / categóricas del pozo:** en petróleo `areayacimiento`, `profundidad`, `coordenadax/y`, `well_age_months` + `tipopozo`, `empresa`, `areapermisoconcesion`, `proyecto`, `cuenca`, `tipoextraccion`, `mes`; en gas la estática se reduce a `tipoestado` + categóricas (`clasificacion`, `sub_tipo_recurso`, `provincia`, `formprod`, `tipoextraccion`) + `mes` (asimetría documentada en ADR-046).
 - **Target:** `y_next` (float, nullable).
 
-Las *borderline* y descartadas del ranking (ADR-043) **no se persisten**: si un reentreno futuro re-incorpora alguna, se agrega a `selected_features` y el retrain re-materializa solo (ver *Versionado*).
+Las features de importancia ≈ 0 / negativa del ranking (ADR-043/046) **no se persisten**: si un reentreno futuro re-incorpora alguna, se agrega a `selected_features` y el retrain re-materializa solo (ver *Versionado*).
 
 > El store **no** materializa columnas de metadata (`feature_set_version` / `computed_at`): el versionado del contrato se lleva por este documento + git (ver *Versionado*), no por columnas en la tabla.
 
-> La categórica (`areayacimiento`) va **cruda**: el one-hot/imputación/escalado vive en el `Pipeline` del modelo (se ajusta solo en train, [ADR-039](adr/0039-preprocesamiento-datos.md)) y se serializa en el artefacto, para que la inferencia lo replique idéntico. El store **no** encodea.
+> Las categóricas (`areayacimiento`, `tipopozo`, `empresa`, `tipoestado`, …) van **crudas**: el one-hot/imputación/escalado vive en el `Pipeline` del modelo (se ajusta solo en train, [ADR-039](adr/0039-preprocesamiento-datos.md)) y se serializa en el artefacto, para que la inferencia lo replique idéntico. El store **no** encodea.
 
 > El **target `y_next`** es una columna de **entrenamiento**, no de serving: las filas de serving (mes base más reciente) no lo tienen. El training lo arma por merge de calendario (`periodo + 1 mes`).
 
@@ -62,7 +62,7 @@ Las *borderline* y descartadas del ranking (ADR-043) **no se persisten**: si un 
 El store **materializa el pipeline de `ml/`** (el asset `features_refrescadas` reusa `ml.features.add_engineered_features(target=...)` + las listas `ml.dataset.BASIC_*`), con **paridad validada** contra `build_basic_dataset` para **los dos targets** (0 diferencias). El training puede seguir usando `build_basic_dataset(target=...)` (mismas features) o leer la tabla del target (filas con `y_next` no nulo). Como la lista de features sale del código de `ml/`, cambiarla ahí re-materializa ambas tablas sin reescribir nada. `ml/requirements.txt` ya existe (Rol 1) → el venv del daemon instala las deps de `ml/`.
 
 ### Rol 3 — inferencia (`GET /api/v1/forecast`, recursivo)
-La inferencia se unificó en `/forecast` (recursivo mensual, ADR-044); `/predict` se retiró (ADR-035 reemplazado). El forecast lee del store (`feature_reader.get_history_for_forecast`, **implementado**): (1) la **fila del mes base** (último mes del pozo, con `y_next` NULL — el store la conserva vía left-join) → predice t+1 **sin recalcular**; (2) la **serie** `(periodo, <target>)` de todos los meses → recalcula los meses futuros (t+2+). Elige la **tabla del target** (`feat_produccion_pozo_mensual` / `..._gas`) y descarta `idpozo/periodo/periodo_objetivo/y_next` (guarda anti-leak). **Dependencia operativa:** el store debe estar **re-materializado** con el set final de la selección (ADR-043) — lo hace el retrain (ADR-041) reusando `ml.features`, así que la paridad training-serving está garantizada. Además, `/forecast` sirve primero el **precómputo** (abajo) cuando está fresco.
+La inferencia se unificó en `/forecast` (recursivo mensual, ADR-044); `/predict` se retiró (ADR-035 reemplazado). El forecast lee del store (`feature_reader.get_history_for_forecast`, **implementado**): (1) la **fila del mes base** (último mes del pozo, con `y_next` NULL — el store la conserva vía left-join) → predice t+1 **sin recalcular**; (2) la **serie** `(periodo, <target>)` de todos los meses → recalcula los meses futuros (t+2+). Elige la **tabla del target** (`feat_produccion_pozo_mensual` / `..._gas`) y descarta `idpozo/periodo/periodo_objetivo/y_next` (guarda anti-leak). **Dependencia operativa:** el store debe estar **re-materializado** con el set de la selección (ADR-043/046) — lo hace el retrain (ADR-041) reusando `ml.features`, así que la paridad training-serving está garantizada. Además, `/forecast` sirve primero el **precómputo** (abajo) cuando está fresco.
 
 ## Pronóstico precomputado (ADR-045)
 
