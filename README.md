@@ -603,8 +603,12 @@ de gas es mayor en valor absoluto porque la producción de gas tiene otra escala
 los notebooks `notebooks/02_feature_selection_pet.ipynb` (petróleo) y
 `notebooks/03_feature_selection_gas.ipynb` (gas).
 
-**Correr el entrenamiento** (requiere acceso a la fuente de datos / feature store). El
-`--target` elige el modelo (por defecto `prod_pet`):
+**Correr el entrenamiento.** El training, la evaluación y los baselines leen del **feature
+store** (`features.feat_produccion_pozo_mensual[_gas]`) — la **misma tabla que sirve la
+inferencia**, así training y serving comparten una única fuente de verdad y no hay
+training-serving skew ([ADR-035](docs/adr/0035-feature-store.md)). Requiere el store
+materializado y las env vars `POSTGRES_*` (el job de retrain materializa el store antes de
+entrenar, ADR-040). El `--target` elige el modelo (por defecto `prod_pet`):
 
 ```bash
 # entrenar el campeón y evaluar en val (tunea por defecto)

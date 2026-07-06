@@ -24,7 +24,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from ml import features
 from ml.config import TARGET, TARGETS, experiment_name
-from ml.dataset import build_basic_dataset
+from ml.dataset import build_dataset_from_store
 from ml.tracking import setup_mlflow
 
 # nombre legible -> columna de predicción en el dataframe
@@ -67,7 +67,7 @@ def evaluate_baselines(target: str = TARGET) -> dict[str, dict]:
     con ``RETRAIN_ASOF`` una fecha anterior a ``VAL_END`` (ADR-040) — no se puede
     evaluar un período que todavía no existe a esa fecha. Igual a nivel baseline: si
     no hay filas usables, queda ``n=0`` con métricas ``nan`` (sin reventar)."""
-    ds = add_basic_baselines(build_basic_dataset(target=target), target=target)
+    ds = add_basic_baselines(build_dataset_from_store(target=target), target=target)
     results: dict[str, dict] = {}
     for split in SPLITS:
         s = ds[(ds.split == split) & ds.y_next.notna()]

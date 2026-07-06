@@ -4,13 +4,24 @@ Compartido por baseline.py y train.py para garantizar el mismo universo, el
 mismo target y el mismo corte temporal (ADR-028).
 """
 from __future__ import annotations
+import os
 from pathlib import Path
 
 import pandas as pd
+from sqlalchemy import create_engine
 from sklearn.preprocessing import OneHotEncoder
 
 from ml import features
-from ml.config import DATA_CSV, DATASET_BASICO_CSV, TARGET, TRAIN_END, VAL_END, retrain_asof
+from ml.config import (
+    DATA_CSV,
+    DATASET_BASICO_CSV,
+    FEATURE_STORE_SCHEMA,
+    FEATURE_STORE_TABLE,
+    TARGET,
+    TRAIN_END,
+    VAL_END,
+    retrain_asof,
+)
 
 def add_split(df: pd.DataFrame) -> pd.DataFrame:
     """Etiqueta cada fila como train / val / test según su periodo (ADR-028)."""
@@ -19,6 +30,50 @@ def add_split(df: pd.DataFrame) -> pd.DataFrame:
     split[df.periodo > VAL_END] = "test"
     df["split"] = split
     return df
+
+
+# --- FEATURE STORE como fuente de entrenamiento ------------
+# El training/evaluación/baselines leen la tabla del store por target — la MISMA que
+# sirve la inferencia (ADR-041). Cero training-serving skew por construcción y sin
+# paths locales: el store ya trae las features finales + `y_next`, no se re-hace nada.
+
+def _store_engine():
+    """Engine del DW (Postgres) desde las env vars ``POSTGRES_*`` (mismas que dbt / la
+    API / el feature store). En local apunta al container ``postgres`` del compose."""
+    url = (
+        f"postgresql+psycopg2://{os.getenv('POSTGRES_USER', 'oil')}:"
+        f"{os.getenv('POSTGRES_PASSWORD', 'oil')}@{os.getenv('POSTGRES_HOST', 'localhost')}:"
+        f"{os.getenv('POSTGRES_PORT', '5432')}/{os.getenv('POSTGRES_DB', 'oil_dw')}"
+    )
+    return create_engine(url)
+
+
+def build_dataset_from_store(target: str = TARGET) -> pd.DataFrame:
+    """Dataset de entrenamiento leído del **feature store** (fuente única de verdad).
+
+    Lee ``features.feat_produccion_pozo_mensual[_gas]`` (según ``target``), que ya trae
+    las **features seleccionadas** del modelo (27 petróleo / 19 gas, ADR-041) + ``y_next``,
+    materializadas desde Bronze con el mismo código de ``ml/`` (paridad validada). Como es
+    exactamente la tabla que consume la inferencia, entrenar sobre ella garantiza **cero
+    training-serving skew** y elimina el CSV local.
+
+    Ajustes de lectura, equivalentes a lo que hacía el assembly desde CSV:
+    - **Filtra ``y_next`` no nulo:** el store conserva la última fila de cada pozo con
+      ``y_next`` NULL (para que la API infiera el mes siguiente); esas filas no son
+      ejemplos de entrenamiento y se descartan (equivale al inner-join del target).
+    - **Deriva el ``split`` temporal** por ``periodo`` (ADR-028), que el store no persiste.
+
+    El corte por fecha del reproceso (``RETRAIN_ASOF``, ADR-040) se aplica al
+    **materializar** el store, no acá: el retrain re-materializa el store recortado y
+    luego entrena leyéndolo.
+    """
+    tabla = f"{FEATURE_STORE_SCHEMA}.{FEATURE_STORE_TABLE[target]}"
+    df = pd.read_sql(f"select * from {tabla}", _store_engine())
+    df["periodo"] = pd.to_datetime(df["periodo"])
+    df["periodo_objetivo"] = pd.to_datetime(df["periodo_objetivo"])
+    df = df[df["y_next"].notna()].reset_index(drop=True)
+    df = add_split(df)
+    return df.sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
 
 # --- Dataset básico ya procesado (anti-leakage, features del mes anterior) ----
