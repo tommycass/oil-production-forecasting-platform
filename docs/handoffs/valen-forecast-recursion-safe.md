@@ -1,8 +1,9 @@
 # Handoff → Valen: feature store al set **recursion-safe** (35 features)
 
 > **Estado (jul-2026): COMPLETADO — y superado.** El store se re-materializa con el retrain
-> y quedó al **set final de la selección (14 features, 18 columnas)**: se implementó la
-> Decisión del ADR-043 (`ml.features.selected_features`), no el candidato de 35. La fila del
+> y quedó al **set de ganancia positiva (27 petróleo / 19 gas)**: se implementó la Decisión del
+> ADR-043 revisada por [ADR-046](0046-seleccion-features-ganancia-positiva.md)
+> (`ml.features.selected_features`), no el candidato de 35. La fila del
 > último mes con `y_next` NULL se conserva (left-join) y la paridad training↔store quedó
 > validada e2e. Contrato vigente: `docs/feature-store.md`. Además el retrain ahora deja el
 > pronóstico **precomputado** (ADR-045). Lo de abajo queda como registro histórico del pedido.

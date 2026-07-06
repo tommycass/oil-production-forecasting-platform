@@ -20,9 +20,10 @@
 
 ## 2. ⚠️ Acción post-merge: re-entrenar y RE-PROMOVER ambos targets
 
-El modelo pasó a entrenarse con el **set final de 14 features** (ADR-043) y el store ahora
-materializa **solo esas columnas**. Un modelo viejo en Production (entrenado con 35) frente al
-store nuevo recibiría NaN/DESCONOCIDO en las columnas que ya no existen → **predicción
+El modelo pasó a entrenarse con el **set de ganancia positiva** (27 petróleo / 19 gas,
+ADR-043 revisado por [ADR-046](0046-seleccion-features-ganancia-positiva.md)) y el store ahora
+materializa **solo esas columnas**. Un modelo viejo en Production (entrenado con otro set)
+frente al store nuevo recibiría NaN/DESCONOCIDO en las columnas que no coinciden → **predicción
 degradada en silencio**. Después del merge, en el entorno con MLflow:
 
 ```bash

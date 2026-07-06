@@ -1,8 +1,9 @@
 # Handoff — feature store materializado (Fase 3)
 
 > ⚠️ **HISTÓRICO (jul-2026):** los pedidos de este documento ya se cumplieron y el contrato
-> evolucionó dos veces: `/predict` fue subsumido por `/forecast` (ADR-044) y el store quedó
-> en el **set final de la selección — 14 features / 18 columnas** (ADR-043) + las tablas de
+> evolucionó varias veces: `/predict` fue subsumido por `/forecast` (ADR-044) y el store quedó
+> en el **set de ganancia positiva — 27 features (petróleo) / 19 (gas)** (ADR-043, revisado por
+> [ADR-046](adr/0046-seleccion-features-ganancia-positiva.md)) + las tablas de
 > **pronóstico precomputado** (ADR-045). El contrato vigente es [docs/feature-store.md](feature-store.md);
 > handoffs vigentes en `docs/handoffs/`. Se conserva como registro de la integración.
 
