@@ -125,7 +125,7 @@ el contrato y los valores de `/forecast` no deben cambiar para el usuario.
 ---
 
 > Relacionados: **ADR-044** (motor recursivo que este ADR precomputa), **ADR-041** (job de
-> retrain que lo orquesta), **ADR-043** (set final de features), **ADR-036** (feature store,
+> retrain que lo orquesta), **ADR-043**/**ADR-046** (set de features de la selección), **ADR-036** (feature store,
 > fuente de las features y de la señal de frescura), **ADR-040** (criterio de promoción del
 > modelo Production que consume el batch). Implementación:
 > `data_pipeline/orchestration/forecast_precompute.py` (batch),

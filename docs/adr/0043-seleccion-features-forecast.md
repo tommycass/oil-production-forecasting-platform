@@ -1,6 +1,8 @@
 # Título: ADR-043: Selección de features del forecast (ranking por permutation importance y robustez a cold-start)
 
-**Estado:** Aceptada
+**Estado:** Aceptada — **Decisión revisada por [ADR-046](0046-seleccion-features-ganancia-positiva.md)**
+
+> El ranking, la metodología y el análisis de cold-start de este ADR siguen vigentes. Lo que cambió es la **Decisión** (§ *Decisión* y § *Consecuencias*): el recorte manual al **set compacto de 14** se reemplazó por el **set de ganancia positiva** (`imp_mean > 0` → 27 features en petróleo, 19 en gas). Ver [ADR-046](0046-seleccion-features-ganancia-positiva.md).
 
 ## Contexto
 

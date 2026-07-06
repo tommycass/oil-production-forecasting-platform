@@ -85,11 +85,13 @@ Cómo conviven petróleo y gas sin duplicar trabajo:
 ## Revisión (jul-2026): set final de features (ADR-043)
 
 La evidencia de arriba se midió sobre el **set candidato recursion-safe (35 features)**.
-Después, la Decisión del ADR-043 fijó el **set final del modelo en 14 features**
-(`ml.features.selected_features`: núcleo autorregresivo + anclas estáticas), que es lo que
-`ml/train.py` entrena, el store materializa y `/forecast` consume. El propio ADR-043 (§4)
-validó el recorte en val **y** test: el set compacto cede ~3% de val RMSE frente al de 35
-(RF 234,5 vs 227,8) y en test mantiene R² ~0,86, superando a la persistencia.
+La Decisión del ADR-043 fijó primero un set compacto de 14 features; el
+[ADR-046](0046-seleccion-features-ganancia-positiva.md) la revisó y adoptó el **set de
+ganancia positiva** (`imp_mean > 0`: **27 features en petróleo, 19 en gas**), que es lo que
+`ml.features.selected_features` devuelve, `ml/train.py` entrena, el store materializa y
+`/forecast` consume. En val, el set de ganancia positiva iguala al candidato de 35 en
+petróleo (RF 227,5 vs 227,3) y lo mejora en gas (576,6 vs 580,1), superando a la
+persistencia en ambos (ver métricas en el ADR-046).
 
 Esto **no cambia** las decisiones de este ADR: el campeón (Random Forest), el criterio de
 promoción y la mecánica del registry son independientes del tamaño del set, y el punto 3

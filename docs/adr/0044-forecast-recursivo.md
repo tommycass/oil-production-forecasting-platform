@@ -61,7 +61,7 @@ Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**, **conse
    - Pozo inexistente en el DW → 404; pozo sin serie en el feature store (fuera del universo, ADR-031) → 404.
    - Modelo no disponible en MLflow (inalcanzable o sin versión Production) → 503.
    - Cold-start / poca historia → las features autorregresivas quedan **0 + flag** (ADR-039); el modelo se apoya en las estáticas (ADR-043).
-6. **Modelo:** el modelo de producción se entrena con el **set final de la selección** (ADR-043, `selected_features`), recursion-safe por construcción: todas sus features se pueden recalcular hacia el futuro, así que `/forecast` recursa **directamente sobre el único modelo de producción**, sin un artefacto aparte.
+6. **Modelo:** el modelo de producción se entrena con el **set de la selección** (ADR-043, revisado por [ADR-046](0046-seleccion-features-ganancia-positiva.md); `selected_features`), recursion-safe por construcción: todas sus features se pueden recalcular hacia el futuro, así que `/forecast` recursa **directamente sobre el único modelo de producción**, sin un artefacto aparte.
 
 ## Consecuencias
 
