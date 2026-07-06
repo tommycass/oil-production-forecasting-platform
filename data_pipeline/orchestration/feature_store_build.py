@@ -3,10 +3,11 @@
 Reproduce **exactamente** las features del entrenamiento **reusando el código de `ml/`**
 (única fuente de verdad → cero training-serving skew): la ingeniería sale de
 `ml.features.add_engineered_features` y las columnas base/categóricas de `ml.dataset`. Se
-materializa **el set final de la selección** (`ml.features.selected_features`, ADR-043):
-las **14 features** que entrena el modelo — el núcleo autorregresivo del target + las
-anclas estáticas del cold-start —, recursion-safe por construcción (ADR-044). Es la misma
-lista que usa `ml/train.py`, así que store y modelo no pueden divergir.
+materializa **el set de ganancia positiva de la selección** (`ml.features.selected_features`,
+ADR-043): las features que entrena el modelo (27 en petróleo, 19 en gas) — el núcleo
+autorregresivo del target + las anclas estáticas/categóricas del cold-start —, recursion-safe
+por construcción (ADR-044). Es la misma lista que usa `ml/train.py`, así que store y modelo
+no pueden divergir.
 La única lógica propia es el ensamblado (lectura de Bronze, universo, drop de negativos, merge
 del target) que replica `ml.dataset.build_basic_dataset`, con una diferencia: el target se
 hace por **left-join** para conservar la última fila de cada pozo (con `y_next` NULL) y que
@@ -117,10 +118,10 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     # devolvemos a int64 para que el store tenga una clave limpia (lookup de la API).
     out["idpozo"] = out["idpozo"].astype("int64")
 
-    # Materializar SOLO el set FINAL de la selección (ADR-043): las 14 features que
-    # entrena el modelo (`ml.features.selected_features` — la misma lista que usa
-    # `ml/train.py`, fuente única de verdad). Lo demás que calcula
-    # `add_engineered_features` (borderline / descartadas del ranking) no se persiste.
+    # Materializar SOLO el set de ganancia positiva de la selección (ADR-043): las
+    # features que entrena el modelo (27 petróleo / 19 gas, `ml.features.selected_features`
+    # — la misma lista que usa `ml/train.py`, fuente única de verdad). Lo demás que calcula
+    # `add_engineered_features` (importancia ≈ 0 / negativa en el ranking) no se persiste.
     cols = ["idpozo", "periodo", "periodo_objetivo"] + ml_features.selected_features(target) + ["y_next"]
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 

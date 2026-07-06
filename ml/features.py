@@ -94,38 +94,44 @@ def recursion_safe_cols(feature_cols: list[str], target: str = "prod_pet") -> li
 
 
 def selected_features(target: str = "prod_pet") -> list[str]:
-    """Set **final** de features del modelo (ADR-043): las que la selección por
-    permutation importance marcó *Mantener*, en dos capas. Es lo que entrena
-    `ml/train.py`, lo que materializa el feature store (ADR-036) y lo que consume
-    el forecast recursivo (ADR-044) — única fuente de verdad de las tres puntas.
+    """Set de features del modelo (ADR-043): las de **ganancia positiva** de la
+    selección por *permutation importance* en val — aquellas cuya permutación
+    **empeora** el RMSE de val (``imp_mean > 0``, ``ml.selection.select_features``).
+    Es lo que entrena `ml/train.py`, lo que materializa el feature store (ADR-036) y
+    lo que consume el forecast recursivo (ADR-044) — única fuente de verdad de las
+    tres puntas, así no pueden divergir.
 
-    - **Capa 1 — motor autorregresivo** (pozos con historial): el nivel del mes ``t``
-      (``{target}``) + 8 derivadas de su trayectoria.
-    - **Capa 2 — anclas estáticas** (sostienen el cold-start): reservorio, física,
-      ubicación y edad del pozo.
-
-    Las *borderline* y las de importancia ≈ 0 del ranking quedan **fuera** (poda por
-    parsimonia); son re-evaluables en un reentreno futuro sin tocar este contrato.
-    Mismo criterio para gas (ADR-042): ``prod_gas_*`` en vez de ``prod_pet_*``.
+    Los sets de petróleo y gas **difieren** (cada target rankeó distinto): **27**
+    features para ``prod_pet`` y **19** para ``prod_gas`` (notebooks 02/03). Ambos
+    salen de rankear el candidato recursion-safe de 35, así que **todas** son
+    recursion-safe: las autorregresivas se recalculan desde la trayectoria del target
+    en el forecast y las estáticas (reservorio, física, ubicación, categóricas del
+    pozo) se replican en cada paso. Las de importancia ≈ 0 o negativa quedan **fuera**
+    (ruido). El orden replica el ranking (importancia desc).
     """
-    return [
-        # Capa 1 — motor autorregresivo del propio target
-        target,
-        f"{target}_roll3",
-        f"{target}_ratio1",
-        f"{target}_acum12",
-        f"{target}_roll6",
-        f"{target}_acum6",
-        f"{target}_cummax",
-        f"{target}_lag2",
-        f"{target}_delta1",
-        # Capa 2 — anclas estáticas (cold-start)
-        "areayacimiento",
-        "profundidad",
-        "coordenadax",
-        "coordenaday",
-        "well_age_months",
-    ]
+    if target == "prod_pet":
+        return [
+            # Núcleo autorregresivo del target (ganancia positiva en val)
+            "prod_pet", "prod_pet_roll3", "prod_pet_ratio1", "prod_pet_acum12",
+            "prod_pet_roll6", "prod_pet_acum6", "prod_pet_cummax", "prod_pet_lag2",
+            "prod_pet_delta1", "prod_pet_std3", "prod_pet_frac_peak",
+            "prod_pet_lag12", "prod_pet_lag3", "prod_pet_meses_desde_pico",
+            "produjo_mes_pasado",
+            # Anclas estáticas / categóricas del pozo (cold-start)
+            "areayacimiento", "profundidad", "coordenadax", "coordenaday",
+            "well_age_months", "areapermisoconcesion", "tipopozo", "empresa",
+            "mes", "tipoextraccion", "proyecto", "cuenca",
+        ]
+    if target == "prod_gas":
+        return [
+            "prod_gas", "prod_gas_roll3", "prod_gas_roll6", "prod_gas_acum12",
+            "prod_gas_acum6", "prod_gas_ratio1", "prod_gas_lag3", "prod_gas_lag12",
+            "prod_gas_std3", "prod_gas_cummax", "prod_gas_delta3", "prod_gas_lag2",
+            # Anclas estáticas / categóricas del pozo (cold-start)
+            "tipoestado", "mes", "clasificacion", "sub_tipo_recurso",
+            "provincia", "formprod", "tipoextraccion",
+        ]
+    raise ValueError(f"target no soportado: {target!r} (esperado 'prod_pet' o 'prod_gas')")
 
 
 def _calendar_lag(df: pd.DataFrame, col: str, months: int) -> np.ndarray:

@@ -38,11 +38,20 @@ PRED_TABLE_BY_TARGET = {
 # el target del mes siguiente (justo lo que se predice) y no debe entrar como feature.
 NON_FEATURE_COLUMNS = {"idpozo", "periodo", "periodo_objetivo", "y_next"}
 
-# Anclas ESTÁTICAS del pozo que el set final del modelo usa como features (Capa 2 de la
-# selección, ADR-043): no cambian mes a mes, así que se leen una vez y se replican en
-# cada paso de la recursión. (`well_age_months` no va acá: se recalcula por paso.)
+# Anclas ESTÁTICAS del pozo que el set de ganancia positiva usa como features (ADR-043):
+# no cambian mes a mes, así que se leen una vez y se replican en cada paso de la
+# recursión. (`well_age_months` no va acá: se recalcula por paso; `mes` lo pone el motor
+# con el mes objetivo.) Es la UNIÓN de las categóricas estáticas de ambos targets: el
+# lector filtra por `if c in base_row`, así cada tabla (petróleo / gas) toma solo las que
+# existen en su store.
 STATIC_FEATURE_COLUMNS = [
     "areayacimiento", "profundidad", "coordenadax", "coordenaday",
+    # petróleo
+    "areapermisoconcesion", "tipopozo", "empresa", "proyecto", "cuenca",
+    # gas
+    "tipoestado", "clasificacion", "sub_tipo_recurso", "provincia", "formprod",
+    # compartida
+    "tipoextraccion",
 ]
 
 
