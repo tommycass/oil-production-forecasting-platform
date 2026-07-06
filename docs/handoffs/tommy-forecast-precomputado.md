@@ -2,6 +2,14 @@
 
 **De:** Valen (Rol 2) · **Contexto:** toqué serving (tu zona) para que `/forecast` sirva el pronóstico **precomputado** que deja el retrain, con fallback al motor de siempre. El contrato NO cambia. También cambió el set de features del modelo (ADR-041) → hay que **re-entrenar y re-promover** después del merge.
 
+## Update (jul-2026, Valen) — estado post-merge + 2 PRs abiertos
+
+Revisé la cadena completa con el set de ganancia positiva (27 petróleo / 19 gas) ya en `staging`:
+
+1. **Sigue pendiente tu acción del §2:** re-entrenar y **re-promover ambos targets** con el set 27/19 (`ml.train --mlflow --target prod_pet` y `--target prod_gas`, o el job `retrain` con `RETRAIN_CMD="python -m ml.train --mlflow"`) contra el MLflow del deploy. Confirmá si ya lo corriste: un `Production` viejo contra el store 27/19 recibe columnas que no coinciden → **predicción degradada en silencio**.
+2. **PR `fix/pin-grpcio-health-checking`** — mergealo **antes** de rebuildear el daemon (`infra/Dockerfile.dagster`) o de que corra el CI `test-pipeline`: `grpcio-health-checking 1.82` (dep transitiva de dagster) trae gencode de protobuf 7.35, que rompe el import de `dagster_dbt` contra el `protobuf<7` que exigen dbt/dagster. El PR capea `grpcio`/`grpcio-health-checking <1.82` (validado: `data_pipeline/tests` 35 passed).
+3. **Cadena validada e2e** (Postgres + MLflow): `materializar_todos` → `train --mlflow` (ambos targets promueven, superan persistencia) → `precomputar_todos` → `GET /forecast` **200** con puntos mensuales + 404/422/403 OK. Tu paso post-merge es de bajo riesgo. El PR `fix/feature-store-mes-objetivo` alinea el `mes` del store al mes objetivo (t+1): **transparente** para tu reader (lo excluye de `STATIC_FEATURE_COLUMNS` y el motor lo re-setea por paso), sin acción de tu lado.
+
 ## 1. Qué cambió en la API (revisá estos archivos)
 
 - `api/app/services/forecast.py`: `get_forecast` intenta primero el **lookup precomputado**
@@ -46,5 +54,5 @@ histórica no aplica (sets distintos) — criterio tuyo.
    misma respuesta (vía motor). Volver a materializar `forecast_precomputado`.
 
 ## Referencias
-ADRs: **045** (precómputo, alternativas), **044** (motor), **043** (set final), **041** (job).
+ADRs: **043** (precómputo, alternativas), **042** (motor), **041** (set final), **040** (job).
 Contrato de tablas: `docs/feature-store.md` §Pronóstico precomputado. Runbook: `docs/runbooks/ml-retrain.md` §6–7.
