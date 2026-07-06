@@ -1,18 +1,17 @@
 # Handoff — feature store materializado (Fase 3)
 
 > ⚠️ **HISTÓRICO (jul-2026):** los pedidos de este documento ya se cumplieron y el contrato
-> evolucionó varias veces: `/predict` fue subsumido por `/forecast` (ADR-044) y el store quedó
-> en el **set de ganancia positiva — 27 features (petróleo) / 19 (gas)** (ADR-043, revisado por
-> [ADR-046](adr/0046-seleccion-features-ganancia-positiva.md)) + las tablas de
-> **pronóstico precomputado** (ADR-045). El contrato vigente es [docs/feature-store.md](feature-store.md);
+> evolucionó varias veces: `/predict` fue subsumido por `/forecast` (ADR-042) y el store quedó
+> en el **set de ganancia positiva — 27 features (petróleo) / 19 (gas)** ([ADR-041](adr/0041-seleccion-features-forecast.md)) + las tablas de
+> **pronóstico precomputado** (ADR-043). El contrato vigente es [docs/feature-store.md](feature-store.md);
 > handoffs vigentes en `docs/handoffs/`. Se conserva como registro de la integración.
 
 > **De:** Rol 2 (Feature Store + Orquestación). **Para:** Rol 1 (entrenamiento) y Rol 3 (inferencia).
-> Acompaña al contrato [docs/feature-store.md](feature-store.md) y a [ADR-036](adr/0036-feature-store.md) (sección *Revisión*). Responde al handoff de Rol 1 en [docs/handoffs/rol2-feature-store.md](handoffs/rol2-feature-store.md).
+> Acompaña al contrato [docs/feature-store.md](feature-store.md) y a [ADR-035](adr/0035-feature-store.md) (sección *Revisión*). Responde al handoff de Rol 1 en [docs/handoffs/rol2-feature-store.md](handoffs/rol2-feature-store.md).
 
 ## Qué hicimos
 
-Materializamos el feature store con **exactamente las features del modelo** (las 29), **reusando el código de `ml/`** como pide el handoff de Rol 1 (única fuente de verdad → cero skew). **Son dos modelos (ADR-042) → dos tablas, una por target** (decisión registrada en ADR-036 *Revisión 2*):
+Materializamos el feature store con **exactamente las features del modelo** (las 29), **reusando el código de `ml/`** como pide el handoff de Rol 1 (única fuente de verdad → cero skew). **Son dos modelos (ADR-039) → dos tablas, una por target** (decisión registrada en ADR-035 *Revisión 2*):
 
 - Un asset de Dagster (`features_refrescadas`, en el job de retrain) corre el pipeline de features (`data_pipeline/orchestration/feature_store_build.py`, que importa `ml.features.add_engineered_features(target=...)` y las listas `ml.dataset.BASIC_*`) y escribe **las dos tablas**:
   - `features.feat_produccion_pozo_mensual` — petróleo (`prod_pet`, nombre histórico).
@@ -52,6 +51,6 @@ Checklist:
 - [ ] **Lookup por `idpozo` + `periodo`** (date) del **mes base** `t` = primer día de `mes_objetivo − 1 mes`. **No** por `anio`/`mes` (no existe `anio`; `mes` es el mes del target).
 - [ ] **Pasar las 35 features crudas** (5 numéricas + 16 engineered + 14 categóricas) al `Pipeline` del modelo —que hace one-hot/imputación internamente—; **descartar** `idpozo`, `periodo`, `periodo_objetivo`, `y_next`. Los nombres engineered **difieren por target** (`prod_pet_*` vs `prod_gas_*`): conviene derivar la lista de `ml.dataset.BASIC_NUMERIC_FEATURES + ml.features.engineered_feature_names(target) + ml.dataset.BASIC_CATEGORICAL_FEATURES` (única fuente de verdad) en vez de hardcodear.
 - [ ] **Error de contrato** si no hay fila para `(idpozo, periodo_t)` (pozo nuevo o sin historia) — como hoy, pero con la clave correcta.
-- [ ] **Exponer el target en `/predict`** (un parámetro `target=prod_pet|prod_gas` o dos rutas): decisión tuya; revisar [ADR-035] (contrato de `/predict`) como anota el ADR-042.
+- [ ] **Exponer el target en la API** (un parámetro `target=prod_pet|prod_gas`): se resolvió con el parámetro `target` opcional de `/forecast` (ADR-042).
 
 Lista completa de columnas y tipos: [docs/feature-store.md](feature-store.md).

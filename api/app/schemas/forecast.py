@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-# Targets soportados (ADR-042): petróleo y gas. Es el valor del parámetro OPCIONAL
+# Targets soportados (ADR-039): petróleo y gas. Es el valor del parámetro OPCIONAL
 # `target` de /forecast (default prod_pet); no forma parte del cuerpo de la respuesta,
 # que mantiene el contrato de Fase 1 ({id_well, data:[{date, prod}]}).
 Target = Literal["prod_pet", "prod_gas"]
@@ -26,7 +26,7 @@ class ForecastResponse(BaseModel):
 
     model_config = {
         "json_schema_extra": {
-            # La salida es MENSUAL (ADR-044): un punto por mes futuro, date = 1° de mes.
+            # La salida es MENSUAL (ADR-042): un punto por mes futuro, date = 1° de mes.
             "example": {
                 "id_well": "POZO-001",
                 "data": [

@@ -4,15 +4,15 @@ Enchufa MLflow **alrededor** del entrenamiento del Rol 1: `ml/train.py` deja el 
 `(pipe, info)` (entrena y devuelve el Pipeline + las métricas) y este módulo se encarga
 de **loguear la corrida** (params, métricas, versión de datos, modelo), **registrar** el
 modelo en el registry —un modelo por target, `produccion-forecast` / `produccion-forecast-gas`
-(ADR-042)— y **automatizar la promoción a Production** con el criterio del ADR-040.
+(ADR-039)— y **automatizar la promoción a Production** con el criterio del ADR-039.
 
-Criterio de promoción (ADR-040), por target:
+Criterio de promoción (ADR-039), por target:
   el candidato pasa a Production si (a) **supera a la persistencia** en test RMSE
   (vara de éxito, ADR-029) y (b) **mejora al Production actual** de ese target (o no
   hay ninguno todavía). Si no, queda en Staging para inspección manual.
 
 La fuente de verdad del logging/promoción es este módulo; se invoca desde
-`python -m ml.train --mlflow --target <target>` (el seam del retrain, ADR-041:
+`python -m ml.train --mlflow --target <target>` (el seam del retrain, ADR-040:
 `RETRAIN_CMD="python -m ml.train --mlflow"`).
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ def promotion_decision(
     persistencia_test_rmse: float,
     prod_test_rmse: float | None,
 ) -> tuple[bool, str]:
-    """Decide si el candidato se promueve a Production (criterio ADR-040). **Función
+    """Decide si el candidato se promueve a Production (criterio ADR-039). **Función
     pura** (sin MLflow) para poder testearla en aislamiento.
 
     Devuelve ``(promover, motivo)``:
@@ -119,7 +119,7 @@ def log_and_register(pipe, info: dict, promote: bool = True) -> dict:
         mlflow.set_tag("tipo", "champion")
         mlflow.set_tag("modelo", info["model"])
         mlflow.set_tag("target", target)
-        mlflow.set_tag("params_source", "fijo")  # train_final usa BEST_PARAMS (ADR-040)
+        mlflow.set_tag("params_source", "fijo")  # train_final usa BEST_PARAMS (ADR-039)
 
         # 1.4 — hiperparámetros del modelo (esquema plano y estable: las claves de
         # BEST_PARAMS[target][modelo]) + reproducibilidad.
@@ -160,7 +160,7 @@ def log_and_register(pipe, info: dict, promote: bool = True) -> dict:
     for k, v in info["params"].items():
         client.set_model_version_tag(model_name, version, f"param.{k}", str(v))
 
-    # 1.5 — promoción automática (criterio ADR-040).
+    # 1.5 — promoción automática (criterio ADR-039).
     prod_rmse = _current_production_rmse(client, model_name)
     promover, motivo = promotion_decision(test_rmse, persistencia_rmse, prod_rmse)
     if promote and promover:

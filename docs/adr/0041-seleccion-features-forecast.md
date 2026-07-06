@@ -1,147 +1,156 @@
-# Título: ADR-043: Selección de features del forecast (ranking por permutation importance y robustez a cold-start)
+# Título: ADR-041: Selección de features del forecast (permutation importance, ganancia positiva)
 
-**Estado:** Aceptada — **Decisión revisada por [ADR-046](0046-seleccion-features-ganancia-positiva.md)**
-
-> El ranking, la metodología y el análisis de cold-start de este ADR siguen vigentes. Lo que cambió es la **Decisión** (§ *Decisión* y § *Consecuencias*): el recorte manual al **set compacto de 14** se reemplazó por el **set de ganancia positiva** (`imp_mean > 0` → 27 features en petróleo, 19 en gas). Ver [ADR-046](0046-seleccion-features-ganancia-positiva.md).
+**Estado:** Aceptada
 
 ## Contexto
 
-El objetivo del forecast es **recursivo** (predecir t+1, t+2, … realimentando la propia predicción), así que el modelo se construye desde el inicio sobre un set **recursion-safe**: features que se pueden recalcular en un mes futuro a partir de la trayectoria del propio target. Ese set junta las features de ingeniería del ADR-033 con las autorregresivas del propio target (`prod_pet_lag2/lag3/roll6/acum12/delta3/ratio1/std3/cummax/frac_peak/meses_desde_pico` + `well_age_months`), y **excluye** las que no se pueden recalcular hacia el futuro (`prod_vecinos_mean` —cross-well—, `water_cut`, `prod_gas`, `prod_agua`, `tef`). Queda un **set candidato de 35 features recursion-safe**.
+El forecast es **recursivo** (predecir t+1, t+2, … realimentando la propia predicción), así que el modelo se construye sobre un set **recursion-safe**: features recalculables en un mes futuro a partir de la trayectoria del propio target. Ese set junta la ingeniería del ADR-033 con las autorregresivas del target (`{target}_lag2/lag3/roll6/acum12/delta1/delta3/ratio1/std3/cummax/frac_peak/meses_desde_pico` + `well_age_months`) y **excluye** las que no se recalculan hacia el futuro (`prod_vecinos_mean` cross-well, `water_cut`, el target cruzado, `prod_agua`, `tef`). Queda un **candidato de 35 features recursion-safe**.
 
-Con 35 candidatas hace falta **decidir el set final**, con tres criterios en tensión:
+Con 35 candidatas hay que **decidir el set del modelo**, con tres criterios en tensión: (1) **poder predictivo** — qué features bajan el error; (2) **robustez a cold-start** — pozos sin historial, donde las autorregresivas quedan `NaN`; (3) **mantenibilidad del store** — cada feature es una columna a materializar con paridad training-serving (ADR-035).
 
-1. **Poder predictivo** — qué features realmente bajan el error.
-2. **Robustez a cold-start** — pozos **sin historial** (primeros meses de su serie): todas las features autorregresivas les quedan `NaN` → el modelo debe apoyarse en otra cosa.
-3. **Mantenibilidad del feature store** — cada feature es una columna a materializar y mantener con paridad training-serving (ADR-036).
-
-**Metodología (leakage-safe).** El ranking se calculó con **permutation importance sobre `val`** aplicada al modelo campeón (Random Forest tuneado con CV temporal), en `notebooks/02_feature_selection_pet.ipynb`, con la lógica en `ml/selection.py`. Se mide en val (no en train) para no premiar lo que el modelo memorizó; **`test` quedó intacto**. La granularidad es la **feature cruda** (se permuta `empresa` entera, no una dummy suelta). La importancia queda en **m³** = cuánto sube el RMSE de val al romper esa feature.
+**Metodología (leakage-safe).** Se rankea por **permutation importance sobre `val`** aplicada al campeón (Random Forest tuneado con CV temporal, ADR-034), en `notebooks/02_feature_selection_pet.ipynb` (petróleo) y `03_feature_selection_gas.ipynb` (gas), con la lógica en `ml/selection.py`. Se mide en val (no train) para no premiar lo memorizado; **`test` queda intacto**. La granularidad es la **feature cruda** (se permuta `empresa` entera, no una dummy). La importancia queda en **m³** = cuánto sube el RMSE de val al **romper** esa feature: `> 0` = útil, `≈ 0` o `< 0` = ruido.
 
 ## Ranking de features (petróleo, `prod_pet`)
 
 | # | Feature | Imp. (m³) | Tipo | Decisión |
 |---|---|---:|---|---|
-| 1 | `prod_pet` | 461.68 | autorregresiva (persistencia / lag1) | **Mantener** |
-| 2 | `prod_pet_roll3` | 113.39 | autorregresiva (nivel reciente) | **Mantener** |
-| 3 | `prod_pet_ratio1` | 24.48 | autorregresiva (declinación mult.) | **Mantener** |
-| 4 | `prod_pet_acum12` | 23.92 | autorregresiva (volumen 12m) | **Mantener** |
-| 5 | `prod_pet_roll6` | 23.33 | autorregresiva (nivel 6m) | **Mantener** |
-| 6 | `prod_pet_acum6` | 22.46 | autorregresiva (volumen 6m) | **Mantener** |
-| 7 | `areayacimiento` | 13.85 | estática (reservorio) | **Mantener — ancla cold-start** |
-| 8 | `profundidad` | 10.24 | estática (física) | **Mantener — ancla cold-start** |
-| 9 | `prod_pet_cummax` | 4.00 | autorregresiva (pico histórico) | **Mantener** |
-| 10 | `prod_pet_lag2` | 2.98 | autorregresiva (nivel t-2) | **Mantener** |
-| 11 | `prod_pet_delta1` | 1.80 | autorregresiva (declinación abs.) | Mantener (núcleo, aporte chico) |
-| 12 | `prod_pet_std3` | 1.32 | autorregresiva (volatilidad) | Borderline |
-| 13 | `prod_pet_frac_peak` | 1.16 | autorregresiva (etapa declinación) | Borderline |
-| 14 | `prod_pet_lag12` | 0.98 | autorregresiva (estacional anual) | Borderline |
-| 15 | `prod_pet_lag3` | 0.88 | autorregresiva (nivel t-3) | Borderline |
-| 16 | `coordenaday` | 0.82 | estática (ubicación) | **Mantener — ancla cold-start** |
-| 17 | `coordenadax` | 0.77 | estática (ubicación) | **Mantener — ancla cold-start** |
-| 18 | `well_age_months` | 0.68 | estática/edad | **Mantener — marca el cold-start** |
-| 19 | `areapermisoconcesion` | 0.64 | estática (área) | Borderline (correl. con areayacimiento) |
-| 20 | `tipopozo` | 0.59 | categórica | Borderline |
-| 21 | `empresa` | 0.49 | categórica (alta card.) | Borderline |
-| 22 | `prod_pet_meses_desde_pico` | 0.24 | autorregresiva | Borderline |
-| 23 | `mes` | 0.17 | calendario (estacionalidad) | Borderline |
-| 24 | `tipoextraccion` | 0.04 | categórica | Descartar |
-| 25 | `produjo_mes_pasado` | 0.01 | flag actividad | Descartar |
-| 26 | `proyecto` | 0.00 | categórica | Descartar |
-| 27 | `cuenca` | 0.00 | categórica | Descartar |
-| 28 | `provincia` | -0.00 | categórica | Descartar |
-| 29 | `subclasificacion` | -0.00 | categórica | Descartar |
-| 30 | `clasificacion` | -0.00 | categórica | Descartar |
-| 31 | `tipoestado` | -0.01 | categórica | Descartar |
-| 32 | `sub_tipo_recurso` | -0.02 | categórica | Descartar |
-| 33 | `formacion` | -0.05 | categórica | Descartar |
-| 34 | `formprod` | -0.06 | categórica | Descartar |
-| 35 | `prod_pet_delta3` | -0.20 | autorregresiva | **Descartar — ruido (imp. negativa)** |
+| 1 | `prod_pet` | 461,68 | autorregresiva (nivel / persistencia) | **Mantener** |
+| 2 | `prod_pet_roll3` | 113,39 | autorregresiva (nivel reciente) | **Mantener** |
+| 3 | `prod_pet_ratio1` | 24,48 | autorregresiva (declinación mult.) | **Mantener** |
+| 4 | `prod_pet_acum12` | 23,92 | autorregresiva (volumen 12m) | **Mantener** |
+| 5 | `prod_pet_roll6` | 23,33 | autorregresiva (nivel 6m) | **Mantener** |
+| 6 | `prod_pet_acum6` | 22,46 | autorregresiva (volumen 6m) | **Mantener** |
+| 7 | `areayacimiento` | 13,85 | estática (reservorio) | **Mantener — ancla cold-start** |
+| 8 | `profundidad` | 10,24 | estática (física) | **Mantener — ancla cold-start** |
+| 9 | `prod_pet_cummax` | 4,00 | autorregresiva (pico histórico) | **Mantener** |
+| 10 | `prod_pet_lag2` | 2,98 | autorregresiva (nivel t-2) | **Mantener** |
+| 11 | `prod_pet_delta1` | 1,80 | autorregresiva (declinación abs.) | **Mantener** |
+| 12 | `prod_pet_std3` | 1,32 | autorregresiva (volatilidad) | **Mantener** |
+| 13 | `prod_pet_frac_peak` | 1,16 | autorregresiva (etapa declinación) | **Mantener** |
+| 14 | `prod_pet_lag12` | 0,98 | autorregresiva (estacional anual) | **Mantener** |
+| 15 | `prod_pet_lag3` | 0,88 | autorregresiva (nivel t-3) | **Mantener** |
+| 16 | `coordenaday` | 0,82 | estática (ubicación) | **Mantener — ancla cold-start** |
+| 17 | `coordenadax` | 0,77 | estática (ubicación) | **Mantener — ancla cold-start** |
+| 18 | `well_age_months` | 0,68 | estática (edad) | **Mantener — marca el cold-start** |
+| 19 | `areapermisoconcesion` | 0,64 | categórica (área) | **Mantener** |
+| 20 | `tipopozo` | 0,59 | categórica | **Mantener** |
+| 21 | `empresa` | 0,49 | categórica (alta card.) | **Mantener** |
+| 22 | `prod_pet_meses_desde_pico` | 0,24 | autorregresiva | **Mantener** |
+| 23 | `mes` | 0,17 | calendario (estacionalidad) | **Mantener** |
+| 24 | `tipoextraccion` | 0,04 | categórica | **Mantener** |
+| 25 | `produjo_mes_pasado` | 0,01 | flag actividad | **Mantener** |
+| 26 | `proyecto` | 0,00 | categórica | **Mantener** |
+| 27 | `cuenca` | 0,00 | categórica | **Mantener** |
+| 28 | `provincia` | -0,00 | categórica | Descartar |
+| 29 | `subclasificacion` | -0,00 | categórica | Descartar |
+| 30 | `clasificacion` | -0,00 | categórica | Descartar |
+| 31 | `tipoestado` | -0,01 | categórica | Descartar |
+| 32 | `sub_tipo_recurso` | -0,02 | categórica | Descartar |
+| 33 | `formacion` | -0,05 | categórica | Descartar |
+| 34 | `formprod` | -0,06 | categórica | Descartar |
+| 35 | `prod_pet_delta3` | -0,20 | autorregresiva | **Descartar — ruido (imp. negativa)** |
 
-Lectura: la señal es **abrumadoramente autorregresiva** (`prod_pet` sola pesa ~4× la siguiente); un puñado de features de nivel/tendencia/volumen (`roll3`, `ratio1`, `acum12`, `roll6`, `acum6`) concentra casi todo; entre las estáticas solo `areayacimiento` y `profundidad` aportan de forma visible; la mayoría de las categóricas de baja cardinalidad son **peso muerto** (≈ 0 o negativas), y `delta3` es directamente ruido.
+El corte cae **naturalmente en la ganancia positiva**: las **filas 1–27 tienen `imp > 0`** (romperlas empeora el RMSE de val → aportan) y las **28–35 son `≤ 0`** (ruido, `delta3` hasta negativa). La señal es abrumadoramente **autorregresiva** (`prod_pet` sola pesa ~4× la siguiente); entre las estáticas destacan `areayacimiento` y `profundidad`; las categóricas de baja cardinalidad quedan en el límite (imp ≈ 0) y las de imp ≤ 0 se descartan.
 
-## El problema del cold-start (por qué no basta con "tomar las top")
+## El problema del cold-start
 
-Para un pozo **sin historial** (primeros meses de su serie), **todas** las features autorregresivas —incluida la dominante `prod_pet` (imp. 461)— son `NaN` y se imputan a **0 + flag** (ADR-039). Es decir, el motor predictivo de casi toda la señal **no existe** en esas filas: la predicción queda apoyada **solo** en las estáticas + los flags de faltante.
+Para un pozo **sin historial** (primeros meses de su serie), **todas** las autorregresivas —incluida la dominante `prod_pet`— son `NaN` y se imputan a **0 + flag** (ADR-038): el motor de casi toda la señal **no existe** en esas filas y la predicción se apoya **solo** en las estáticas + flags. Esto tiene una consecuencia metodológica: la permutation importance sobre toda la población **subestima** el valor de las estáticas para el cold-start (se promedia sobre val, donde casi todas las filas tienen historia). Por eso el ranking se lee con ese matiz — las anclas estáticas de petróleo (`areayacimiento`, `profundidad`, `coordenadax/y`, `well_age_months`) valen más de lo que su importancia global sugiere. Todas caen del lado `imp > 0`, así que el criterio de ganancia positiva las conserva sin necesidad de una regla aparte.
 
-Esto tiene una consecuencia metodológica fuerte: **la permutation importance sobre toda la población subestima el valor de las estáticas para el cold-start**. La importancia se promedia sobre todo `val`, donde la **enorme mayoría** de las filas tienen historia y se apoyan en lo autorregresivo; permutar `areayacimiento` mueve poco el RMSE global (13.85) porque casi ningún pozo la *necesita*. Pero para la **subpoblación cold-start**, `areayacimiento` + `profundidad` + ubicación son **la única señal disponible**.
-
-Por eso, seleccionar "top-k por importancia" a secas sería un error: dejaría al modelo **ciego** frente a pozos nuevos. La regla correcta es **importancia + retención explícita de anclas estáticas**.
-
-Rol de cada ancla en cold-start:
-- **`areayacimiento`** — un pozo nuevo en un reservorio conocido se puede aproximar por la producción típica de ese yacimiento. Es la estática más informativa.
-- **`profundidad`** — proxy físico de productividad, disponible desde el día 0.
-- **`coordenadax/y`** — contexto espacial (qué hay alrededor), aunque sin la agregación de vecinos su aporte es débil.
-- **`well_age_months`** — para un pozo nuevo vale ≈ 0, lo que **marca explícitamente el cold-start** y deja que el modelo aplique otro régimen.
-
-**Alcance del término.** "Cold-start" acá = pozo **dentro del universo** de entrenamiento pero al inicio de su serie. Un pozo **totalmente nuevo** (que nunca produjo el target en train) no tiene fila en el feature store → hoy no es predecible (404, ADR-031/serving); esa brecha es una limitación de serving aparte, no de selección de features.
+> **Alcance del término.** "Cold-start" = pozo **dentro del universo** de entrenamiento pero al inicio de su serie. Un pozo **totalmente nuevo** (que nunca produjo el target en train) no tiene fila en el store → hoy no es predecible (limitación de serving, ADR-031), no de selección.
 
 ## Análisis de Alternativas
 
-### 1. Criterio de selección
+### 1. Criterio de corte sobre el ranking
 
-- **Top-k puro por importancia (descartado):** maximiza el RMSE en la población general pero deja al cold-start sin señal (las top son todas autorregresivas → `NaN` en pozos nuevos).
-- **Importancia + anclas estáticas (elegido):** se toma el núcleo autorregresivo (lo que gana en pozos con historia) **más** las estáticas informativas (lo que sostiene al cold-start), aunque estas últimas tengan importancia global modesta.
-- **Importancia medida sobre la subpoblación cold-start (ideal, pendiente):** repetir el ranking filtrando a los primeros N meses de cada pozo daría la importancia *real* de las estáticas ahí. Queda como mejora (permite calibrar cuántas estáticas conservar con evidencia, no por criterio).
+- **Top-k puro por importancia (descartado):** maximizaría el RMSE de la población general pero dejaría al cold-start sin señal (las top son todas autorregresivas → `NaN` en pozos nuevos).
+- **Ganancia positiva `imp_mean > 0` (elegido):** se conserva **toda feature que reduce el RMSE de val** — corte **empírico y no subjetivo** (lo devuelve `ml.selection.select_features`). Da **27 features en petróleo, 19 en gas**. Cubre naturalmente el cold-start: las anclas estáticas de petróleo tienen imp > 0 y entran solas.
+- **Corte compacto por parsimonia (descartado):** quedarse con un puñado (~10–14) podando las de aporte chico. Da un modelo más liviano pero **cede RMSE** (en petróleo ~3% en val) por un umbral arbitrario, y descarta features que el ranking marca como útiles.
+- **Estricto `imp_mean > imp_std` (descartado por ahora):** dejar solo las que superan su propio ruido. Es defendible (algunas categóricas conservadas tienen imp ≈ 0,00–0,05, dentro de su `imp_std`), pero reintroduce un umbral de decisión; se deja anotado como recorte alternativo re-evaluable.
 
-### 2. Categóricas de importancia ≈ 0
+### 2. Categóricas de importancia ≤ 0
 
-- **Mantener todas (descartado):** infla el one-hot (cientos de dummies) sin señal; más columnas a mantener con paridad y más ruido para el lineal.
-- **Descartar las de baja cardinalidad con imp. ≈ 0 / negativa (elegido):** `formacion`, `formprod`, `cuenca`, `provincia`, `clasificacion`, `subclasificacion`, `tipoestado`, `sub_tipo_recurso`, `tipoextraccion`, `proyecto`. Nota: buena parte de la señal geológica que *podrían* aportar ya está capturada por `areayacimiento` (correlacionada), que sí se conserva.
+- **Mantener todas (descartado):** inflaría el one-hot (cientos de dummies) sin señal, más columnas a mantener y más ruido para el lineal.
+- **Descartar las de imp ≤ 0 (elegido):** en petróleo `provincia`, `subclasificacion`, `clasificacion`, `tipoestado`, `sub_tipo_recurso`, `formacion`, `formprod`. Buena parte de la señal geológica que podrían aportar ya la captura `areayacimiento` (correlacionada), que sí entra.
 
-### 3. Features autorregresivas débiles y `delta3`
+### 3. Hiperparámetros del modelo
 
-- **`delta3` (descartada):** importancia **negativa** (−0.20) → permutarla *mejora* el modelo; es ruido. Es una de las features nuevas y el ranking la descarta empíricamente.
-- **Núcleo autorregresivo (mantenido):** `prod_pet`, `roll3`, `ratio1`, `acum12`, `roll6`, `acum6`, `cummax`, `lag2`, `delta1`. Cubren nivel, tendencia, declinación (abs. y mult.), volumen y pico.
-- **Borderline (`std3`, `frac_peak`, `lag12`, `lag3`, `meses_desde_pico`, `mes`):** aporte < 1.5 m³. Se pueden conservar por costo bajo o podar por parsimonia; se recomienda **re-tunear + medir con y sin ellas** antes de fijar.
-
-### 4. Validación empírica del recorte (val y test)
-
-Se entrenaron los 3 modelos usando **solo las 10 features top** (hasta `prod_pet_lag2`), en train, evaluando en val **y** test:
-
-| modelo | val_rmse | val_r2 | test_rmse | test_r2 |
-|---|---:|---:|---:|---:|
-| random_forest | 234.5 | 0.896 | 164.7 | 0.856 |
-| xgboost | 239.0 | 0.892 | 167.5 | 0.851 |
-| ridge | 242.4 | 0.889 | 177.2 | 0.834 |
-| persistencia | 250.6 | 0.881 | 166.2 | 0.854 |
-
-- En **val**, el set chico se sostiene: RF 234.5 vs 227.8 del set completo de 35 (~3% de costo por tirar 25 features).
-- En **test**, la ventaja sobre la persistencia **casi desaparece** (RF le gana por ~1%; xgboost y ridge quedan por debajo). El RMSE absoluto de test es menor porque el período tiene producciones más chicas — la comparación válida entre splits es el **R²** (0.896 → 0.856). Es un resultado honesto: el modelo generaliza, pero su *edge* se erosiona fuera de val.
+- **Re-tunear sobre el set final (descartado):** el tuning (notebooks 02/03) se corrió sobre el candidato de **35**, y las 27/19 son un **subconjunto** de ese espacio; el campeón con esos `BEST_PARAMS` ya se validó sobre el recorte en val **y** test (abajo), superando la persistencia. Re-tunear ahora se apartaría de esta misma metodología. La única sensibilidad real al tamaño del set es `max_features=0.5` (fracción), cuyo efecto queda absorbido por esa validación empírica. **Se mantienen los `BEST_PARAMS` vigentes.**
 
 ## Decisión
 
-Adoptar, para el modelo de **petróleo**, un set final en **dos capas**, con el mismo criterio aplicable simétricamente a **gas** (`prod_gas_*` en vez de `prod_pet_*`, y `prod_pet` como serie excluida):
+Fijar el set del modelo en las **features de ganancia positiva** (`imp_mean > 0`), **por target**. Es la Decisión de las tres puntas: entrenamiento, feature store y forecast.
 
-**Capa 1 — Motor autorregresivo (pozos con historial):**
-`prod_pet`, `prod_pet_roll3`, `prod_pet_ratio1`, `prod_pet_acum12`, `prod_pet_roll6`, `prod_pet_acum6`, `prod_pet_cummax`, `prod_pet_lag2`, `prod_pet_delta1`.
+**Petróleo (`prod_pet`) — 27 features:** las **filas 1–27** del ranking de arriba (núcleo autorregresivo + anclas estáticas + categóricas de baja cardinalidad con imp > 0).
 
-**Capa 2 — Anclas estáticas (sostienen el cold-start):**
-`areayacimiento`, `profundidad`, `coordenadax`, `coordenaday`, `well_age_months`.
+**Gas (`prod_gas`) — 19 features** (ranking análogo del notebook 03):
 
-**Descartadas:**
-- `prod_pet_delta3` (importancia negativa).
-- Categóricas de baja cardinalidad con imp. ≈ 0: `formacion`, `formprod`, `cuenca`, `provincia`, `clasificacion`, `subclasificacion`, `tipoestado`, `sub_tipo_recurso`, `tipoextraccion`, `proyecto`, `produjo_mes_pasado`.
-- (Ya fuera del candidato por recursion-safety: `prod_vecinos_mean`, `water_cut`, `prod_gas`, `prod_agua`, `tef`.)
+| # | Feature | Imp. (m³) | Tipo |
+|---|---|---:|---|
+| 1 | `prod_gas` | 765,26 | autorregresiva (nivel / persistencia) |
+| 2 | `prod_gas_roll3` | 254,68 | autorregresiva (nivel reciente) |
+| 3 | `prod_gas_roll6` | 59,79 | autorregresiva (nivel 6m) |
+| 4 | `prod_gas_acum12` | 55,80 | autorregresiva (volumen 12m) |
+| 5 | `prod_gas_acum6` | 54,91 | autorregresiva (volumen 6m) |
+| 6 | `prod_gas_ratio1` | 17,22 | autorregresiva (declinación mult.) |
+| 7 | `tipoestado` | 13,16 | categórica — única estática con señal en gas |
+| 8 | `prod_gas_lag3` | 2,10 | autorregresiva (nivel t-3) |
+| 9 | `prod_gas_lag12` | 1,80 | autorregresiva (estacional anual) |
+| 10 | `prod_gas_std3` | 1,80 | autorregresiva (volatilidad) |
+| 11 | `prod_gas_cummax` | 1,60 | autorregresiva (pico histórico) |
+| 12 | `prod_gas_delta3` | 0,98 | autorregresiva (declinación 3m) |
+| 13 | `mes` | 0,59 | calendario (estacionalidad) |
+| 14 | `prod_gas_lag2` | 0,34 | autorregresiva (nivel t-2) |
+| 15 | `clasificacion` | 0,01 | categórica |
+| 16 | `sub_tipo_recurso` | 0,00 | categórica |
+| 17 | `provincia` | 0,00 | categórica |
+| 18 | `formprod` | 0,00 | categórica |
+| 19 | `tipoextraccion` | 0,00 | categórica |
 
-**Borderline — resueltas: quedan FUERA del set final** (`std3`, `frac_peak`, `lag12`, `lag3`, `meses_desde_pico`, `mes`, `areapermisoconcesion`, `tipopozo`, `empresa`): aporte < 1,5 m³ cada una; se podan por parsimonia (menos columnas que materializar y mantener con paridad, one-hot más chico). Son re-incorporables en un reentreno futuro si una medición dedicada lo justifica — basta agregarlas a `selected_features` y el retrain re-materializa el store solo.
+**Asimetría petróleo/gas.** Los sets **difieren en estructura** (no es solo cambiar el prefijo): en gas, las anclas geográficas/físicas del cold-start de petróleo (`areayacimiento`, `profundidad`, `coordenadax/y`, `well_age_months`) tienen importancia **negativa** y **no entran** — el gas queda con `tipoestado` como única estática con señal, y su cold-start se apoya casi solo en categóricas (ver *Consecuencias*).
 
-Se conserva el esquema de imputación **0 + flag** para las autorregresivas (ADR-039): es lo que hace que el cold-start sea *inspeccionable* (el flag distingue "sin historia" de "produjo 0").
+**Descartadas** (imp ≤ 0): en petróleo `provincia`, `subclasificacion`, `clasificacion`, `tipoestado`, `sub_tipo_recurso`, `formacion`, `formprod`, `prod_pet_delta3` (negativa); en gas sus análogas y `prod_gas_delta1`/`frac_peak`/`meses_desde_pico` + las estáticas geográficas. Fuera del candidato por recursion-safety: `prod_vecinos_mean`, `water_cut`, target cruzado, `prod_agua`, `tef`.
 
-**Implementación (fuente única de verdad):** el set final vive en `ml.features.selected_features(target)`. Lo consumen las tres puntas sin poder divergir: el entrenamiento (`ml/train.py`), el feature store (`feature_store_build.py` materializa exactamente estas columnas, ADR-036) y el serving (`/forecast` lee esas filas, ADR-044/045). Los `BEST_PARAMS` vigentes se tunearon sobre el set candidato recursion-safe (35); el ADR-040 §*re-evaluación* cubre la re-confirmación: el retrain compara campeón vs persistencia en cada corrida y solo promueve si mejora (la vara no depende de este ADR).
+**Implementación (fuente única de verdad):** el set vive en `ml.features.selected_features(target)`, que devuelve listas **distintas por target**. Lo consumen sin poder divergir el entrenamiento (`ml/train.py` con `build_feature_matrix(target, selected=True)`), el feature store (`feature_store_build.py`, ADR-035) y el serving (`/forecast` recursivo, ADR-042/043). Se conserva la imputación **0 + flag** de las autorregresivas (ADR-038), que hace el cold-start *inspeccionable*.
+
+### Métricas
+
+**Val** (notebooks 02/03: los 3 modelos tuneados sobre el candidato de 35, y el campeón Random Forest reajustado sobre el set de ganancia positiva):
+
+| Modelo / set | Feats | val RMSE | val R² |
+|---|---:|---:|---:|
+| **RF — ganancia positiva (petróleo)** | **27** | **227,5** | **0,902** |
+| RF — candidato (petróleo) | 35 | 227,3 | 0,903 |
+| XGBoost — candidato (petróleo) | 35 | 236,9 | 0,894 |
+| Ridge — candidato (petróleo) | 35 | 239,0 | 0,892 |
+| Persistencia (petróleo) | — | 250,6 | 0,881 |
+| **RF — ganancia positiva (gas)** | **19** | **576,6** | **0,861** |
+| RF — candidato (gas) | 35 | 580,1 | 0,859 |
+| Persistencia (gas) | — | 635,5 | 0,831 |
+
+**Test** (entrenamiento final `--final`: dev = train+val, evaluado una vez en test, con el set de ganancia positiva):
+
+| Target | Feats | test RMSE | test R² | persistencia (test) |
+|---|---:|---:|---:|---|
+| Petróleo (`prod_pet`) | 27 | **157,5** | **0,869** | 166,2 / 0,854 |
+| Gas (`prod_gas`) | 19 | **409,2** | **0,850** | 457,8 / 0,813 |
+
+Los dos targets **superan a la persistencia** en val y en test (criterio de promoción del ADR-039). El campeón es **Random Forest** con `BEST_PARAMS` petróleo `n_estimators=200, max_depth=24, max_features=0.5, min_samples_leaf=5` y gas `400/16/0.5/5`.
 
 ## Consecuencias
 
 **Positivas:**
-- Set **compacto** (~14 features fijas) que en val casi iguala al de 35 (RF 234.5 vs 227.8) → menos columnas a materializar y mantener (ADR-036), modelo más simple y rápido.
-- **Robustez a cold-start explícita:** al conservar las anclas estáticas, un pozo nuevo tiene señal (reservorio, profundidad, ubicación) aunque sus features autorregresivas estén en 0 + flag.
-- Decisión **empírica y auditable:** el ranking sale del notebook 02, reproducible y leakage-safe.
-- Baja `delta3` (ruido) detectada por el propio ranking.
+- Corte **empírico y auditable** (`imp_mean > 0`), sin umbral de parsimonia arbitrario; sale directo del ranking de los notebooks (reproducible, leakage-safe).
+- **Robustez a cold-start** en petróleo: las anclas estáticas caen del lado positivo y se conservan solas.
+- El campeón supera la persistencia en **val y test** con estos features e hiperparámetros.
+- Baja `delta3` (ruido) y las categóricas de imp ≤ 0, detectadas por el propio ranking.
 
 **Negativas / trade-offs:**
-- El cold-start **sigue siendo el punto débil**: sin la señal autorregresiva dominante, la predicción de pozos nuevos es intrínsecamente más pobre. Este ADR lo *mitiga* (anclas), no lo resuelve.
-- La importancia se midió sobre la **población general**; la calibración fina de cuántas estáticas conservar debería hacerse sobre la **subpoblación cold-start** (pendiente).
-- La erosión del *edge* sobre la persistencia en **test** sugiere posible cambio de distribución entre períodos; conviene monitorearlo y no sobre-vender la mejora del modelo.
-- El **contrato del feature store** (ADR-036) debe materializar exactamente estas columnas recursion-safe con paridad training-serving, y el forecast recursivo necesita además la **serie histórica** del pozo para sembrar la recursión (no solo la fila del mes base).
+- Más columnas en el store (27/19) y one-hot más grande por las categóricas (`empresa`, alta cardinalidad). Costo trivial al volumen (~6 k filas/tabla, ADR-035) pero real en tamaño de artefacto.
+- El corte conserva algunas categóricas con importancia **dentro de su propio ruido** (`imp ≈ 0,00–0,05 < imp_std`): candidatas a una poda futura con `imp > imp_std`.
+- **Cold-start de gas más débil:** sin anclas geográficas/físicas (imp ≤ 0), depende casi solo de `tipoestado` y categóricas. Mitigable con features de cold-start dedicadas en un rediseño futuro.
+- La importancia se midió sobre la **población general**; una calibración fina de las estáticas debería medirse sobre la **subpoblación cold-start** (pendiente).
+- El **store** (ADR-035) debe materializar exactamente estas columnas con paridad training-serving, y el forecast recursivo necesita la **serie histórica** del pozo para sembrar la recursión.
 
 ---
 
-> Relacionados: **ADR-033** (feature engineering base que este ADR extiende y poda), **ADR-039** (imputación 0 + flag, clave para el cold-start), **ADR-031** (universo train-only y anti-leakage; define qué pozo *tiene* fila), **ADR-036** (feature store: contrato de columnas a re-materializar), **ADR-034** (algoritmo y CV temporal, sobre cuyo campeón se midió la importancia) y **ADR-042** (modelo de gas: misma selección con features `prod_gas_*`). Metodología en `ml/selection.py` y `notebooks/02_feature_selection_pet.ipynb`.
+> Relacionados: **ADR-033** (feature engineering base que este ADR poda), **ADR-038** (imputación 0 + flag, clave para el cold-start), **ADR-031** (universo train-only y anti-leakage), **ADR-035** (feature store: columnas a materializar), **ADR-034** (algoritmo y CV temporal, sobre cuyo campeón se midió la importancia), **ADR-039** (campeón y criterio de promoción), **ADR-042/043** (forecast recursivo y precomputado que consumen `selected_features`) y **ADR-039** (modelo de gas: misma selección con `prod_gas_*`). Metodología en `ml/selection.py` y notebooks `02`/`03`.

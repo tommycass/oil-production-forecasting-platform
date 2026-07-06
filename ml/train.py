@@ -7,7 +7,7 @@ futuro). Permite probar distintos algoritmos e hiperparámetros (con/sin tuning 
 
 Todo el preprocesamiento (imputación de NaN por feature + flags, one-hot, escalado;
 sin clip ni log1p) vive en el ``Pipeline`` y se ajusta **solo con train / el train de
-cada fold** (ADR-039).
+cada fold** (ADR-038).
 
 **Tracking en MLflow (1.4/1.5, Rol 3):** el logging de experimentos y el model registry
 los enchufa el Rol 3 con ``--mlflow`` (delega en ``ml.registry.log_and_register``);
@@ -35,8 +35,8 @@ from ml.config import PROJECT_ROOT, TARGET, TARGETS
 
 MODELS_DIR = PROJECT_ROOT / "models"
 # Campeón según la comparación TUNEADA en val sobre el set recursion-safe (notebooks
-# 02/03 §3.1, ADR-043/044): random_forest supera a xgboost, ridge y la persistencia.
-# Se entrena siempre con el SET FINAL de la selección (`selected_features`, ADR-043;
+# 02/03 §3.1, ADR-041/042): random_forest supera a xgboost, ridge y la persistencia.
+# Se entrena siempre con el SET FINAL de la selección (`selected_features`, ADR-041;
 # ver train()), recursion-safe por construcción → sirve para el forecast recursivo.
 CHAMPION = "random_forest"
 MODELOS = ("ridge", "random_forest", "xgboost")
@@ -44,7 +44,7 @@ MODELOS = ("ridge", "random_forest", "xgboost")
 
 def _untuned_estimator(name: str, target: str = TARGET):
     """Estimador sin tunear: usa los **mejores hiperparámetros registrados** para el
-    ``target`` (``modeling.BEST_PARAMS[target]``, ADR-040), no defaults arbitrarios."""
+    ``target`` (``modeling.BEST_PARAMS[target]``, ADR-039), no defaults arbitrarios."""
     return modeling.make_estimator(name, target=target)
 
 
@@ -54,12 +54,12 @@ def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
     ``info`` trae el modelo, si fue tuneado, los mejores hiperparámetros y las
     métricas en train/val + la persistencia (baseline a batir, ADR-029). El
     ``pipeline`` devuelto es el artefacto a versionar/loguear (gancho para Rol 3).
-    ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
+    ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-039).
 
     Entrena **siempre con el set final de la selección** (``selected_features``,
-    ADR-043): el núcleo autorregresivo del target + las anclas estáticas del
+    ADR-041): el núcleo autorregresivo del target + las anclas estáticas del
     cold-start. Es el modelo único de producción, recursion-safe por construcción
-    → apto para el forecast recursivo de ``/forecast`` (ADR-044).
+    → apto para el forecast recursivo de ``/forecast`` (ADR-042).
     """
     ds, feats = modeling.build_feature_matrix(target=target, selected=True)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
@@ -112,11 +112,11 @@ def _print_info(info: dict) -> None:
 
 def train_final(model_name: str = CHAMPION, params: dict | None = None, target: str = TARGET):
     """Entrena el modelo final en **dev (train+val)** con los mejores
-    hiperparámetros registrados (``BEST_PARAMS``, ADR-040) y lo evalúa **una vez en
+    hiperparámetros registrados (``BEST_PARAMS``, ADR-039) y lo evalúa **una vez en
     test**. Es la confirmación final del campeón; no re-tunea. Devuelve ``(pipe, info)``.
-    ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-042).
+    ``target`` elige petróleo (``prod_pet``) o gas (``prod_gas``, ADR-039).
 
-    Usa **siempre el set final de la selección** (``selected_features``, ADR-043), igual que ``train``.
+    Usa **siempre el set final de la selección** (``selected_features``, ADR-041), igual que ``train``.
     """
     ds, feats = modeling.build_feature_matrix(target=target, selected=True)
     X_dev, y_dev, X_te, y_te = modeling.split_dev_test(ds, feats)
@@ -149,7 +149,7 @@ def _print_final(info: dict) -> None:
 
 def compare(target: str = TARGET) -> None:
     """Compara los 3 modelos sin tunear sobre val (como la sección 3 del notebook).
-    Sobre el set final de la selección (ADR-043), igual que el resto del entrenamiento."""
+    Sobre el set final de la selección (ADR-041), igual que el resto del entrenamiento."""
     ds, feats = modeling.build_feature_matrix(target=target, selected=True)
     X_tr, y_tr, X_va, y_va = modeling.split_train_val(ds, feats)
     tabla, _ = modeling.train_eval_models(X_tr, y_tr, X_va, y_va)
@@ -166,7 +166,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Entrenamiento del forecast (Rol 1.3)")
     parser.add_argument("--model", choices=MODELOS, default=CHAMPION)
     parser.add_argument("--target", choices=TARGETS, default=TARGET,
-                        help="Qué predecir: prod_pet (petróleo) o prod_gas (gas, ADR-042)")
+                        help="Qué predecir: prod_pet (petróleo) o prod_gas (gas, ADR-039)")
     parser.add_argument("--no-tune", action="store_true",
                         help="No tunear: usa hiperparámetros por defecto (más rápido)")
     parser.add_argument("--compare", action="store_true", help="Comparar los 3 modelos sin tunear (no guarda)")
@@ -181,7 +181,7 @@ def main() -> None:
 
     # sufijo de gas en el nombre del archivo para no pisar el modelo de petróleo
     # (petróleo mantiene su nombre histórico: random_forest.joblib, etc.). El modelo
-    # es recursion-safe por defecto (ADR-043/044), así que no lleva sufijo extra: es
+    # es recursion-safe por defecto (ADR-041/042), así que no lleva sufijo extra: es
     # el único campeón de producción, usado por /predict y /forecast.
     suf = "" if args.target == "prod_pet" else f"_{args.target}"
 

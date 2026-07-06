@@ -1,13 +1,13 @@
-"""Servicio del endpoint ``/forecast``: **pronóstico mensual** (ADR-044/045).
+"""Servicio del endpoint ``/forecast``: **pronóstico mensual** (ADR-042/043).
 
 Reemplaza el mock de declinación lineal de la Fase 1 por el pronóstico real, con dos
 caminos que dan **el mismo resultado** (mismo modelo Production + mismas features):
 
-1. **Precomputado (lookup, ADR-045):** el job de retrain deja el pronóstico de 12 meses
+1. **Precomputado (lookup, ADR-043):** el job de retrain deja el pronóstico de 12 meses
    de cada pozo en ``features.pred_produccion_pozo_mensual`` (``_gas``). Si el pozo tiene
    precómputo **fresco** (su ``ultimo_observado`` coincide con el último mes del store),
    se sirve directo de la tabla: sin modelo ni MLflow en el request.
-2. **On-the-fly (fallback, ADR-044):** sin precómputo (o si quedó viejo respecto del
+2. **On-the-fly (fallback, ADR-042):** sin precómputo (o si quedó viejo respecto del
    store), se corre el **motor recursivo** (``ml.forecast``) con el modelo de MLflow,
    como siempre. La elección es **transparente** para el usuario.
 
@@ -17,7 +17,7 @@ data:[{date, prod}]}``) **no cambia**. Se agrega solo un parámetro **opcional**
 
 El paso unitario (predecir un mes) es el modelo que antes servía ``/predict``; ``/forecast``
 lo **subsume** (un rango de un mes = la vieja predicción de un mes), así que ``/predict`` se
-retira (ADR-035 queda reemplazado por ADR-044).
+retira (ADR-035 queda reemplazado por ADR-042).
 """
 
 from datetime import date
@@ -29,11 +29,11 @@ from app.services.feature_reader import (
 )
 from app.services.model_loader import get_loader
 
-# Horizonte máximo del forecast, en **meses** (ADR-044). Además de evitar respuestas
+# Horizonte máximo del forecast, en **meses** (ADR-042). Además de evitar respuestas
 # enormes, **acota la acumulación de error** del recursivo: cada paso se apoya en la
 # predicción anterior, así que a más meses, menos confiable. Se mide desde el último mes
 # con dato real del pozo. Si el rango pedido lo supera, se **recorta** hasta este tope.
-# El precómputo (ADR-045) genera exactamente este mismo horizonte por pozo.
+# El precómputo (ADR-043) genera exactamente este mismo horizonte por pozo.
 MAX_FORECAST_MONTHS = 12
 
 
@@ -89,7 +89,7 @@ def _ventana(ultimo_obs: date, date_start: date, date_end: date) -> tuple[date, 
 def _desde_precomputo(
     idpozo: int, date_start: date, date_end: date, target: str
 ) -> list[dict] | None:
-    """Intenta servir el pronóstico desde la tabla precomputada (ADR-045).
+    """Intenta servir el pronóstico desde la tabla precomputada (ADR-043).
 
     Devuelve la lista ``[{date, prod}]`` o ``None`` si no se puede (sin precómputo, o
     **stale**: el store tiene un mes más nuevo que el que vio el precómputo, o la ventana
@@ -134,7 +134,7 @@ def get_forecast(
     ``date_start <= date_end`` y que el pozo existe en el DW.
 
     Sirve el **precómputo** del retrain si está fresco (lookup, sin tocar el modelo);
-    si no, corre el **motor recursivo** con el modelo de MLflow (ADR-045: mismo
+    si no, corre el **motor recursivo** con el modelo de MLflow (ADR-043: mismo
     resultado, transparente para el usuario).
 
     ``target`` elige petróleo (``prod_pet``, default) o gas (``prod_gas``).
@@ -147,12 +147,12 @@ def get_forecast(
     """
     idpozo = int(id_well)
 
-    # 1) camino precomputado (ADR-045): lookup si hay precómputo fresco para el pozo.
+    # 1) camino precomputado (ADR-043): lookup si hay precómputo fresco para el pozo.
     precomputado = _desde_precomputo(idpozo, date_start, date_end, target)
     if precomputado is not None:
         return precomputado
 
-    # 2) fallback on-the-fly (ADR-044): features del mes base + serie observada +
+    # 2) fallback on-the-fly (ADR-042): features del mes base + serie observada +
     #    estáticos, leídos del feature store. ValueError si el pozo no tiene serie
     #    (fuera del universo / sin historia).
     base_features, series, static = get_history_for_forecast(idpozo, target)

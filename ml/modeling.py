@@ -41,8 +41,8 @@ NEEDS_SCALING = {"reg_lineal"}
 
 # El set de features vive en ml/features (fuente única de verdad, compartida con el
 # feature store y el serving): `recursion_safe_cols` filtra el set CANDIDATO que rankean
-# los notebooks 02/03 (ADR-043/044) y `selected_features` es el set FINAL del modelo
-# (la selección del ADR-043). Se re-exportan acá por compatibilidad con los notebooks.
+# los notebooks 02/03 (ADR-041/042) y `selected_features` es el set FINAL del modelo
+# (la selección del ADR-041). Se re-exportan acá por compatibilidad con los notebooks.
 from ml.features import NON_RECURSION_SAFE, recursion_safe_cols, selected_features  # noqa: F401,E402
 
 
@@ -60,10 +60,10 @@ def build_feature_matrix(
     El one-hot NO se hace acá: vive en el ``Pipeline`` (``build_pipeline``) para
     poder ajustarlo por fold durante la CV. Si no se pasa ``ds``, se construye con
     ``ml.dataset.build_basic_dataset`` para el ``target`` indicado (``prod_pet`` por
-    defecto; ``prod_gas`` para el modelo de gas, ADR-042).
+    defecto; ``prod_gas`` para el modelo de gas, ADR-039).
 
     ``selected=True`` deja **el set final del modelo** (``selected_features``, la
-    selección del ADR-043): es lo que entrena producción (``ml/train.py``).
+    selección del ADR-041): es lo que entrena producción (``ml/train.py``).
     ``recursion_safe=True`` deja el **set candidato** recursion-safe completo
     (``recursion_safe_cols``): es sobre el que rankean los notebooks 02/03. Por
     defecto ambos ``False`` (todas las features crudas del dataset).
@@ -157,9 +157,9 @@ def get_models(random_state: int = RANDOM_STATE) -> dict:
 
 
 # Mejores hiperparámetros registrados (del tuning con CV temporal sobre el set
-# **recursion-safe**, ADR-043/044). Indexados por **target**: petróleo (notebook
+# **recursion-safe**, ADR-041/042). Indexados por **target**: petróleo (notebook
 # 02_feature_selection_pet §3.1) y gas (notebook 03_feature_selection_gas §3.1);
-# ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos en vez de
+# ambos campeones se justifican en el ADR-039. Si no se tunea, se usan estos en vez de
 # defaults arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
 # ahora se mantienen acá como "últimos mejores registrados".)
 # Nota: XGBoost coincidió entre petróleo y gas (mismo grid + misma semilla del random
@@ -198,7 +198,7 @@ def make_estimator(
 ):
     """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[target][name]``
     si no se pasan): los **últimos mejores hiperparámetros registrados** para ese
-    ``target`` (petróleo / gas, ADR-040)."""
+    ``target`` (petróleo / gas, ADR-039)."""
     params = BEST_PARAMS[target][name] if params is None else params
     if name == "ridge":
         return Ridge(**params)

@@ -55,7 +55,7 @@ api/
 | `app/core/rate_limit.py` | Define el `Limiter` de slowapi y lee el límite desde la variable de entorno `RATE_LIMIT` (por defecto `60/minute`). |
 | `app/core/demo_data.py` | Catálogo mock de 20 pozos de prueba (`POZO-001` a `POZO-020`). Remanente de la Fase 1; ya no lo usa `/forecast` (que ahora usa el modelo de ML). |
 | `app/services/wells.py` | Consulta el DW real (`gold.dim_pozo`, `gold.fact_produccion_mensual`) para `/wells` y valida la existencia de un pozo para `/forecast` (`well_exists_in_dw`). |
-| `app/services/forecast.py` | Orquesta el **pronóstico recursivo mensual** (ADR-044): lee la serie histórica (feature store), corre el motor `ml.forecast`, acota el horizonte y da la respuesta `{date, prod}`. |
+| `app/services/forecast.py` | Orquesta el **pronóstico recursivo mensual** (ADR-042): lee la serie histórica (feature store), corre el motor `ml.forecast`, acota el horizonte y da la respuesta `{date, prod}`. |
 | `app/services/model_loader.py` | Carga y sirve el modelo de cada target desde el MLflow registry (stage Production), con recarga automática. |
 | `app/services/feature_reader.py` | Contrato de lectura de la serie histórica del feature store para el forecast (implementación a cargo del Rol 2). |
 
@@ -153,7 +153,7 @@ La API expone métricas en formato Prometheus en `GET /metrics` mediante `promet
 |-----------|------|-----------|-------------|
 | `date_query` | fecha (YYYY-MM-DD) | Sí | Fecha para la cual se consulta el listado. No puede ser una fecha futura. |
 
-**GET /api/v1/forecast** — pronóstico **mensual recursivo** con el modelo de ML (ADR-044): un punto por mes (fecha = 1° del mes), **solo meses futuros**; el horizonte se acota a 12 meses desde el último dato del pozo (si el rango lo supera, se recorta). Respuesta con el contrato de Fase 1: `{id_well, data:[{date, prod}]}`.
+**GET /api/v1/forecast** — pronóstico **mensual recursivo** con el modelo de ML (ADR-042): un punto por mes (fecha = 1° del mes), **solo meses futuros**; el horizonte se acota a 12 meses desde el último dato del pozo (si el rango lo supera, se recorta). Respuesta con el contrato de Fase 1: `{id_well, data:[{date, prod}]}`.
 
 | Parámetro | Tipo | Requerido | Descripción |
 |-----------|------|-----------|-------------|

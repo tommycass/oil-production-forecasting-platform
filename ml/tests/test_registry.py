@@ -1,4 +1,4 @@
-"""Tests de la decisión de promoción a Production (criterio ADR-040, Rol 3 1.5).
+"""Tests de la decisión de promoción a Production (criterio ADR-039, Rol 3 1.5).
 
 Se testea la **función pura** ``promotion_decision`` en aislamiento (sin MLflow ni
 datos): dado el test RMSE del candidato, el de la persistencia y el del Production

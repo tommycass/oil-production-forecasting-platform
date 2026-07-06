@@ -22,7 +22,7 @@ tags_metadata = [
     {
         "name": "Forecast",
         "description": "Monthly production forecast per well for a date range, "
-        "computed recursively with the ML model from the MLflow registry (ADR-044).",
+        "computed recursively with the ML model from the MLflow registry (ADR-042).",
     },
     {
         "name": "Health",

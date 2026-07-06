@@ -1,6 +1,6 @@
 # Handoff → Tommy: `/forecast` recursivo + retiro de `/predict` + modelo recursion-safe
 
-**De:** Micol (ML) · **Contexto:** rediseño del forecast (ADR-044). Toca la API/serving y el modelo en MLflow.
+**De:** Micol (ML) · **Contexto:** rediseño del forecast (ADR-042). Toca la API/serving y el modelo en MLflow.
 
 ## Qué cambió
 
@@ -13,11 +13,11 @@
 
 ### 2. `/predict` se **eliminó** (subsumido por `/forecast`)
 - `/forecast` con un rango de **un mes** = exactamente lo que hacía `/predict`. Se borraron `routes/predict.py`, `schemas/predict.py`, `tests/test_predict.py` y su registro en `main.py`.
-- **ADR-035 quedó reemplazado por ADR-044.** El gas se sigue sirviendo por `?target=prod_gas`.
+- El diseño del endpoint quedó definido por **ADR-042** (`/forecast` recursivo). El gas se sigue sirviendo por `?target=prod_gas`.
 
 ### 3. El modelo es **recursion-safe por defecto** (MLflow)
-- `ml/train.py` ahora entrena **siempre** con el set recursion-safe (35 features). El modelo que **registres/promuevas de acá en adelante es recursion-safe** — es el que `/forecast` necesita para poder recursar. El modelo viejo del ADR-040 (set completo de 40) **no sirve** para el recursivo.
-- `BEST_PARAMS` re-tuneados sobre ese set (RF petróleo `200/24`, gas `400/16`, `min_samples_leaf=5`; ver `ml/modeling.py`). Números actualizados (val/test) en el **ADR-040** y el **README**.
+- `ml/train.py` ahora entrena **siempre** con el set recursion-safe (35 features). El modelo que **registres/promuevas de acá en adelante es recursion-safe** — es el que `/forecast` necesita para poder recursar. El modelo viejo del ADR-039 (set completo de 40) **no sirve** para el recursivo.
+- `BEST_PARAMS` re-tuneados sobre ese set (RF petróleo `200/24`, gas `400/16`, `min_samples_leaf=5`; ver `ml/modeling.py`). Números actualizados (val/test) en el **ADR-039** y el **README**.
 
 ## Qué tenés que hacer / verificar
 

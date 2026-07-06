@@ -10,10 +10,10 @@ son filas ``periodo <= TRAIN_END`` (pasado).
 transformar (clip / log1p) los volúmenes de producción **empeora** el modelo lineal
 y es **neutro** para los árboles (transformación monótona): en RMSE sobre un target
 de cola pesada, los pozos grandes dominan el error y su producción extrema **es
-señal**, no ruido (ADR-039). Los **errores de dato** (producción negativa) se
+señal**, no ruido (ADR-038). Los **errores de dato** (producción negativa) se
 **descartan** en ``ml.dataset.build_basic_dataset``, no se imputan.
 
-Tratamiento de NaN por grupo de features (ADR-039):
+Tratamiento de NaN por grupo de features (ADR-038):
 
 | Grupo             | Features                                                     | NaN              |
 |-------------------|-------------------------------------------------------------|------------------|
@@ -40,7 +40,7 @@ from ml import dataset
 # La distinción importa para el NaN: en los volúmenes/variación un faltante es
 # "no hay historia" (-> 0 + flag), mientras que en las físicas/operativa conviene
 # la mediana de train.
-# Se listan las features de volumen de ambos targets (petróleo y gas, ADR-042);
+# Se listan las features de volumen de ambos targets (petróleo y gas, ADR-039);
 # `build_preprocessor` se queda solo con las presentes en cada dataset (`present`).
 VOLUMES = [
     "prod_pet", "prod_gas", "prod_agua",

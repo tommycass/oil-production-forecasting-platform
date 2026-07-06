@@ -1,17 +1,17 @@
-# Título: ADR-045: Precómputo del forecast en el retrain (serving por lookup, transparente)
+# Título: ADR-043: Precómputo del forecast en el retrain (serving por lookup, transparente)
 
 **Estado:** Aceptada
 
 ## Contexto
 
-`/forecast` (ADR-044) corre el motor recursivo **en cada request**: lee la historia del pozo
+`/forecast` (ADR-042) corre el motor recursivo **en cada request**: lee la historia del pozo
 del feature store, carga el modelo Production y encadena hasta 12 predicciones. Funciona y
 cumple el RNF de latencia (~0,6 s el peor caso), pero tiene costos estructurales:
 
 - **El modelo está en el request path:** si MLflow no está disponible o no hay versión
   Production cargada, el endpoint devuelve 503 aunque los datos estén sanos.
 - **Cómputo repetido:** los datos cambian **una vez por mes** (ingesta mensual, ADR-018) y el
-  modelo cambia **una vez por retrain** (mensual, ADR-041). Entre medio, cada request al mismo
+  modelo cambia **una vez por retrain** (mensual, ADR-040). Entre medio, cada request al mismo
   pozo recalcula exactamente el mismo resultado.
 - **Latencia atada al recompute:** ~45 ms por paso recursivo por pozo; aceptable, pero no es
   un lookup.
@@ -43,13 +43,13 @@ el contrato y los valores de `/forecast` no deben cambiar para el usuario.
   modelo nuevo **todavía no existe** (el retrain corre después, día 6 vs día 5) → precomputaría
   con el modelo viejo y habría que recalcular igual tras el retrain. Además acoplaría el
   refresh del DW (Fase 2) a las deps de `ml/` (sklearn/mlflow), que es exactamente lo que la
-  revisión del ADR-036 desacopló.
+  revisión del ADR-035 desacopló.
 - **Job/schedule propio (descartado):** duplica orquestación (otro schedule, otro sensor)
   para algo que tiene un disparador natural; suma superficie de fallas y coordinación.
 - **Como paso final del job de retrain (elegido):** el asset `forecast_precomputado` corre
   después de `features_refrescadas → modelo_reentrenado` — el único momento en que hay
   **store fresco + modelo Production recién evaluado/promovido**. Hereda el schedule mensual
-  y el sensor del retrain (ADR-041) sin orquestación nueva.
+  y el sensor del retrain (ADR-040) sin orquestación nueva.
 
 ### 3. Cómo garantizar que el precómputo = on-the-fly (transparencia)
 
@@ -73,12 +73,12 @@ el contrato y los valores de `/forecast` no deben cambiar para el usuario.
 
 ## Decisión
 
-1. **Nuevo asset `forecast_precomputado`** (Dagster, grupo retrain, ADR-041): tras reentrenar,
+1. **Nuevo asset `forecast_precomputado`** (Dagster, grupo retrain, ADR-040): tras reentrenar,
    corre `ml.forecast.recursive_forecast` para **cada pozo** del store con el modelo
    **Production** de cada target y escribe `features.pred_produccion_pozo_mensual`
    (petróleo) y `..._gas` (gas): 12 filas por pozo (`idpozo`, `periodo` pronosticado,
    `prediccion`, `ultimo_observado`, `model_name`, `model_version`, `generado_en`).
-   - Horizonte = **12 meses** = `MAX_FORECAST_MONTHS` del endpoint (ADR-044): el precómputo
+   - Horizonte = **12 meses** = `MAX_FORECAST_MONTHS` del endpoint (ADR-042): el precómputo
      cubre todo lo que la API puede llegar a servir.
    - Si un target **no tiene modelo en Production**, se saltea (warning + metadata); la API
      sigue por on-the-fly. Un pozo cuyo forecast falla se saltea sin voltear el batch.
@@ -88,7 +88,7 @@ el contrato y los valores de `/forecast` no deben cambiar para el usuario.
 2. **La API sirve el precómputo como lookup, con fallback:** `get_forecast` intenta primero
    la tabla precomputada; la usa solo si (a) hay filas para el pozo, (b) están **frescas**
    (`ultimo_observado` == `max(periodo)` del store) y (c) cubren **completa** la ventana
-   pedida. Si no, camino on-the-fly de siempre (ADR-044). El **contrato no cambia** en nada:
+   pedida. Si no, camino on-the-fly de siempre (ADR-042). El **contrato no cambia** en nada:
    mismos params, misma respuesta, mismos códigos (404/422 salen de las mismas reglas y el
    503 solo puede ocurrir en el fallback).
 3. El contrato de las tablas queda documentado en `docs/feature-store.md` (sección
@@ -124,9 +124,9 @@ el contrato y los valores de `/forecast` no deben cambiar para el usuario.
 
 ---
 
-> Relacionados: **ADR-044** (motor recursivo que este ADR precomputa), **ADR-041** (job de
-> retrain que lo orquesta), **ADR-043**/**ADR-046** (set de features de la selección), **ADR-036** (feature store,
-> fuente de las features y de la señal de frescura), **ADR-040** (criterio de promoción del
+> Relacionados: **ADR-042** (motor recursivo que este ADR precomputa), **ADR-040** (job de
+> retrain que lo orquesta), **ADR-041** (set de features de la selección), **ADR-035** (feature store,
+> fuente de las features y de la señal de frescura), **ADR-039** (criterio de promoción del
 > modelo Production que consume el batch). Implementación:
 > `data_pipeline/orchestration/forecast_precompute.py` (batch),
 > `data_pipeline/orchestration/retrain.py` (asset), `api/app/services/forecast.py` +

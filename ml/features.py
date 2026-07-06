@@ -23,7 +23,7 @@ from sklearn.neighbors import NearestNeighbors
 
 def engineered_feature_names(target: str = "prod_pet") -> list[str]:
     """Nombres (en orden de salida) de las features de ingeniería para un
-    ``target`` dado (``prod_pet`` o ``prod_gas``, ADR-042).
+    ``target`` dado (``prod_pet`` o ``prod_gas``, ADR-039).
 
     Bloques:
     - **Históricas (7):** las 4 autorregresivas con prefijo del target
@@ -73,14 +73,14 @@ ENGINEERED_FEATURES = engineered_feature_names("prod_pet")
 
 # --- Set de features del modelo (fuente única de verdad) --------------------
 
-# Features NO recursion-safe (ADR-043/044): no se pueden recalcular en un mes futuro
+# Features NO recursion-safe (ADR-041/042): no se pueden recalcular en un mes futuro
 # desde la trayectoria del propio target. Genéricas (mismo nombre para los dos targets);
 # la producción CRUZADA (el otro target) la resuelve `recursion_safe_cols`.
 NON_RECURSION_SAFE = ["prod_vecinos_mean", "water_cut", "prod_agua", "tef"]
 
 
 def recursion_safe_cols(feature_cols: list[str], target: str = "prod_pet") -> list[str]:
-    """Filtra las features NO recursion-safe para el forecast recursivo (ADR-043/044).
+    """Filtra las features NO recursion-safe para el forecast recursivo (ADR-041/042).
 
     Quita ``prod_vecinos_mean`` (cross-well), ``water_cut``/``prod_agua``/``tef`` (series
     medidas que no se forecastean) y la producción **cruzada** (el otro target). El resto
@@ -94,11 +94,11 @@ def recursion_safe_cols(feature_cols: list[str], target: str = "prod_pet") -> li
 
 
 def selected_features(target: str = "prod_pet") -> list[str]:
-    """Set de features del modelo (ADR-043): las de **ganancia positiva** de la
+    """Set de features del modelo (ADR-041): las de **ganancia positiva** de la
     selección por *permutation importance* en val — aquellas cuya permutación
     **empeora** el RMSE de val (``imp_mean > 0``, ``ml.selection.select_features``).
-    Es lo que entrena `ml/train.py`, lo que materializa el feature store (ADR-036) y
-    lo que consume el forecast recursivo (ADR-044) — única fuente de verdad de las
+    Es lo que entrena `ml/train.py`, lo que materializa el feature store (ADR-035) y
+    lo que consume el forecast recursivo (ADR-042) — única fuente de verdad de las
     tres puntas, así no pueden divergir.
 
     Los sets de petróleo y gas **difieren** (cada target rankeó distinto): **27**
@@ -354,7 +354,7 @@ def add_engineered_features(
 ) -> pd.DataFrame:
     """Agrega las features de ingeniería sobre el panel mensual ``(pozo, mes)``,
     para el ``target`` dado (``prod_pet`` por defecto; ``prod_gas`` para el modelo
-    de gas, ADR-042).
+    de gas, ADR-039).
 
     Las 4 features autorregresivas (roll3/delta1/lag12/acum6) y los vecinos se
     calculan sobre la columna ``target``; ``water_cut`` es físico (agua/(agua+pet))

@@ -50,7 +50,7 @@ def add_basic_baselines(ds, target=TARGET):
     es la media de {t, t-1, t-2} (media móvil 3m); el estacional se arma con el lag
     de calendario de 11 meses (mismo mes del año anterior respecto del target t+1).
     Todas usan solo información hasta el mes t (anti-leakage). Sirve para petróleo
-    (``prod_pet``) y gas (``prod_gas``, ADR-042).
+    (``prod_pet``) y gas (``prod_gas``, ADR-039).
     """
     ds = ds.copy()
     ds["b_persist"] = ds[target]
@@ -64,7 +64,7 @@ def evaluate_baselines(target: str = TARGET) -> dict[str, dict]:
     ``{split: {nombre: {mae, rmse, n}}}``.
 
     Los splits **sin filas** se **omiten** (no quedan en el dict): pasa al backfillear
-    con ``RETRAIN_ASOF`` una fecha anterior a ``VAL_END`` (ADR-041) — no se puede
+    con ``RETRAIN_ASOF`` una fecha anterior a ``VAL_END`` (ADR-040) — no se puede
     evaluar un período que todavía no existe a esa fecha. Igual a nivel baseline: si
     no hay filas usables, queda ``n=0`` con métricas ``nan`` (sin reventar)."""
     ds = add_basic_baselines(build_basic_dataset(target=target), target=target)
@@ -131,7 +131,7 @@ def log_to_mlflow(results: dict[str, dict], target: str = TARGET) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Baselines deterministas (ADR-029)")
     parser.add_argument("--target", choices=TARGETS, default=TARGET,
-                        help="Qué predecir: prod_pet (petróleo) o prod_gas (gas, ADR-042)")
+                        help="Qué predecir: prod_pet (petróleo) o prod_gas (gas, ADR-039)")
     parser.add_argument("--no-mlflow", action="store_true", help="No loguear en MLflow")
     args = parser.parse_args()
 

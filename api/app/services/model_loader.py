@@ -1,6 +1,6 @@
 """Carga los modelos de producción desde el MLflow Model Registry y los mantiene al día.
 
-Hay **un modelo por target** (ADR-042): petróleo (`produccion-forecast`) y gas
+Hay **un modelo por target** (ADR-039): petróleo (`produccion-forecast`) y gas
 (`produccion-forecast-gas`). Cada uno se maneja con su propio ``ModelLoader``, y el
 módulo expone un registro ``MODEL_LOADERS`` indexado por target.
 
@@ -8,7 +8,7 @@ Patrón por modelo: singleton + polling en daemon thread.
 - Al arrancar la API se llama a load(), que carga la versión en stage Production.
 - start_polling() lanza un hilo que revisa cada POLL_INTERVAL segundos si hay una
   nueva versión en Production y, si la hay, la carga sin reiniciar el servidor
-  (ADR-038, despliegue automático del modelo).
+  (ADR-037, despliegue automático del modelo).
 - Si MLflow no está disponible al arrancar, la API inicia igual; /forecast retorna 503
   para el target cuyo modelo no esté cargado.
 """

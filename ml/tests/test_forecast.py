@@ -1,4 +1,4 @@
-"""Tests del motor de forecast recursivo (``ml/forecast.py``, ADR-044).
+"""Tests del motor de forecast recursivo (``ml/forecast.py``, ADR-042).
 
 Prueban la mecánica pura con un modelo *stub*, sin pipeline entrenado ni base de datos:
 - paso 1 usa las **features del mes base** (del store), sin recalcular;

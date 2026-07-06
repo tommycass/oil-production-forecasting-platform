@@ -52,7 +52,7 @@ def build_basic_dataset(
     """Dataset básico para el forecast t+1, ya procesado **anti-leakage**.
 
     ``target`` elige qué se predice: ``prod_pet`` (petróleo, default) o ``prod_gas``
-    (gas, ADR-042). Cambia el **universo** (pozos con ese ``target`` > 0 en train),
+    (gas, ADR-039). Cambia el **universo** (pozos con ese ``target`` > 0 en train),
     el **target** (``y_next`` = ``target`` del mes t+1) y las **features de ingeniería
     autorregresivas** (calculadas sobre ``target``). Las features crudas
     (``prod_pet``, ``prod_gas``, ``prod_agua``, …) se mantienen para ambos: para el
@@ -60,7 +60,7 @@ def build_basic_dataset(
     como señal cruzada (ambas son del mes t, no del futuro → sin leakage).
 
     ``asof`` recorta el dataset a ``periodo <= asof`` (reproceso "como si fuera el día
-    X", ADR-041): así el reentreno de una fecha pasada **no usa datos posteriores**
+    X", ADR-040): así el reentreno de una fecha pasada **no usa datos posteriores**
     (anti-leakage del backfill). Si es ``None``, se toma de la env var ``RETRAIN_ASOF``
     (``ml.config.retrain_asof``); si tampoco está, no recorta. El recorte se aplica
     **antes** de definir el universo y las features, así todo respeta el corte.
@@ -95,7 +95,7 @@ def build_basic_dataset(
     df["anio"] = pd.to_numeric(df["anio"], errors="coerce")  # solo para construir periodo
     df["periodo"] = pd.to_datetime(dict(year=df.anio, month=df.mes, day=1))
 
-    # reproceso por fecha (ADR-041): recortar a periodo <= asof ANTES de definir el
+    # reproceso por fecha (ADR-040): recortar a periodo <= asof ANTES de definir el
     # universo y las features, para no usar datos posteriores al reentrenar una fecha
     # pasada (anti-leakage del backfill). asof explícito > env var RETRAIN_ASOF.
     asof = retrain_asof() if asof is None else pd.Timestamp(asof)
