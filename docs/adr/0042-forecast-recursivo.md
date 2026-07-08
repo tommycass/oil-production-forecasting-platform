@@ -53,6 +53,7 @@ Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**, **conse
 4. **Horizonte máximo en meses** (`MAX_FORECAST_MONTHS = 12`), medido desde el último dato del pozo; si el rango lo supera se **recorta** hasta ahí.
 5. **Casos borde:**
    - `date_start > date_end` → 422.
+   - `target` fuera de `{prod_pet, prod_gas}` → 422 (validado por tipo en el schema).
    - Rango sin meses futuros (todo el rango es pasado) → 422.
    - Rango que **empieza** más allá del horizonte máximo → 422; si solo el final lo supera, se **recorta** (200 con menos meses).
    - Pozo inexistente en el DW → 404; pozo sin serie en el feature store (fuera del universo, ADR-031) → 404.

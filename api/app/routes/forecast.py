@@ -26,7 +26,7 @@ router = APIRouter()
     responses={
         403: {"description": "Invalid or missing API key"},
         404: {"description": "Well does not exist in the DW, or has no history in the feature store"},
-        422: {"description": "date_start is after date_end, or the range has no future months to forecast"},
+        422: {"description": "date_start is after date_end, the range has no future months to forecast, or target is not one of prod_pet/prod_gas"},
         429: {"description": "Rate limit exceeded"},
         503: {"description": "Model not available (MLflow unreachable or no Production version)"},
     },
