@@ -145,7 +145,7 @@ Los dos targets **superan a la persistencia** en val y en test (criterio de prom
 - Baja `delta3` (ruido) y las categóricas de imp ≤ 0, detectadas por el propio ranking.
 
 **Negativas / trade-offs:**
-- Más columnas en el store (27/19) y one-hot más grande por las categóricas (`empresa`, alta cardinalidad). Costo trivial al volumen (~6 k filas/tabla, ADR-035) pero real en tamaño de artefacto.
+- Más columnas en el store (27/19) y one-hot más grande por las categóricas (`empresa`, alta cardinalidad). Costo trivial al volumen (~320 k filas/tabla, ADR-035) pero real en tamaño de artefacto.
 - El corte conserva algunas categóricas con importancia **dentro de su propio ruido** (`imp ≈ 0,00–0,05 < imp_std`): candidatas a una poda futura con `imp > imp_std`.
 - **Cold-start de gas más débil:** sin anclas geográficas/físicas (imp ≤ 0), depende casi solo de `tipoestado` y categóricas. Mitigable con features de cold-start dedicadas en un rediseño futuro.
 - La importancia se midió sobre la **población general**; una calibración fina de las estáticas debería medirse sobre la **subpoblación cold-start** (pendiente).
@@ -153,4 +153,4 @@ Los dos targets **superan a la persistencia** en val y en test (criterio de prom
 
 ---
 
-> Relacionados: **ADR-033** (feature engineering base que este ADR poda), **ADR-038** (imputación 0 + flag, clave para el cold-start), **ADR-031** (universo train-only y anti-leakage), **ADR-035** (feature store: columnas a materializar), **ADR-034** (algoritmo y CV temporal, sobre cuyo campeón se midió la importancia), **ADR-039** (campeón y criterio de promoción), **ADR-042/043** (forecast recursivo y precomputado que consumen `selected_features`) y **ADR-039** (modelo de gas: misma selección con `prod_gas_*`). Metodología en `ml/selection.py` y notebooks `02`/`03`.
+> Relacionados: **ADR-033** (feature engineering base que este ADR poda), **ADR-038** (imputación 0 + flag, clave para el cold-start), **ADR-031** (universo train-only y anti-leakage), **ADR-035** (feature store: columnas a materializar), **ADR-034** (algoritmo y CV temporal, sobre cuyo campeón se midió la importancia), **ADR-039** (campeón, criterio de promoción y modelo de gas — cuyo set **difiere en estructura**, no es solo cambiar el prefijo `prod_gas_*`), **ADR-042/043** (forecast recursivo y precomputado que consumen `selected_features`). Metodología en `ml/selection.py` y notebooks `02`/`03`.

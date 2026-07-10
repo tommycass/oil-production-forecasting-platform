@@ -41,7 +41,7 @@ Un job de Dagster **`retrain`**, particionado por día, que encadena tres assets
 
 Disparo: **`retrain_mensual`** (Schedule, día 6) + **`retrain_por_features_nuevas`** (Sensor sobre `max(periodo)` del feature store, con cursor). Ambos requieren el dagster-daemon.
 
-> **Dos modelos (ADR-039).** El job reentrena ambos en la misma corrida: un solo refresh de features (las dos tablas) seguido de dos entrenamientos (uno por target). Es lo que pide el ADR-039 ("la orquestación del retrain debería reentrenar ambos modelos").
+> **Dos modelos (ADR-039).** El job reentrena ambos en la misma corrida: un solo refresh de features (las dos tablas) seguido de dos entrenamientos (uno por target), como corresponde a mantener un modelo de registry por target (ADR-039).
 
 ### Paso de entrenamiento (configurable, desacoplado de Rol 1/3)
 

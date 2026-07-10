@@ -35,7 +35,7 @@ Esto es viable **gracias al set de features recursion-safe** (ADR-041): las feat
 
 ### 5. Horizonte máximo
 
-- El `/forecast` ya acotaba el rango (ADR previo: `MAX_FORECAST_DAYS`). Con la salida mensual, el tope pasa a **meses** (`MAX_FORECAST_MONTHS = 12`), medido **desde el último mes con dato del pozo** (es lo que acota la cantidad de pasos recursivos). Además de evitar respuestas enormes, **acota la acumulación de error**: un pronóstico recursivo a muchos meses es cada vez menos confiable.
+- El rango se acota con un tope en **meses** (`MAX_FORECAST_MONTHS = 12`), medido **desde el último mes con dato del pozo** (es lo que acota la cantidad de pasos recursivos). Además de evitar respuestas enormes, **acota la acumulación de error**: un pronóstico recursivo a muchos meses es cada vez menos confiable.
 - **Qué hacer si el rango pedido supera el tope: recortar (elegido) vs rechazar.** Se **recorta** hasta el mes máximo permitido y se devuelven los meses hasta ahí (responde "hasta donde sí"), en vez de rechazar toda la request. Como el contrato de respuesta de Fase 1 es fijo (`{id_well, data:[{date, prod}]}`), el recorte **no** lleva un campo `truncated`; se documenta en la descripción del endpoint. Solo se responde **422** si el rango **empieza** más allá del tope (no queda ningún mes dentro del horizonte para devolver).
 
 ## Decisión
@@ -67,7 +67,7 @@ Reemplazar el mock de `/forecast` por un **forecast recursivo mensual**, **conse
 - `/forecast` pasa a ser un pronóstico real multi-paso, con una sola familia de modelo (el de un paso) reutilizada, **sin cambiar el contrato de Fase 1** (`{id_well, data:[{date, prod}]}`).
 - Aprovecha directamente el diseño recursion-safe (ADR-041): las features se recalculan solas en cada paso.
 - Salida mensual coherente con la granularidad del modelo; sin supuestos diarios artificiales.
-- **Un solo endpoint de pronóstico**: al subsumir a `/predict`, se reduce la superficie de la API (menos código y tests que mantener).
+- **Un solo endpoint de pronóstico**: `/forecast` cubre también la predicción de un mes (un rango de un mes = una predicción), reduciendo la superficie de la API (menos código y tests que mantener).
 - **Latencia dentro del RNF (< 5 s):** medido ~**0,6 s** en el peor caso (12 pasos sobre un pozo con ~20 años de historia); ~32 ms de recompute + ~13 ms de predict por paso. El horizonte máximo acota el costo. Hay un test de humo de regresión en `ml/tests/test_forecast.py`.
 - Borde `date_start` en el pasado resuelto de forma simple (solo futuro).
 

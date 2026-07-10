@@ -23,7 +23,7 @@ Comparación **tuneada en val** (entrenando en train, CV temporal para elegir hi
 
 | Modelo (tuneado) | val RMSE | val R² |
 |---|---|---|
-| **Random Forest** | **227,1** | **0,903** |
+| **Random Forest** | **227,3** | **0,903** |
 | XGBoost | 236,9 | 0,894 |
 | Ridge (L2) | 239,0 | 0,892 |
 | Persistencia (baseline) | 250,6 | 0,881 |
@@ -32,10 +32,12 @@ Comparación **tuneada en val** (entrenando en train, CV temporal para elegir hi
 
 | Modelo (tuneado) | val RMSE | val R² |
 |---|---|---|
-| **Random Forest** | **580,4** | **0,859** |
+| **Random Forest** | **580,1** | **0,859** |
 | XGBoost | 580,5 | 0,859 |
 | Ridge (L2) | 591,4 | 0,854 |
 | Persistencia (baseline) | 635,5 | 0,831 |
+
+> Estas cifras son del **candidato de 35 features** (comparación de algoritmos). El modelo que finalmente se sirve usa el **set de ganancia positiva** (27 petróleo / 19 gas, ADR-041): RF val RMSE **227,5** (petróleo) / **576,6** (gas). Ver ADR-041 para la tabla completa candidato-vs-set-final.
 
 **Lectura (vale para ambos targets):**
 - **Random Forest** es el **mejor en val** y el que **más le gana a la persistencia** en los dos. Sobreajusta (train RMSE < val), pero **generaliza mejor** que el resto en val.
@@ -61,15 +63,13 @@ Cada campeón se entrenó en **dev (train+val)** con sus hiperparámetros y se e
 1. **Dos modelos independientes, uno por target** (no multi-salida): mismo encuadre (regresión tabular global, t+1, grano (pozo, mes)) y **mismo código parametrizado por `target`**; cada modelo se entrena, evalúa, versiona y promueve por separado.
 2. **Campeón por target: Random Forest tuneado en ambos**, por mejor RMSE/R² en val y superar a la persistencia (**confirmado en test**). Hiperparámetros: petróleo `n_estimators=200, max_depth=24, max_features=0.5, min_samples_leaf=5`; gas `n_estimators=400, max_depth=16, max_features=0.5, min_samples_leaf=5`.
 3. **Universo de cada target (train-only, anti-leakage):** pozos con ese target `> 0` en al menos un mes, definido **solo con `train`** (`periodo <= TRAIN_END`). El gasífero es más amplio (`prod_gas` está en 79% de los meses vs 64% de `prod_pet`). Excluye ceros estructurales (inyección/sumidero) sin usar la etiqueta `tipopozo`.
-4. **Criterio de promoción (Staging→Production), compartido y por separado por target:** un modelo se promueve solo si **supera a la persistencia en RMSE en val** y lo **confirma en `test`** (evaluación única, al promover). Entre candidatos, gana el de **menor val RMSE**.
+4. **Criterio de promoción (Staging→Production), compartido y por separado por target:** implementado en `ml/registry.py::promotion_decision`, evalúa **dos condiciones sobre `test` RMSE**: el candidato pasa a Production solo si (a) **supera a la persistencia** en test RMSE (vara del ADR-029) y (b) **mejora al Production vigente** en test RMSE (o no hay ninguno → primer campeón). Si no, queda en `Staging`. La **selección del algoritmo/hiperparámetros** entre candidatos se hace en **val** (notebooks); el registry solo decide la promoción con `test`.
 5. **El campeón no es fijo:** se **re-evalúa en cada reentreno**. Los grids son chicos (ADR-034); con grids más amplios XGBoost podría alcanzar a RF. La métrica de cada corrida decide, no este ADR de forma permanente.
 6. **Alineación de código:** los mejores hiperparámetros viven en `ml/modeling.py::BEST_PARAMS[target]`; `python -m ml.train --target {prod_pet|prod_gas}` entrena el campeón tuneado y `--final` confirma en test.
 
-Este ADR **refina la elección preliminar del ADR-034** (XGBoost sobre números sin tunear → **Random Forest** sobre números tuneados), para los dos targets.
-
 ### Reuso del pipeline y anti-leakage (gas y petróleo)
 
-El modelo de gas **no duplica código**: se **parametriza el target** del pipeline de `ml/` (`config.py`, `dataset.py`, `features.py`, `modeling.py`, `baseline.py`). El de gas reutiliza tal cual las familias de modelos (ADR-034), el baseline (ADR-029, persistencia sobre gas), el split temporal y la CV (ADR-028/034), el preprocesamiento (ADR-038) y el one-hot con `DESCONOCIDO` (ADR-032). Las features de ingeniería se **espejan sobre el target** (`prod_gas_*` en vez de `prod_pet_*`), con el mismo mecanismo de lag por calendario (ADR-033) → misma garantía anti-leakage. Mantener `prod_pet(t)` como feature del modelo de gas es válido (es una medida del mes `t`, no del futuro). La protección anti-leakage es **temporal** (features en `t`, target en `t+1`; estadísticos por fold; universo solo-train) y **no depende de qué variable sea el target**.
+El modelo de gas **no duplica código**: se **parametriza el target** del pipeline de `ml/` (`config.py`, `dataset.py`, `features.py`, `modeling.py`, `baseline.py`). El de gas reutiliza tal cual las familias de modelos (ADR-034), el baseline (persistencia sobre gas), el split temporal y la CV (ADR-028/034), el preprocesamiento (ADR-038) y el one-hot con `DESCONOCIDO` (ADR-032). Las features de ingeniería se **espejan sobre el target** (`prod_gas_*` en vez de `prod_pet_*`), con el mismo mecanismo de lag por calendario (ADR-033) → misma garantía anti-leakage. El **target cruzado** (`prod_pet` en el modelo de gas y viceversa) **no entra** al set: el forecast es recursivo y no es *recursion-safe* (ADR-041). La protección anti-leakage es **temporal** (features en `t`, target en `t+1`; estadísticos por fold; universo solo-train) y **no depende de qué variable sea el target**.
 
 ## Gestión de los dos modelos
 
@@ -90,7 +90,7 @@ El modelo de gas **no duplica código**: se **parametriza el target** del pipeli
 - Random Forest es **más pesado para servir** que XGBoost o un lineal (200–400 árboles según target → más memoria/latencia), y son **dos** modelos RF. Si pesara, XGBoost (segundo, muy cerca en val) es la alternativa liviana.
 - El **gap train→val** de RF indica sobreajuste en ambos: margen para más regularización en próximos reentrenos.
 - La **confirmación en `test`** ya se ejecutó una vez por target; en sucesivos reentrenos, test debe usarse con moderación para no "ajustar a test".
-- `water_cut` (agua/(agua+petróleo)) aporta menos al gas que al petróleo; se evalúa en el notebook.
+- `water_cut` y `prod_vecinos_mean` quedan **fuera del set** de ambos modelos por no ser recursion-safe (ADR-041), no solo del de gas.
 - Mantener **dos campeones** exige comparación/promoción **automatizada** para los dos (encaja con el job de retrain, ADR-040).
 
 ---

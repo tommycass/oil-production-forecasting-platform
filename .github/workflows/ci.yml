@@ -69,7 +69,7 @@ jobs:
           pip install -r api/requirements.txt
           pip install -r api/requirements-dev.txt
 
-      # /predict fue subsumido por /forecast (ADR-044): los tests de serving ahora son
+      # /predict fue subsumido por /forecast (ADR-042): los tests de serving ahora son
       # los de forecast. Este entorno (api reqs: pandas+sklearn) es el único de CI con
       # las deps de ml/, así que acá corren también los tests del feature store y del
       # precómputo (en test-pipeline se saltean por importorskip al no haber sklearn).

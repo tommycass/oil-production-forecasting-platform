@@ -53,10 +53,10 @@ def _train_cmd() -> list[str]:
 
     `modelo_reentrenado` le agrega `--target <target>` por cada modelo (petróleo / gas).
     Por defecto orquesta `ml.baseline`, que entrena/evalúa y **loguea el run en MLflow**
-    (cadena completa demostrable). `train.py` (campeón) aún **no** loguea a MLflow a
-    propósito (el tracking/registro es de Rol 3, ver el handoff de MLflow); cuando Rol 3
-    enchufe ese logging (p. ej. `ml.train --mlflow`), basta exportar
-    `RETRAIN_CMD="python -m ml.train --mlflow"`. No se hardcodea para no pisar su zona.
+    (cadena completa demostrable). Para reentrenar y **promover** el campeón se exporta
+    `RETRAIN_CMD="python -m ml.train --mlflow"` (loguea, registra y promueve con el
+    criterio del ADR-039, `ml.registry.log_and_register`). Se deja configurable por env
+    var para no hardcodear el comando de entrenamiento.
     """
     import sys
 

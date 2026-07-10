@@ -55,8 +55,11 @@ Un hilo daemon dentro del proceso de la API consulta el MLflow registry cada N s
 | Parámetro | Default | Env var |
 |---|---|---|
 | Intervalo de polling | 300 segundos (5 min) | `MODEL_POLL_INTERVAL_SECONDS` |
-| Nombre del modelo | `produccion-forecast` | `MLFLOW_MODEL_NAME` |
+| Nombre del modelo (petróleo) | `produccion-forecast` | `MLFLOW_MODEL_NAME` |
+| Nombre del modelo (gas) | `produccion-forecast-gas` | `MLFLOW_MODEL_NAME_GAS` |
 | URI del tracking server | `http://localhost:5000` | `MLFLOW_TRACKING_URI` |
+
+**Dos modelos, un loader por target (ADR-039).** El código expone un registro `MODEL_LOADERS` indexado por target (`api/app/services/model_loader.py::MODEL_NAME_BY_TARGET`): un `ModelLoader` para `prod_pet` y otro para `prod_gas`, cada uno con su nombre de registry y su polling independiente. El arranque es **degradado por target**: si falla la carga de uno, el otro sigue sirviendo y solo ese `target` de `/forecast` responde `503`.
 
 **Comportamiento al arrancar:**
 - Si `load()` tiene éxito: modelo disponible de inmediato, poller iniciado.

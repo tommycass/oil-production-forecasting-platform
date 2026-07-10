@@ -44,7 +44,7 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 
 **Alternativas:** entrenar con todos los pozos / filtrar por `tipopozo = 'Petrolífero'` / filtrar por producción observada.
 
-**Decisión:** restringir a **pozos petroleros**, definidos como los que tienen **al menos un mes de `prod_pet > 0`** (4.281 pozos). Incluir pozos de inyección/sumidero/gasíferos puros metería un 35% de ceros estructurales que no corresponden al fenómeno a modelar. El criterio por producción observada es más robusto que confiar solo en la etiqueta `tipopozo` (que tiene nulos).
+**Decisión:** restringir a **pozos petroleros**, definidos como los que tienen **al menos un mes de `prod_pet > 0`** (4.281 pozos). Incluir pozos de inyección/sumidero/gasíferos puros infla los ceros estructurales que no corresponden al fenómeno a modelar. El filtro saca los ceros de esos tipos de pozo; en el universo petrolero **aún queda ~25% de meses en cero** (pozos petroleros parados, ADR-031), que sí son parte del problema (predecir 0 es válido). El criterio por producción observada es más robusto que confiar solo en la etiqueta `tipopozo` (que tiene nulos).
 
 ### 4. Tratamiento del target y métrica de evaluación
 
@@ -60,7 +60,7 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 **Alternativas:**
 - **Split aleatorio:** ❌ inválido en series temporales — mezcla fechas y produce *leakage* (el modelo "ve el futuro").
 - **Split temporal simple (train/test):** correcto pero no deja un conjunto de **validación** para elegir modelo/hiperparámetros sin tocar test.
-- **Validación walk-forward / ventana expansiva:** la más robusta, pero más costosa de implementar; se deja como mejora futura.
+- **Validación walk-forward (re-ajuste rodante del corte de evaluación):** la más robusta como esquema de *evaluación*, pero más costosa de implementar; se deja como mejora futura. (Distinto del *expanding-window* que sí se usa para la **CV del tuning** en ADR-034: ese aplica dentro de train para elegir hiperparámetros, no para mover el corte de test.)
 - **Split temporal de 3 vías, global por fecha (elegida):** dev (train+val) y test separados por fecha, y dentro de dev otro corte temporal train/val.
 
 **Decisión:** split **temporal de 3 vías**, con **corte global por fecha** (todos los pozos comparten el mismo límite temporal, para que nunca se use el futuro de un pozo al predecir otro), en proporciones **0,8/0,2 dev/test** y **0,8/0,2 train/val dentro de dev**. Cortes (sobre el universo petrolero, 347.063 registros):
@@ -72,7 +72,7 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 | **dev** (train+val) | 2006-01 → 2024-11 | 80,5% | — |
 | **test** | 2024-12 → 2026-04 | 19,5% | estimación final, intacto |
 
-Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**. Se eligieron cortes que **clavan las proporciones pedidas** y dejan ventanas de val (~16 meses) y test (~17 meses) que **superan los 12 meses**, cubriendo un ciclo estacional completo. Los cortes son **fechas fijas**, por lo que el split es **reproducible**.
+Resultado sobre este universo: dev/test ≈ **80/20** y train/val (dentro de dev) ≈ **80/20**. El split se define por **fecha fija** (no por conteo exacto de filas), así que las proporciones son **aproximadas** a las pedidas (0,8/0,2) y varían levemente según el conjunto de filas que se cuente (p. ej. el dataset ya procesado del ADR-031). Las ventanas de val (~16 meses) y test (~17 meses) **superan los 12 meses**, cubriendo un ciclo estacional completo, y al ser fechas fijas el split es **reproducible**.
 
 > **Nota:** 2026 está incompleto (datos hasta abril) y cae en *test*; es aceptable porque es el período más reciente y real, pero se documenta explícitamente.
 

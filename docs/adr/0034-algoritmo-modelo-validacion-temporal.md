@@ -4,7 +4,7 @@
 
 ## Contexto
 
-El ADR-029 fijó la **vara de éxito** (la persistencia: un modelo solo se justifica si la supera) y dijo textual que *"el algoritmo del modelo que intentará superar este baseline se documentará en un ADR aparte"*. Este ADR toma esa decisión: **qué familia de modelo** se usa y **cómo se valida y tunea** sin leakage temporal.
+El ADR-029 fijó la **vara de éxito** (la persistencia: un modelo solo se justifica si la supera) y remitió el algoritmo a un ADR aparte (ADR-029: *"el algoritmo… se documenta en ADR-034"*). Este ADR toma esa decisión: **qué familia de modelo** se usa y **cómo se valida y tunea** sin leakage temporal.
 
 El problema (ADR-028) es una **regresión tabular global** de `prod_pet(t+1)`. El dataset (ADR-031/033) tiene ~380 columnas (mayormente dummies ralas del one-hot, ADR-032), target muy asimétrico (cola larga + ~25% de ceros) y fuerte autocorrelación. La comparación se hace **entrenando en train y midiendo en val** (ADR-028); `test` queda intacto. Métricas: **RMSE** (m³, penaliza errores grandes) y **R²**.
 
@@ -14,7 +14,7 @@ La implementación reutilizable vive en `ml/modeling.py` y la comparación (tuni
 
 ### A. Familia de modelo
 
-Comparación en **val** (entrenando en train), con preprocesamiento ajustado solo en train (imputación por mediana; estandarización solo para el lineal). Configuración inicial (sin tuning fino):
+Comparación en **val** (entrenando en train), con preprocesamiento ajustado solo en train (imputación **por feature** —esquema definido en ADR-038, con `0 + flag` en volúmenes/lags y mediana en físicas—; estandarización solo para el lineal). Configuración inicial (sin tuning fino):
 
 | Modelo | val RMSE (m³) | val R² | Comentario |
 |---|---|---|---|
@@ -42,16 +42,16 @@ Además, **todo el preprocesamiento que aprende de los datos vive dentro de un `
 ### C. Codificación del target
 
 - **Target en escala original (elegido para el baseline de modelado):** directo, métricas interpretables en m³.
-- **`log1p(target)` (mejora futura):** la fuerte asimetría infla el RMSE y suele mejorar con la transformación; se evaluará tras fijar el algoritmo.
+- **`log1p(target)` (descartado, ver ADR-038):** se evaluó tras fijar el algoritmo y **empeora** el RMSE (rompe la relación casi lineal `prod_pet(t) ≈ prod_pet(t+1)`; ridge val RMSE 496,6 vs 242,8). El target se deja en escala original.
 
 ## Decisión
 
-1. **Modelo campeón: XGBoost** (gradient boosting), por mejor RMSE/R² en val y por manejar no-linealidades, interacciones y NaN. Se mantiene la **regresión Ridge** como comparador simple e interpretable.
+1. **Familias evaluadas: Ridge (L2), Random Forest y XGBoost.** La comparación en val (tabla arriba) muestra que árboles y boosting capturan no-linealidades e interacciones que el lineal no. El **campeón se fija tras el tuning de hiperparámetros en ADR-039** (Random Forest en ambos targets, `ml/train.py::CHAMPION = "random_forest"`); Ridge se mantiene como comparador simple e interpretable.
 2. **Validación/tuning con CV temporal** (*expanding window* por mes) + **`Pipeline`** que reajusta el preprocesamiento por fold. Se tunea con **random search** (`ParameterSampler`): cada hiperparámetro es una lista de valores con sentido (3–5) y se muestrean **`n_iter` configuraciones** por modelo (controla el tiempo), evaluando cada una con `cross_val_score`:
    - Ridge: la `alpha` (lambda L2).
    - Random Forest y XGBoost: profundidad (acotada, sin `None`), learning rate, n_estimators, min_samples_leaf / min_child_weight, subsample, etc.
    Los hiperparámetros finales salen de esta búsqueda; el scoring es **RMSE** (`neg`).
-3. **Criterio de promoción (model registry, MLflow):** un modelo pasa a *Staging→Production* solo si **supera a la persistencia en RMSE en val** y lo confirma en `test`. El run, los params, las métricas y el modelo quedan registrados en MLflow (ADR-030) para comparación y reproducibilidad.
+3. **Criterio de promoción (model registry, MLflow):** el criterio definitivo lo fija ADR-039 y lo implementa `ml/registry.py::promotion_decision`: un modelo pasa a Production solo si **supera a la persistencia en test RMSE** y **mejora al Production vigente** (o es el primer campeón). El run, los params, las métricas y el modelo quedan registrados en MLflow (ADR-030) para comparación y reproducibilidad.
 
 ## Consecuencias
 

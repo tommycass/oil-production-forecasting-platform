@@ -37,7 +37,7 @@ Adoptar la **persistencia (naive forecast: ŷ(t+1) = y(t))** como **baseline pri
 
 - **Umbral de éxito:** el modelo de ML deberá **superar a la persistencia en RMSE en val** (≈ 250,6 m³ sobre el dataset unificado) y confirmarlo en test. La métrica primaria de comparación es **RMSE** (ADR-034); las cifras exactas del baseline se obtienen con `python -m ml.baseline`.
 - **Interpretación de negocio:** la persistencia equivale al supuesto operativo por defecto — *"el pozo seguirá produciendo lo mismo que el último mes"*. Es el punto de comparación natural para cualquier decisión.
-- **Implementación:** el baseline se calcula de forma determinista (sin entrenamiento) y se registra en MLflow como un "run" más, con las mismas métricas y el mismo split que los modelos, para comparación directa.
+- **Implementación:** el baseline se calcula de forma determinista (sin entrenamiento) y se registra en MLflow como un "run" más, con las mismas métricas y el mismo split que los modelos, para comparación directa. La misma regla de persistencia se aplica a **ambos targets** (`prod_pet` y `prod_gas`): `ml.baseline` está parametrizado por target, así que el modelo de gas (ADR-039) tiene su propia persistencia sobre `prod_gas` como vara.
 
 ## Consecuencias
 
