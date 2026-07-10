@@ -34,7 +34,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 from ml import features as ml_features
-from ml.config import TARGET, TARGETS, TRAIN_END, retrain_asof
+from ml.config import TARGET, TARGETS, retrain_asof, split_bounds
 from ml.dataset import BASIC_CATEGORICAL_FEATURES, BASIC_NUMERIC_FEATURES
 
 FEATURE_SCHEMA = "features"
@@ -107,10 +107,14 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET, asof=None) -> p
     if asof is not None:
         df = df[df.periodo <= asof].reset_index(drop=True)
 
+    # train_end derivado del anchor (última fecha tras el recorte asof, ADR-028). El store
+    # conserva esa fila (y_next NULL), así el training deriva el mismo anchor y queda alineado.
+    train_end, _ = split_bounds(df["periodo"].max())
+
     # universo train-only (anti-leakage de selección, ADR-031): pozos con `target`>0
-    # en algún mes <= TRAIN_END. El universo gasífero es distinto (y más amplio) que el
+    # en algún mes <= train_end. El universo gasífero es distinto (y más amplio) que el
     # petrolero (ADR-039).
-    pozos = df.loc[(df[target] > 0) & (df.periodo <= TRAIN_END), "idpozo"].unique()
+    pozos = df.loc[(df[target] > 0) & (df.periodo <= train_end), "idpozo"].unique()
     df = df[df.idpozo.isin(pozos)].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
     # descartar producción negativa (errores de dato, ADR-038) antes del feature eng.

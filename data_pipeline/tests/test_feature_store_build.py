@@ -15,14 +15,24 @@ from ml import features as mlf  # noqa: E402
 from ml.dataset import BASIC_CATEGORICAL_FEATURES  # noqa: E402
 
 
-def _panel_crudo(n_pozos=6, meses=5) -> pd.DataFrame:
-    """Panel mensual sintético con TODAS las columnas crudas (como vendría de Bronze)."""
+# El split se deriva de la última fecha (train = ~33 meses atrás, ADR-028); el panel debe
+# abarcar más de TEST_MONTHS+VAL_MONTHS (17+16) para que el universo train-only no quede vacío.
+_MESES = 40
+
+
+def _panel_crudo(n_pozos=6, meses=_MESES, inicio="2018-01-01") -> pd.DataFrame:
+    """Panel mensual sintético con TODAS las columnas crudas (como vendría de Bronze).
+
+    Genera ``meses`` meses **consecutivos** por pozo desde ``inicio`` (cruza años), para
+    que haya historia suficiente para el split temporal derivado (ADR-028)."""
+    base = pd.Timestamp(inicio)
     filas = []
     for p in range(n_pozos):
-        for m in range(1, meses + 1):
+        for k in range(meses):
+            per = base + pd.DateOffset(months=k)
             fila = {
-                "idpozo": str(100 + p), "anio": "2020", "mes": str(m),
-                "prod_pet": str(10.0 + p + m), "prod_gas": "5", "prod_agua": "2",
+                "idpozo": str(100 + p), "anio": str(per.year), "mes": str(per.month),
+                "prod_pet": str(10.0 + p + k), "prod_gas": "5", "prod_agua": "2",
                 "tef": "30", "profundidad": "2500",
                 "coordenadax": str(1.0 + p), "coordenaday": str(2.0 + p),
             }
@@ -42,7 +52,7 @@ def test_columnas_y_grano():
     )
     assert list(out.columns) == esperadas
     assert str(out["idpozo"].dtype).startswith("int")
-    assert len(out) == 6 * 5  # left-join: conserva todas las filas
+    assert len(out) == 6 * _MESES  # left-join + universo completo: conserva todas las filas
 
 
 def test_solo_features_seleccionadas():
@@ -105,22 +115,23 @@ def test_build_gas_usa_features_de_gas_y_su_target():
 def test_asof_recorta_datos_posteriores(monkeypatch):
     # Reproceso "como si fuera el día X" (ADR-040): asof recorta el crudo a
     # periodo <= asof ANTES de universo/features, para no usar datos posteriores al
-    # reentrenar una fecha pasada (anti-leakage del backfill). El panel va de 2020-01
-    # a 2020-05; con asof=2020-03 no debe quedar ninguna fila posterior.
+    # reentrenar una fecha pasada (anti-leakage del backfill). El panel va de 2018-01 a
+    # 2021-04; con asof=2021-01 no debe quedar ninguna fila posterior (y queda historia
+    # suficiente para que el split derivado tenga train no vacío).
     monkeypatch.delenv("RETRAIN_ASOF", raising=False)
-    panel = _panel_crudo(n_pozos=2, meses=5)
-    recortado = fsb.build_store_features(panel, asof="2020-03-01")
-    assert recortado["periodo"].max() == pd.Timestamp("2020-03-01")
+    panel = _panel_crudo(n_pozos=2)
+    recortado = fsb.build_store_features(panel, asof="2021-01-01")
+    assert recortado["periodo"].max() == pd.Timestamp("2021-01-01")
 
     # Sin asof, la corrida normal conserva hasta el último mes disponible.
     completo = fsb.build_store_features(panel)
-    assert completo["periodo"].max() == pd.Timestamp("2020-05-01")
+    assert completo["periodo"].max() == pd.Timestamp("2021-04-01")
 
 
 def test_asof_toma_env_var_si_no_es_explicito(monkeypatch):
     # asof=None cae en la env var RETRAIN_ASOF (mismo mecanismo que ml.config.retrain_asof),
     # así el subproceso de retrain la respeta sin pasarla explícita.
-    monkeypatch.setenv("RETRAIN_ASOF", "2020-02-01")
-    panel = _panel_crudo(n_pozos=2, meses=5)
+    monkeypatch.setenv("RETRAIN_ASOF", "2021-02-01")
+    panel = _panel_crudo(n_pozos=2)
     out = fsb.build_store_features(panel)  # asof=None → lee env
-    assert out["periodo"].max() == pd.Timestamp("2020-02-01")
+    assert out["periodo"].max() == pd.Timestamp("2021-02-01")

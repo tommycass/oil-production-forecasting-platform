@@ -58,9 +58,9 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 ### 5. Estrategia de validación temporal (split)
 
 **Alternativas:**
-- **Split aleatorio:** ❌ inválido en series temporales — mezcla fechas y produce *leakage* (el modelo "ve el futuro").
+- **Split aleatorio:** inválido en series temporales — mezcla fechas y produce *leakage* (el modelo "ve el futuro").
 - **Split temporal simple (train/test):** correcto pero no deja un conjunto de **validación** para elegir modelo/hiperparámetros sin tocar test.
-- **Validación walk-forward (re-ajuste rodante del corte de evaluación):** la más robusta como esquema de *evaluación*, pero más costosa de implementar; se deja como mejora futura. (Distinto del *expanding-window* que sí se usa para la **CV del tuning** en ADR-034: ese aplica dentro de train para elegir hiperparámetros, no para mover el corte de test.)
+- **Validación walk-forward (re-ajuste rodante del corte de evaluación):** la más robusta como esquema de *evaluación*. Se adopta en su forma de **origen rodante por reproceso** (Revisión jul-2026, abajo): los cortes se derivan de la fecha de referencia, así cada reentreno evalúa sobre el holdout más reciente. (Distinto del *expanding-window* que sí se usa para la **CV del tuning** en ADR-034: ese aplica dentro de train para elegir hiperparámetros, no para mover el corte de test.)
 - **Split temporal de 3 vías, global por fecha (elegida):** dev (train+val) y test separados por fecha, y dentro de dev otro corte temporal train/val.
 
 **Decisión:** split **temporal de 3 vías**, con **corte global por fecha** (todos los pozos comparten el mismo límite temporal, para que nunca se use el futuro de un pozo al predecir otro), en proporciones **0,8/0,2 dev/test** y **0,8/0,2 train/val dentro de dev**. Cortes (sobre el universo petrolero, 347.063 registros):
@@ -72,7 +72,9 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 | **dev** (train+val) | 2006-01 → 2024-11 | 80,5% | — |
 | **test** | 2024-12 → 2026-04 | 19,5% | estimación final, intacto |
 
-Resultado sobre este universo: dev/test ≈ **80/20** y train/val (dentro de dev) ≈ **80/20**. El split se define por **fecha fija** (no por conteo exacto de filas), así que las proporciones son **aproximadas** a las pedidas (0,8/0,2) y varían levemente según el conjunto de filas que se cuente (p. ej. el dataset ya procesado del ADR-031). Las ventanas de val (~16 meses) y test (~17 meses) **superan los 12 meses**, cubriendo un ciclo estacional completo, y al ser fechas fijas el split es **reproducible**.
+Resultado sobre este universo: dev/test ≈ **80/20** y train/val (dentro de dev) ≈ **80/20**. Las proporciones son **aproximadas** a las pedidas (0,8/0,2) porque el split se define por fecha (no por conteo de filas) y varían levemente según el conjunto que se cuente (p. ej. el dataset ya procesado del ADR-031). Las ventanas de val (~16 meses) y test (~17 meses) **superan los 12 meses**, cubriendo un ciclo estacional completo.
+
+> **Revisión (jul-2026): cortes derivados en vez de fechas fijas.** Los límites del split se **derivan** de la última fecha observada (`max(periodo)`) con **largos de ventana fijos** (`TEST_MONTHS=18`, `VAL_MONTHS=16`; `ml.config.split_bounds`), no de constantes hardcodeadas. Motivo: el reproceso por fecha (`asof`, ADR-040) y la llegada de meses nuevos deben **correr la ventana** para que el reentreno aprenda de datos nuevos y evalúe sobre un holdout que el modelo no vio (origen rodante). Sigue siendo **reproducible**: queda anclado al `asof`/`max(periodo)`, y sobre el snapshot actual (`max`=2026-05) reproduce **exactamente** la tabla de arriba (`train_end`=2023-07, `val_end`=2024-11). El test deja de ser una cola congelada única y pasa a ser "los últimos 18 meses".
 
 > **Nota:** 2026 está incompleto (datos hasta abril) y cae en *test*; es aceptable porque es el período más reciente y real, pero se documenta explícitamente.
 
@@ -87,7 +89,7 @@ Resultado sobre este universo: dev/test ≈ **80/20** y train/val (dentro de dev
 **Negativas / trade-offs:**
 - El target sesgado obliga a **cuidar transformación y métrica**; un modelo ingenuo sobre el target crudo puede dominar por outliers.
 - El universo petrolero descrito acá es el del modelo de petróleo; el modelo de gas usa su **universo gasífero análogo** (pozos con `prod_gas > 0`, train-only) con el mismo criterio (ADR-039).
-- El split por volumen concentra el test en una **ventana reciente y corta** en el tiempo (aunque amplia en registros); mitigado porque cubre >12 meses. Una validación **walk-forward** sería más robusta y queda como mejora futura.
+- El split concentra el test en una **ventana reciente** (los últimos 18 meses; amplia en registros y >12 meses). Con los cortes derivados (Revisión jul-2026) esa ventana **se corre en cada reproceso** → cada reentreno se evalúa sobre un holdout distinto (origen rodante), no sobre una cola fija.
 - `prod_pet` como target fija el alcance; `tipo_de_recurso` se **descarta como feature** por ser constante.
 
 ---

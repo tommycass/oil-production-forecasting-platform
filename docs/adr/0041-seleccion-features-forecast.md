@@ -131,8 +131,8 @@ Fijar el set del modelo en las **features de ganancia positiva** (`imp_mean > 0`
 
 | Target | Feats | test RMSE | test R² | persistencia (test) |
 |---|---:|---:|---:|---|
-| Petróleo (`prod_pet`) | 27 | **157,5** | **0,869** | 166,2 / 0,854 |
-| Gas (`prod_gas`) | 19 | **409,2** | **0,850** | 457,8 / 0,813 |
+| Petróleo (`prod_pet`) | 27 | **156,5** | **0,868** | 165,2 / 0,853 |
+| Gas (`prod_gas`) | 19 | **408,2** | **0,850** | 455,7 / 0,813 |
 
 Los dos targets **superan a la persistencia** en val y en test (criterio de promoción del ADR-039). El campeón es **Random Forest** con `BEST_PARAMS` petróleo `n_estimators=200, max_depth=24, max_features=0.5, min_samples_leaf=5` y gas `400/16/0.5/5`.
 

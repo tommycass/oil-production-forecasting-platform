@@ -53,17 +53,17 @@ Cada campeón se entrenó en **dev (train+val)** con sus hiperparámetros y se e
 
 | Target | dev RMSE | dev R² | **test RMSE** | **test R²** | persistencia test (RMSE / R²) |
 |---|---|---|---|---|---|
-| **Petróleo** (n_dev 271.498) | 160,1 | 0,959 | **157,5** | **0,869** | 166,2 / 0,854 |
-| **Gas** (n_dev 309.996) | 375,4 | 0,943 | **409,2** | **0,850** | 457,8 / 0,813 |
+| **Petróleo** (n_dev 271.498) | 160,1 | 0,959 | **156,5** | **0,868** | 165,2 / 0,853 |
+| **Gas** (n_dev 309.996) | 375,3 | 0,943 | **408,2** | **0,850** | 455,7 / 0,813 |
 
-**Ambos superan a la persistencia en test.** El RMSE absoluto de test es menor que el de val porque el período de test tiene producciones de menor magnitud (la persistencia también baja); el **R²** es el comparable y se mantiene (~0,87 petróleo, ~0,85 gas). El margen sobre la persistencia se erosiona algo en test (petróleo ~5%, gas ~11% en RMSE), coherente con lo que anticipa el ADR-041: fuera de val el *edge* del modelo se achica, pero los dos generalizan y baten su baseline.
+**Ambos superan a la persistencia en test.** El RMSE absoluto de test es menor que el de val porque el período de test tiene producciones de menor magnitud (la persistencia también baja); el **R²** es el comparable y se mantiene (~0,87 petróleo, ~0,85 gas). El margen sobre la persistencia se erosiona algo en test (petróleo ~5%, gas ~10% en RMSE), coherente con lo que anticipa el ADR-041: fuera de val el *edge* del modelo se achica, pero los dos generalizan y baten su baseline.
 
 ## Decisión
 
 1. **Dos modelos independientes, uno por target** (no multi-salida): mismo encuadre (regresión tabular global, t+1, grano (pozo, mes)) y **mismo código parametrizado por `target`**; cada modelo se entrena, evalúa, versiona y promueve por separado.
 2. **Campeón por target: Random Forest tuneado en ambos**, por mejor RMSE/R² en val y superar a la persistencia (**confirmado en test**). Hiperparámetros: petróleo `n_estimators=200, max_depth=24, max_features=0.5, min_samples_leaf=5`; gas `n_estimators=400, max_depth=16, max_features=0.5, min_samples_leaf=5`.
 3. **Universo de cada target (train-only, anti-leakage):** pozos con ese target `> 0` en al menos un mes, definido **solo con `train`** (`periodo <= TRAIN_END`). El gasífero es más amplio (`prod_gas` está en 79% de los meses vs 64% de `prod_pet`). Excluye ceros estructurales (inyección/sumidero) sin usar la etiqueta `tipopozo`.
-4. **Criterio de promoción (Staging→Production), compartido y por separado por target:** implementado en `ml/registry.py::promotion_decision`, evalúa **dos condiciones sobre `test` RMSE**: el candidato pasa a Production solo si (a) **supera a la persistencia** en test RMSE (vara del ADR-029) y (b) **mejora al Production vigente** en test RMSE (o no hay ninguno → primer campeón). Si no, queda en `Staging`. La **selección del algoritmo/hiperparámetros** entre candidatos se hace en **val** (notebooks); el registry solo decide la promoción con `test`.
+4. **Criterio de promoción (Staging→Production), compartido y por separado por target:** implementado en `ml/registry.py::promotion_decision`, evalúa **dos condiciones sobre `test` RMSE**: el candidato pasa a Production solo si (a) **supera a la persistencia** en test RMSE (vara del ADR-029) y (b) **mejora al Production vigente** en test RMSE (o no hay ninguno → primer campeón). Si no, queda en `Staging`. **El RMSE del vigente se obtiene re-evaluándolo en vivo** sobre la misma ventana de test del candidato (`_incumbent_test_rmse`), no de una métrica guardada de otra corrida: con los cortes derivados (ADR-028 Revisión jul-2026) la ventana se corre en cada reentreno, así que candidato, persistencia y vigente se comparan sobre el **mismo holdout** (cada uno predice su t+1 sobre las mismas filas). La **selección del algoritmo/hiperparámetros** entre candidatos se hace en **val** (notebooks); el registry solo decide la promoción con `test`.
 5. **El campeón no es fijo:** se **re-evalúa en cada reentreno**. Los grids son chicos (ADR-034); con grids más amplios XGBoost podría alcanzar a RF. La métrica de cada corrida decide, no este ADR de forma permanente.
 6. **Alineación de código:** los mejores hiperparámetros viven en `ml/modeling.py::BEST_PARAMS[target]`; `python -m ml.train --target {prod_pet|prod_gas}` entrena el campeón tuneado y `--final` confirma en test.
 

@@ -17,11 +17,11 @@ Se evaluaron reglas deterministas sobre el **dataset unificado** (`build_basic_d
 
 | Baseline | Regla | val MAE | val RMSE | test MAE | test RMSE |
 |---|---|---|---|---|---|
-| Naive estacional | ŷ(t+1) = prod_pet(t−11) (mismo mes, año anterior) | 280,4 | 778,2 | 154,4 | 403,3 |
-| Media móvil 3m | ŷ(t+1) = media de {t, t−1, t−2} | 103,5 | 311,6 | 64,7 | 191,8 |
-| **Persistencia (naive)** | **ŷ(t+1) = prod_pet(t)** | **81,8** | **250,6** | **53,9** | **166,2** |
+| Naive estacional | ŷ(t+1) = prod_pet(t−11) (mismo mes, año anterior) | 280,4 | 778,2 | 153,0 | 399,4 |
+| Media móvil 3m | ŷ(t+1) = media de {t, t−1, t−2} | 103,5 | 311,6 | 64,3 | 190,3 |
+| **Persistencia (naive)** | **ŷ(t+1) = prod_pet(t)** | **81,8** | **250,6** | **53,4** | **165,2** |
 
-(unidades en m³; n ≈ 47.900 en val y 48.100 en test.)
+(unidades en m³; n ≈ 47.900 en val y 51.000 en test.)
 
 - **Media global** (ŷ = media de train): ignora por completo la historia del pozo; cota inferior trivial de calidad. No se incluye en la tabla por estar muy lejos de las demás.
 - **Naive estacional:** captura estacionalidad pero **ignora la declinación** del pozo (sobreestima en pozos que caen) y pierde cobertura (necesita 12 meses de historia). Es el peor de los tres.

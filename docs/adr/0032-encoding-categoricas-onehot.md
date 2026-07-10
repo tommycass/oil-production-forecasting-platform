@@ -44,7 +44,7 @@ Se evaluó "precomputar" todas las empresas/áreas posibles (desde el dato compl
 - Precomputar desde el dato completo (train+val+test) es **leakage**.
 - Precomputar desde un padrón externo no es leakage, pero genera **columnas muertas**: una categoría con 0 filas en train no tiene coeficiente aprendible (lineal → 0; árbol → nunca splitea). No mejora la predicción y solo agrega memoria y fragilidad de esquema (nunca se conocen todas las categorías futuras).
 
-**Decisión:** vocabulario fijo de train + fallback `DESCONOCIDO`. Toda categoría nula o no vista en train cae en `<feature>_DESCONOCIDO`, manteniendo el **esquema estable** para servir el modelo sin importar qué categorías nuevas aparezcan en inferencia. (Que una categoría nueva pase a tener columna propia y aprendible requeriría ampliar la ventana de train; hoy el split es fijo, ADR-028/040.)
+**Decisión:** vocabulario fijo de train + fallback `DESCONOCIDO`. Toda categoría nula o no vista en train cae en `<feature>_DESCONOCIDO`, manteniendo el **esquema estable** para servir el modelo sin importar qué categorías nuevas aparezcan en inferencia. (Que una categoría nueva pase a tener columna propia y aprendible requiere ampliar la ventana de train, lo que ocurre al reentrenar: los cortes se derivan de la fecha de reproceso, ADR-028/040 Revisión jul-2026.)
 
 ### 5. No persistir la matriz codificada; target/frequency encoding como mejora futura
 

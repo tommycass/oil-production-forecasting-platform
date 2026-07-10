@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 
 from ml import dataset
-from ml.config import TRAIN_END, VAL_END
+from ml.config import split_bounds
 
 
 def _tabla_store(filas) -> pd.DataFrame:
@@ -50,27 +50,39 @@ def test_descarta_filas_de_inferencia_y_next_nulo():
     assert set(ds["idpozo"]) == {1, 2}
 
 
-def test_split_respeta_los_bordes_exactos():
-    """El split por periodo (ADR-028): ``<= TRAIN_END`` train, ``(TRAIN_END, VAL_END]`` val,
-    ``> VAL_END`` test. Se prueban los bordes exactos, no fechas cómodas del medio."""
-    train_end = TRAIN_END.date().isoformat()
-    val_end = VAL_END.date().isoformat()
-    dia_post_train = (TRAIN_END + pd.DateOffset(months=1)).date().isoformat()
-    dia_post_val = (VAL_END + pd.DateOffset(months=1)).date().isoformat()
+def test_split_bounds_reproduce_el_split_documentado():
+    """Calibración (ADR-028): con las ventanas por defecto (18/16), el snapshot actual
+    (max 2026-05) da exactamente el split documentado — 2023-07 / 2024-11."""
+    train_end, val_end = split_bounds(pd.Timestamp("2026-05-01"))
+    assert train_end == pd.Timestamp("2023-07-01")
+    assert val_end == pd.Timestamp("2024-11-01")
+
+
+def test_split_se_deriva_de_la_ultima_fecha_observada():
+    """El split se deriva de la última fecha observada, tomada del store completo (incluida
+    la fila de inferencia y_next NULL, que fija el anchor aunque luego se descarte). Se
+    prueban los bordes exactos, donde un off-by-one rompería o desalinearía el split."""
+    m = pd.Timestamp("2026-04-01")                       # última fecha observada (inferencia)
+    train_end, val_end = split_bounds(m)
+    post_train = (train_end + pd.DateOffset(months=1)).date().isoformat()
+    post_val = (val_end + pd.DateOffset(months=1)).date().isoformat()
 
     ds = _leer(_tabla_store([
-        (1, "2020-01-01", 1.0),      # bien dentro de train
-        (1, train_end, 2.0),         # BORDE: == TRAIN_END  -> train
-        (1, dia_post_train, 3.0),    # BORDE: > TRAIN_END    -> val
-        (1, val_end, 4.0),           # BORDE: == VAL_END     -> val
-        (1, dia_post_val, 5.0),      # BORDE: > VAL_END      -> test
+        (1, "2010-01-01", 1.0),                          # bien dentro de train
+        (1, train_end.date().isoformat(), 2.0),          # BORDE: == train_end -> train
+        (1, post_train, 3.0),                            # BORDE: > train_end  -> val
+        (1, val_end.date().isoformat(), 4.0),            # BORDE: == val_end   -> val
+        (1, post_val, 5.0),                              # BORDE: > val_end    -> test
+        (1, m.date().isoformat(), np.nan),               # inferencia: fija el anchor, se descarta
     ]))
+    # la fila de inferencia (anchor) no es ejemplo de entrenamiento: se descarta
+    assert m not in set(ds["periodo"])
     split_por_periodo = dict(zip(ds["periodo"].dt.date.astype(str), ds["split"]))
-    assert split_por_periodo["2020-01-01"] == "train"
-    assert split_por_periodo[train_end] == "train"
-    assert split_por_periodo[dia_post_train] == "val"
-    assert split_por_periodo[val_end] == "val"
-    assert split_por_periodo[dia_post_val] == "test"
+    assert split_por_periodo["2010-01-01"] == "train"
+    assert split_por_periodo[train_end.date().isoformat()] == "train"
+    assert split_por_periodo[post_train] == "val"
+    assert split_por_periodo[val_end.date().isoformat()] == "val"
+    assert split_por_periodo[post_val] == "test"
 
 
 def test_periodo_datetime_y_columnas_clave():

@@ -48,6 +48,13 @@ def _untuned_estimator(name: str, target: str = TARGET):
     return modeling.make_estimator(name, target=target)
 
 
+def _split_end(ds, label: str):
+    """Borde efectivo del split ``label`` (su última fecha en ``ds``), o ``None`` si no
+    tiene filas. Se lee del split ya aplicado → refleja el corte real del run."""
+    per = ds.loc[ds["split"] == label, "periodo"]
+    return per.max() if not per.empty else None
+
+
 def train(model_name: str = CHAMPION, tune: bool = False, target: str = TARGET):
     """Entrena (con/sin tuning) y evalúa en val. Devuelve ``(pipeline, info)``.
 
@@ -133,6 +140,12 @@ def train_final(model_name: str = CHAMPION, params: dict | None = None, target: 
         "dev": modeling.evaluate(y_dev, pipe.predict(X_dev)),
         "test": modeling.evaluate(y_te, pipe.predict(X_te)),
         "persistencia_test": modeling.evaluate(y_te, X_te[target]),
+        # bordes efectivos del split (derivados, ADR-028) → trazabilidad en MLflow.
+        "train_end": _split_end(ds, "train"),
+        "val_end": _split_end(ds, "val"),
+        # ventana de test: la promoción re-evalúa acá al Production vigente en vivo (ADR-039).
+        "X_test": X_te,
+        "y_test": y_te,
     }
 
 
