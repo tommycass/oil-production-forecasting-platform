@@ -591,8 +591,8 @@ depende de esta tabla:
 
 | Target | val RMSE | val R² | **test RMSE** | **test R²** | persistencia (test) |
 |---|---|---|---|---|---|
-| **Petróleo** (`prod_pet`) | 227,5 | 0,902 | **157,5** | **0,869** | 166,2 / 0,854 |
-| **Gas** (`prod_gas`) | 576,6 | 0,861 | **409,2** | **0,850** | 457,8 / 0,813 |
+| **Petróleo** (`prod_pet`) | 227,5 | 0,902 | **156,5** | **0,868** | 165,2 / 0,853 |
+| **Gas** (`prod_gas`) | 576,6 | 0,861 | **408,2** | **0,850** | 455,7 / 0,813 |
 
 Los dos superan al baseline en val y en test → cumplen el criterio de promoción. (El RMSE
 de gas es mayor en valor absoluto porque la producción de gas tiene otra escala; el R²
@@ -651,10 +651,11 @@ por target** (`--target prod_pet` / `--target prod_gas`). Por defecto es `python
 (loguea baselines); para reentrenar y **registrar/promover el campeón** en cada corrida se
 exporta `RETRAIN_CMD="python -m ml.train --mlflow"` (el flag de tracking del Rol 3). Se corre
 con la fecha de corte de la partición pasada por
-`RETRAIN_ASOF`. El entrenamiento la **honra**: `ml.config.retrain_asof()` la lee y
-`build_basic_dataset` recorta el dataset a `periodo <= asof`, así un reproceso de fecha pasada
-**no usa datos posteriores** (anti-leakage del backfill); si la fecha es anterior a `VAL_END`,
-los splits aún inexistentes se omiten. Al final, `forecast_precomputado` deja el
+`RETRAIN_ASOF`. El store se re-materializa recortado a `periodo <= asof` y el entrenamiento lo
+lee ya recortado, así un reproceso de fecha pasada **no usa datos posteriores** (anti-leakage del
+backfill). Los cortes del split se **derivan** de esa fecha (`ml.config.split_bounds`, ADR-028),
+de modo que un `asof` distinto **corre toda la ventana** train/val/test → el modelo reentrena
+sobre el slice de ese día. Al final, `forecast_precomputado` deja el
 **pronóstico de 12 meses por pozo** calculado con el modelo Production en
 `features.pred_produccion_pozo_mensual` (+ `_gas`), que la API sirve como lookup
 (ADR-043; si un target no tiene Production, se saltea y la API sigue on-the-fly).

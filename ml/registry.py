@@ -22,14 +22,15 @@ import logging
 
 import mlflow
 import mlflow.sklearn
+import numpy as np
+import pandas as pd
 from mlflow.tracking import MlflowClient
+from sklearn.metrics import mean_squared_error
 
 from ml.config import (
     DATA_CSV,
     RANDOM_STATE,
     TARGET,
-    TRAIN_END,
-    VAL_END,
     experiment_name,
     retrain_asof,
 )
@@ -72,29 +73,50 @@ def promotion_decision(
     )
 
 
+def _fmt_date(x) -> str:
+    """``YYYY-MM-DD`` de un Timestamp, o ``"none"`` si es None/NaT (split sin filas)."""
+    return x.date().isoformat() if x is not None and pd.notna(x) else "none"
+
+
 def _data_version(info: dict) -> str:
-    """Fingerprint corto y determinista del corte de datos usado. Identifica el slice
-    (fuente + split fijo del ADR-028 + asof del reproceso + tamaños), útil para
-    distinguir un run de backfill de uno normal y para reproducibilidad."""
+    """Fingerprint corto y determinista del slice usado (fuente + bordes efectivos del
+    split + asof + tamaños). Como los bordes se derivan de la fecha, un backfill con otro
+    ``asof`` cambia el fingerprint: refleja que el modelo entrenó sobre otro slice."""
     asof = retrain_asof()
     firma = "|".join(
-        str(x) for x in (DATA_CSV.name, TRAIN_END.date(), VAL_END.date(), asof,
-                          info["n_dev"], info["n_test"])
+        str(x) for x in (DATA_CSV.name, _fmt_date(info.get("train_end")),
+                         _fmt_date(info.get("val_end")), asof,
+                         info["n_dev"], info["n_test"])
     )
     return hashlib.sha1(firma.encode()).hexdigest()[:12]
 
 
-def _current_production_rmse(client: MlflowClient, model_name: str) -> float | None:
-    """test RMSE del Production actual de ese modelo (guardado como tag de la versión),
-    o None si no hay Production o el modelo aún no existe en el registry."""
+def _incumbent_test_rmse(
+    client: MlflowClient, model_name: str, X_test, y_test
+) -> float | None:
+    """RMSE del Production vigente re-evaluado en vivo sobre la ventana de test del
+    candidato (ADR-039): ambos predicen su t+1 sobre las mismas filas → comparación
+    honesta, en vez de contra una métrica vieja de otra ventana.
+
+    ``None`` si no hay Production (→ primer campeón). Si el artefacto vigente no
+    carga/predice (p. ej. cambió el set de features), cae al ``test_rmse`` del tag."""
     try:
         prod = client.get_latest_versions(model_name, stages=[PRODUCTION])
     except Exception:  # el registered model no existe todavía
         return None
     if not prod:
         return None
-    tag = prod[0].tags.get("test_rmse")
-    return float(tag) if tag is not None else None
+    try:
+        modelo = mlflow.sklearn.load_model(f"models:/{model_name}/{PRODUCTION}")
+        pred = modelo.predict(X_test)
+        return float(np.sqrt(mean_squared_error(y_test, pred)))
+    except Exception as exc:  # noqa: BLE001 — degradar a la métrica guardada, no romper
+        logger.warning(
+            "No se pudo re-evaluar el Production vigente en vivo (%s); "
+            "fallback al test_rmse guardado como tag.", exc,
+        )
+        tag = prod[0].tags.get("test_rmse")
+        return float(tag) if tag is not None else None
 
 
 def log_and_register(pipe, info: dict, promote: bool = True) -> dict:
@@ -127,8 +149,8 @@ def log_and_register(pipe, info: dict, promote: bool = True) -> dict:
         mlflow.log_param("random_state", RANDOM_STATE)
 
         # 1.4 — versión de los datos usados (para reproducibilidad y auditar backfills).
-        mlflow.log_param("train_end", str(TRAIN_END.date()))
-        mlflow.log_param("val_end", str(VAL_END.date()))
+        mlflow.log_param("train_end", _fmt_date(info.get("train_end")))
+        mlflow.log_param("val_end", _fmt_date(info.get("val_end")))
         mlflow.log_param("retrain_asof", str(asof.date()) if asof is not None else "none")
         mlflow.log_param("data_source", DATA_CSV.name)
         mlflow.log_param("data_version", data_ver)
@@ -160,8 +182,9 @@ def log_and_register(pipe, info: dict, promote: bool = True) -> dict:
     for k, v in info["params"].items():
         client.set_model_version_tag(model_name, version, f"param.{k}", str(v))
 
-    # 1.5 — promoción automática (criterio ADR-039).
-    prod_rmse = _current_production_rmse(client, model_name)
+    # 1.5 — promoción automática (ADR-039): candidato, persistencia y vigente se comparan
+    # sobre el mismo holdout (el vigente se re-evalúa en vivo, no contra su métrica guardada).
+    prod_rmse = _incumbent_test_rmse(client, model_name, info["X_test"], info["y_test"])
     promover, motivo = promotion_decision(test_rmse, persistencia_rmse, prod_rmse)
     if promote and promover:
         client.transition_model_version_stage(

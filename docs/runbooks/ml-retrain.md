@@ -86,11 +86,12 @@ export RETRAIN_CMD="python -m ml.train --mlflow"   # loguea, registra y promueve
 
 `ml.train --mlflow` entrena el campeón final, loguea el run (params, métricas dev/test, versión
 de datos, `Pipeline`), lo registra como nueva versión del modelo del target y lo promueve a
-`Production` si supera a la persistencia y mejora al `Production` actual (`ml/registry.py`;
-`--no-promote` lo deja en `Staging`). La fecha de
-corte llega en `RETRAIN_ASOF` y el entrenamiento la **honra**: `build_basic_dataset` recorta
-`periodo <= asof`, así un reproceso de fecha pasada no usa datos posteriores (anti-leakage; ver
-ADR-040). Si `asof` cae antes de `VAL_END`, los splits que aún no existen (p. ej. `test`) se omiten.
+`Production` si supera a la persistencia y mejora al `Production` actual —re-evaluado en vivo
+sobre la misma ventana de test (`ml/registry.py`); `--no-promote` lo deja en `Staging`. La fecha
+de corte llega en `RETRAIN_ASOF`: el store se re-materializa recortado a `periodo <= asof` y el
+entrenamiento lo lee ya recortado (anti-leakage del backfill; ver ADR-040). Como los cortes del
+split se **derivan** de esa fecha (ADR-028), un `asof` pasado **corre toda la ventana** train/val/test
+en vez de dejar splits vacíos → el modelo reentrena sobre el slice de ese día.
 
 ## 5. Reproceso por fecha / backfill (corrección histórica)
 

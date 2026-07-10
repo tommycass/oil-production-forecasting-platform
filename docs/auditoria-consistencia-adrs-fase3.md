@@ -20,6 +20,8 @@
 
 **Meta-hallazgo:** ningún ADR contiene la palabra "Superseded". Hay ≥3 revisiones de facto (034→039, 033→041, 042 parcial) sin marcar, y **6 ADRs "Aceptada" (035, 039–043) dependen de ADRs que siguen en "Propuesta"** (028, 031, 033, 034, 038). La cátedra lo va a ver.
 
+> **Resolución (jul-2026).** Ya cerrados en código: **A1** (commit `2ec52dc`: `RETRAIN_ASOF` recorta el store). En la revisión de split derivado + promoción en vivo: **A7/A8** (el vigente se re-evalúa en vivo sobre la ventana del candidato, `_incumbent_test_rmse`) y **B4** (los cortes `train_end`/`val_end` se derivan de la fecha de reproceso vía `split_bounds`, así el reentreno amplía la ventana e incorpora pozos/operadoras nuevos). ADRs actualizados: **028** (§5, Revisión), **040** (recorte por fecha), **039** (criterio de promoción), **031/032** (promesas de reentrenamiento). Lo demás de la tabla (cifras, citas fabricadas, estados Propuesta/Aceptada) sigue pendiente para sus dueños (sección F).
+
 ---
 
 ## A. ADR contradice al CÓDIGO
@@ -145,7 +147,7 @@ Discrepancia menor: el docstring de `selected_features` (`ml/features.py:110`) d
 - **ci.yml:72** (no es ADR, pero cuenta): comentario cita *"ADR-044"*, que **no existe**. El correcto es ADR-042. → corregir comentario.
 
 ### C3 — Atribuciones incorrectas
-- **ADR-039:44,72** atribuye a **ADR-029** un "baseline de persistencia sobre gas". ADR-029 solo documenta petróleo; los números de gas (635,5 / 457,8) solo están en 039 y 041. → ADR-029 debería agregar el baseline de gas, o ADR-039 dejar de atribuírselo.
+- **ADR-039:44,72** atribuye a **ADR-029** un "baseline de persistencia sobre gas". ADR-029 solo documenta petróleo; los números de gas (val 635,5 / test 455,7) solo están en 039 y 041. → ADR-029 debería agregar el baseline de gas, o ADR-039 dejar de atribuírselo.
 - **ADR-041:156** lista **ADR-039 dos veces** en "Relacionados", una con la descripción *"misma selección con `prod_gas_*`"* que **contradice** a ADR-041:109 (*"los sets difieren en estructura, no es solo cambiar el prefijo"*). → corregir.
 - **ADR-041:59** atribuye a ADR-031 una "limitación de serving"; ADR-031 es de dataset, no de serving. → matiz de redacción.
 - **ADR-035:34** dice que el Pipeline "se serializa en MLflow (ADR-038)"; ADR-038 no menciona MLflow. → la ref correcta es ADR-040/registry.
@@ -182,7 +184,9 @@ Formato sugerido (una línea bajo el título):
 | Volumen store | ~6k filas (ADR-035:11, ADR-041:148) | ~320k (= 319.554) | ~320k | Error de ~50×, y sostiene el descarte de Feast. Corregir la cifra (el argumento de descarte sigue en pie con 320k, pero hay que reescribirlo). |
 | Rango test | 2024-12→2026-04 (ADR-028:73) | features hasta 2026-03 (ADR-031:13) | revisar | Inconsistencia de 1 mes en el borde. |
 
-**Cifras que SÍ cierran** (no tocar): persistencia val 250,6 / test 166,2; gas val 635,5 / test 457,8; test final 157,5 y 409,2; BEST_PARAMS; Ridge 239,0 / XGBoost 236,9; 6 filas negativas; 13 empresas / 10,4%; corr 0,95; 79% vs 64%; día 6 vs día 5.
+**Cifras que SÍ cierran**: persistencia val 250,6; gas val 635,5; BEST_PARAMS; Ridge 239,0 / XGBoost 236,9; 6 filas negativas; 13 empresas / 10,4%; corr 0,95; 79% vs 64%; día 6 vs día 5.
+
+> **Realineadas (jul-2026):** las cifras de **test** se reprodujeron sobre los datos actuales (max período 2026-05, split derivado) y se actualizaron en ADR-029/039/041, README y guion: petróleo test **156,5 / 165,2** (antes 157,5 / 166,2), gas **408,2 / 455,7** (antes 409,2 / 457,8). Los valores previos eran de un snapshot anterior (hasta 2026-04). Dev/val no cambian (mismo modelo, misma ventana de val). Coinciden con el README de la demo.
 
 ---
 

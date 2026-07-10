@@ -42,12 +42,23 @@ TARGETS = ("prod_pet", "prod_gas")  # targets soportados (petróleo / gas, ADR-0
 # sean reproducibles; se puede pisar por env var sin tocar código.
 RANDOM_STATE = int(os.getenv("ML_RANDOM_STATE", "42"))
 
-# --- Split temporal de 3 vías (ADR-028, Opción A) ---
-# train: periodo <= TRAIN_END
-# val:   TRAIN_END < periodo <= VAL_END
-# test:  periodo > VAL_END
-TRAIN_END = pd.Timestamp("2023-07-01")
-VAL_END = pd.Timestamp("2024-11-01")
+# --- Split temporal de 3 vías, derivado de la última fecha observada (ADR-028) ---
+# Los cortes no se hardcodean: se derivan de max(periodo) con ventanas fijas, así el
+# reproceso por fecha (asof) y los meses nuevos corren la ventana solos (walk-forward).
+# 18/16 reproducen sobre el snapshot actual (max 2026-05) el split del ADR-028
+# (train_end 2023-07, val_end 2024-11). Overridables por env.
+TEST_MONTHS = int(os.getenv("ML_TEST_MONTHS", "18"))
+VAL_MONTHS = int(os.getenv("ML_VAL_MONTHS", "16"))
+
+
+def split_bounds(max_periodo) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Deriva ``(train_end, val_end)`` de la última fecha observada (ADR-028):
+    ``train <= train_end < val <= val_end < test``. ``max_periodo`` debe incluir la
+    fila de inferencia (``y_next`` NULL) para alinear universo del store y split."""
+    max_periodo = pd.Timestamp(max_periodo)
+    val_end = max_periodo - pd.DateOffset(months=TEST_MONTHS)
+    train_end = val_end - pd.DateOffset(months=VAL_MONTHS)
+    return train_end, val_end
 
 
 # --- Reproceso por fecha (retrain "como si fuera el día X", ADR-040) ---

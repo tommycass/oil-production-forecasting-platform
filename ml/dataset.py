@@ -18,16 +18,22 @@ from ml.config import (
     FEATURE_STORE_SCHEMA,
     FEATURE_STORE_TABLE,
     TARGET,
-    TRAIN_END,
-    VAL_END,
     retrain_asof,
+    split_bounds,
 )
 
-def add_split(df: pd.DataFrame) -> pd.DataFrame:
-    """Etiqueta cada fila como train / val / test según su periodo (ADR-028)."""
+def add_split(df: pd.DataFrame, anchor=None) -> pd.DataFrame:
+    """Etiqueta cada fila como train / val / test según su periodo (ADR-028).
+
+    Los cortes se derivan del ``anchor`` (última fecha observada) vía ``split_bounds``.
+    Pasar ``anchor`` explícito si el ``df`` ya se filtró (p. ej. sin la fila de
+    inferencia); si no, se usa ``df.periodo.max()``."""
+    if anchor is None:
+        anchor = df["periodo"].max()
+    train_end, val_end = split_bounds(anchor)
     split = pd.Series("train", index=df.index)
-    split[(df.periodo > TRAIN_END) & (df.periodo <= VAL_END)] = "val"
-    split[df.periodo > VAL_END] = "test"
+    split[(df.periodo > train_end) & (df.periodo <= val_end)] = "val"
+    split[df.periodo > val_end] = "test"
     df["split"] = split
     return df
 
@@ -71,8 +77,11 @@ def build_dataset_from_store(target: str = TARGET) -> pd.DataFrame:
     df = pd.read_sql(f"select * from {tabla}", _store_engine())
     df["periodo"] = pd.to_datetime(df["periodo"])
     df["periodo_objetivo"] = pd.to_datetime(df["periodo_objetivo"])
+    # anchor del store completo (incluye la fila de inferencia y_next NULL), tomado ANTES
+    # de descartarla: alinea el split con el universo del store, sin off-by-one.
+    anchor = df["periodo"].max()
     df = df[df["y_next"].notna()].reset_index(drop=True)
-    df = add_split(df)
+    df = add_split(df, anchor=anchor)
     return df.sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
 
@@ -157,14 +166,18 @@ def build_basic_dataset(
     if asof is not None:
         df = df[df.periodo <= asof].reset_index(drop=True)
 
+    # anchor tras el recorte asof: universo y split comparten la misma referencia (ADR-028).
+    anchor = df["periodo"].max()
+    train_end, _ = split_bounds(anchor)
+
     # universo petrolero definido SOLO con train (anti-leakage de selección):
-    # pozos con prod_pet > 0 en algún mes <= TRAIN_END. Si se definiera sobre todo
+    # pozos con prod_pet > 0 en algún mes <= train_end. Si se definiera sobre todo
     # el histórico, la pertenencia al universo usaría datos de val/test (un pozo que
     # recién produce petróleo en 2025 entraría también con sus filas de train).
     # Mismo criterio que ml.eda.load_train_raw. Ojo: NO descarta los meses en 0 de
     # los pozos petroleros (el pozo parado sigue siendo target válido = 0); solo deja
     # afuera pozos que nunca son petroleros (gas/inyección).
-    pozos = df.loc[(df[target] > 0) & (df.periodo <= TRAIN_END), "idpozo"].unique()
+    pozos = df.loc[(df[target] > 0) & (df.periodo <= train_end), "idpozo"].unique()
     df = (
         df[df.idpozo.isin(pozos)]
         .sort_values(["idpozo", "periodo"])
@@ -196,7 +209,7 @@ def build_basic_dataset(
     # medidas, que sí deben ser del mes t.
     out["mes"] = out["periodo_objetivo"].dt.month
 
-    out = add_split(out)  # split por el mes de los features (periodo), ADR-028
+    out = add_split(out, anchor=anchor)  # split por el mes de los features (periodo), ADR-028
 
     cols = (
         ["idpozo", "periodo", "periodo_objetivo", "split"]
