@@ -100,3 +100,27 @@ def test_build_gas_usa_features_de_gas_y_su_target():
     # y_next = prod_gas del mes siguiente (en el panel prod_gas es constante = 5)
     assert un_pozo["y_next"].iloc[0] == un_pozo["prod_gas"].iloc[1]
     assert pd.isna(un_pozo["y_next"].iloc[-1])
+
+
+def test_asof_recorta_datos_posteriores(monkeypatch):
+    # Reproceso "como si fuera el día X" (ADR-040): asof recorta el crudo a
+    # periodo <= asof ANTES de universo/features, para no usar datos posteriores al
+    # reentrenar una fecha pasada (anti-leakage del backfill). El panel va de 2020-01
+    # a 2020-05; con asof=2020-03 no debe quedar ninguna fila posterior.
+    monkeypatch.delenv("RETRAIN_ASOF", raising=False)
+    panel = _panel_crudo(n_pozos=2, meses=5)
+    recortado = fsb.build_store_features(panel, asof="2020-03-01")
+    assert recortado["periodo"].max() == pd.Timestamp("2020-03-01")
+
+    # Sin asof, la corrida normal conserva hasta el último mes disponible.
+    completo = fsb.build_store_features(panel)
+    assert completo["periodo"].max() == pd.Timestamp("2020-05-01")
+
+
+def test_asof_toma_env_var_si_no_es_explicito(monkeypatch):
+    # asof=None cae en la env var RETRAIN_ASOF (mismo mecanismo que ml.config.retrain_asof),
+    # así el subproceso de retrain la respeta sin pasarla explícita.
+    monkeypatch.setenv("RETRAIN_ASOF", "2020-02-01")
+    panel = _panel_crudo(n_pozos=2, meses=5)
+    out = fsb.build_store_features(panel)  # asof=None → lee env
+    assert out["periodo"].max() == pd.Timestamp("2020-02-01")

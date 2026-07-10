@@ -71,10 +71,15 @@ def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
     `ml/` sobre el crudo de Bronze y reescribe **las dos tablas** del store —
     `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-039).
     Asume que Bronze ya está fresco (lo deja el refresh mensual del DW, ADR-018).
+
+    La fecha de la partición se pasa como ``asof``: el store se materializa recortado a
+    `periodo <= asof` (reproceso "como si fuera el día X", ADR-040), así el entrenamiento
+    —que lee de esta tabla— no usa datos posteriores a esa fecha (anti-leakage del
+    backfill). En una corrida normal (partición = hoy) no recorta nada.
     """
     from data_pipeline.orchestration import feature_store_build as fsb
 
-    filas = fsb.materializar_todos(fsb.engine_from_env())
+    filas = fsb.materializar_todos(fsb.engine_from_env(), asof=context.partition_key)
     return MaterializeResult(
         metadata={"asof": context.partition_key, **{f"filas_{t}": n for t, n in filas.items()}}
     )
@@ -92,10 +97,11 @@ def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     Reentrena **los dos modelos** (petróleo y gas, ADR-039): corre `RETRAIN_CMD`
     (default `ml.baseline`, que loguea a MLflow) **una vez por target**, agregándole
     `--target <target>`. Cada target usa su propio experimento/modelo en MLflow
-    (`experiment_name(target)`). La fecha de corte ("como si fuera el día X") se pasa
-    por `RETRAIN_ASOF`; el entrenamiento la respeta (`ml.config.retrain_asof` →
-    `build_basic_dataset` recorta `periodo <= asof`) para no usar datos posteriores
-    (anti-leakage). El tracking apunta a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3,
+    (`experiment_name(target)`). El **recorte por fecha** ("como si fuera el día X") ya se
+    aplicó al materializar el store en `features_refrescadas` (que corre antes y recorta a
+    `periodo <= asof`), así que el entrenamiento lee la tabla ya recortada. `RETRAIN_ASOF`
+    se pasa igual al subproceso para que quede en el `data_version`/params del run (trazabilidad,
+    `ml.registry`). El tracking apunta a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3,
     ADR-036) si está seteado.
     """
     import subprocess

@@ -34,7 +34,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 from ml import features as ml_features
-from ml.config import TARGET, TARGETS, TRAIN_END
+from ml.config import TARGET, TARGETS, TRAIN_END, retrain_asof
 from ml.dataset import BASIC_CATEGORICAL_FEATURES, BASIC_NUMERIC_FEATURES
 
 FEATURE_SCHEMA = "features"
@@ -69,11 +69,11 @@ def leer_bronze(engine) -> pd.DataFrame:
     return pd.read_sql(f"select {sel} from bronze.produccion", engine)
 
 
-def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame:
+def build_store_features(df: pd.DataFrame, target: str = TARGET, asof=None) -> pd.DataFrame:
     """Construye la tabla de features del store a partir del crudo de producción.
 
-    Replica el ensamblado de `ml.dataset.build_basic_dataset` (tipado, universo
-    train-only, drop de negativos, merge por calendario) reusando
+    Replica el ensamblado de `ml.dataset.build_basic_dataset` (tipado, recorte por
+    fecha, universo train-only, drop de negativos, merge por calendario) reusando
     `ml.features.add_engineered_features` para las features de ingeniería.
     Target por **left-join** (conserva la última fila de cada pozo, `y_next` NULL)
     para habilitar la inferencia del mes siguiente.
@@ -84,6 +84,12 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     Las anclas estáticas no dependen del target. No se llama a `df.copy()` defensivo
     más de lo necesario para poder reusar el mismo crudo de Bronze en los dos targets
     sin recargar.
+
+    ``asof`` recorta el crudo a ``periodo <= asof`` (reproceso "como si fuera el día X",
+    ADR-040), **antes** de definir universo y features, para que un reentreno de una fecha
+    pasada no use datos posteriores (anti-leakage del backfill). Si es ``None`` se toma de
+    la env var ``RETRAIN_ASOF`` (``ml.config.retrain_asof``); si tampoco está, no recorta.
+    En una corrida normal (``asof`` = hoy) no recorta nada.
     """
     df = df.copy()
     # idpozo como entero (en Bronze viene texto): clave del store y del lookup de la API.
@@ -92,6 +98,14 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["anio"] = pd.to_numeric(df["anio"], errors="coerce")  # solo para construir periodo
     df["periodo"] = pd.to_datetime(dict(year=df.anio, month=df.mes, day=1))
+
+    # reproceso por fecha (ADR-040): recortar a periodo <= asof ANTES de definir el
+    # universo y las features, para no usar datos posteriores al reentrenar una fecha
+    # pasada (anti-leakage del backfill). asof explícito > env var RETRAIN_ASOF. El
+    # entrenamiento lee de esta tabla ya recortada (no recorta de nuevo).
+    asof = retrain_asof() if asof is None else pd.Timestamp(asof)
+    if asof is not None:
+        df = df[df.periodo <= asof].reset_index(drop=True)
 
     # universo train-only (anti-leakage de selección, ADR-031): pozos con `target`>0
     # en algún mes <= TRAIN_END. El universo gasífero es distinto (y más amplio) que el
@@ -133,29 +147,33 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET) -> pd.DataFrame
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
 
-def materializar(engine, target: str = TARGET) -> int:
+def materializar(engine, target: str = TARGET, asof=None) -> int:
     """Construye y escribe la tabla del store de un ``target`` en Postgres.
-    Devuelve filas escritas. Para los dos modelos, ver `materializar_todos`."""
-    df = build_store_features(leer_bronze(engine), target=target)
+    Devuelve filas escritas. ``asof`` recorta a `periodo <= asof` (reproceso por fecha,
+    ADR-040). Para los dos modelos, ver `materializar_todos`."""
+    df = build_store_features(leer_bronze(engine), target=target, asof=asof)
     with engine.begin() as conn:
         conn.execute(text(f"create schema if not exists {FEATURE_SCHEMA}"))
     df.to_sql(table_for(target), engine, schema=FEATURE_SCHEMA, if_exists="replace", index=False)
     return len(df)
 
 
-def materializar_todos(engine, targets=TARGETS) -> dict[str, int]:
+def materializar_todos(engine, targets=TARGETS, asof=None) -> dict[str, int]:
     """Materializa **una tabla por target** (petróleo + gas, ADR-039).
 
     Lee Bronze **una sola vez** (las columnas crudas son las mismas para ambos) y
     reescribe cada tabla con su universo/ingeniería/`y_next`. Devuelve `{target: filas}`.
     Es lo que invoca el job de retrain (`features_refrescadas`, ADR-040).
+
+    ``asof`` recorta el crudo a `periodo <= asof` (reproceso "como si fuera el día X",
+    ADR-040) para los dos targets; ``None`` toma la env var `RETRAIN_ASOF` o no recorta.
     """
     raw = leer_bronze(engine)
     with engine.begin() as conn:
         conn.execute(text(f"create schema if not exists {FEATURE_SCHEMA}"))
     filas: dict[str, int] = {}
     for target in targets:
-        df = build_store_features(raw, target=target)
+        df = build_store_features(raw, target=target, asof=asof)
         df.to_sql(table_for(target), engine, schema=FEATURE_SCHEMA, if_exists="replace", index=False)
         filas[target] = len(df)
     return filas
