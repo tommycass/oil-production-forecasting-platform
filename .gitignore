@@ -31,6 +31,7 @@ dagster_home/
 
 # Notas personales de estudio
 journal-estudio-IS.md
+apunte-final-IS.md
 
 # MLflow (tracking local; no se versiona)
 mlruns/

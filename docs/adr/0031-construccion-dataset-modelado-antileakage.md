@@ -6,11 +6,11 @@
 
 El ADR-028 fijó el **encuadre** del problema (regresión tabular global, target `prod_pet` del mes siguiente, universo petrolero, split temporal de 3 vías). Lo que faltaba decidir y documentar es **cómo se construye concretamente** el frame `(features, target)` que come el modelo, de forma que **ningún feature use información del mes que se predice** (leakage futuro→pasado) ni de los conjuntos de validación/test (leakage val/test→train).
 
-La construcción vive en `ml/dataset.py` (`build_basic_dataset`) y se exploró/validó en `notebooks/02_feature_engineering.ipynb`. Este ADR registra las decisiones de procesamiento y el resultado de la **auditoría de leakage** que se hizo sobre el dataset generado.
+La construcción vive en `ml/dataset.py` (`build_basic_dataset`). Este ADR registra las decisiones de procesamiento y el resultado de la **auditoría de leakage** que se hizo sobre el dataset generado.
 
 ### Evidencia del EDA / construcción
 
-- Dataset básico resultante: **319.554 filas** (tras descartar 6 filas con producción negativa, ADR-039), **3.018 pozos**, rango de meses de features **2006-01 → 2026-03**.
+- Dataset básico resultante: **319.554 filas** (tras descartar 6 filas con producción negativa, ADR-038), **3.018 pozos**, rango de meses de features **2006-01 → 2026-03**.
 - Split (por mes de los features): **train 223.615 / val 47.883 / test 48.056**.
 - El **~25%** de los targets (`y_next`) es **0** (meses de pozos petroleros parados): predecir 0 es parte del problema.
 - Las medidas de producción son muy asimétricas (cola larga + masa en 0), confirmado en los histogramas del notebook.
@@ -40,7 +40,7 @@ El target se arma uniendo el panel consigo mismo desplazado un mes (`periodo + 1
 
 El universo de pozos (con `prod_pet > 0` en algún mes) se calcula **únicamente sobre train** (`periodo ≤ TRAIN_END`), no sobre todo el histórico.
 
-- **Motivo (anti-leakage de selección):** definir el universo sobre todo el histórico hace que la *pertenencia* de un pozo dependa de datos de val/test (un pozo que recién produce petróleo en 2025 entraría con todas sus filas, incluidas las de train). La auditoría encontró **1.224 pozos** cuyo primer `prod_pet > 0` es posterior a `TRAIN_END` (1.287 filas que entrarían a train indebidamente). Restringir a train los elimina y deja **3.018 pozos** (igual universo que el EDA).
+- **Motivo (anti-leakage de selección):** definir el universo sobre todo el histórico hace que la *pertenencia* de un pozo dependa de datos de val/test (un pozo que recién produce petróleo en 2025 entraría con todas sus filas, incluidas las de train). La auditoría encontró **1.224 pozos** cuyo primer `prod_pet > 0` es posterior a `TRAIN_END` (1.287 filas que entrarían a train indebidamente). Restringir el universo a `periodo <= TRAIN_END` los elimina y deja **3.018 pozos** con historia petrolera en train.
 - **No** filtra los meses en 0 de pozos petroleros: un pozo parado sigue siendo una fila válida con target 0. Solo deja afuera pozos que **nunca** son petroleros (gas/inyección, oil ≡ 0), que no son el objetivo del forecast.
 
 **Alternativa descartada:** universo sobre todo el histórico (criterio de ADR-028 y de `load_production`) → leakage de selección.
@@ -68,8 +68,8 @@ Se reusa el criterio de fechas del ADR-028 (`TRAIN_END`, `VAL_END`) etiquetando 
 - Persistido como CSV local en `data/processed/` (gitignoreado): derivado reproducible que no toca el crudo ni se versiona.
 
 **Negativas / trade-offs:**
-- El universo train-only **no predice pozos que recién aparecen en val/test** (~1.224 pozos quedan fuera). Es el costo correcto de no usar el futuro para seleccionar; pozos nuevos se incorporan al reentrenar (mover `TRAIN_END`).
-  - **Reproceso por fecha:** `build_basic_dataset` acepta `asof` (de la env var `RETRAIN_ASOF`, ver `ml.config.retrain_asof`) y recorta `periodo <= asof` **antes** de calcular universo y features, así un reentreno "como si fuera el día X" no usa datos posteriores (mismo principio anti-leakage aplicado en el tiempo). Detalle de orquestación en **ADR-041**.
+- El universo train-only **no predice pozos que recién aparecen en val/test** (~1.224 pozos quedan fuera). Es el costo correcto de no usar el futuro para seleccionar el universo. Se **incorporan al reentrenar**: con los cortes derivados (ADR-028 Revisión jul-2026) la ventana de train se corre con la fecha de reproceso (`asof`/`max(periodo)`), así los pozos que ya acumularon historia entran al universo en corridas posteriores.
+  - **Reproceso por fecha:** `build_basic_dataset` acepta `asof` (de la env var `RETRAIN_ASOF`, ver `ml.config.retrain_asof`) y recorta `periodo <= asof` **antes** de calcular universo y features, así un reentreno "como si fuera el día X" no usa datos posteriores (mismo principio anti-leakage aplicado en el tiempo). Detalle de orquestación en **ADR-040**.
 - Para mantener la coherencia hubo que **retirar** el pipeline heredado (`build_modeling_frame`/`load_production`, universo full-history + target por `shift`) y realinear `baseline.py`: las cifras de baseline del ADR-029 se recalculan sobre el dataset unificado.
 - Al excluir `anio`, el modelo no tiene una feature de **tendencia macro** explícita; se asume que el lag de `prod_pet` la captura. Si el modelado mostrara una tendencia no capturada, la vía correcta es una feature de **antigüedad/elapsed-time del pozo** (dentro de rango), no el año calendario.
 

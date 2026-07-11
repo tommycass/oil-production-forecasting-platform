@@ -1,7 +1,7 @@
 # Título: ADR-028: Diseño del problema predictivo y estrategia de validación temporal
 **Estado:** Propuesta
 
-> **Enmienda (ADR-042):** la decisión de alcance "solo petróleo" (§2 *Target y grano* y §3 *Universo de entrenamiento*) quedó **extendida**: la cátedra confirmó que se esperan **ambas** producciones, así que se agrega un **segundo modelo** con target `prod_gas` (universo gasífero), reutilizando este mismo encuadre. Ver **ADR-042**.
+> **Nota:** la plataforma pronostica **ambas** producciones, petróleo (`prod_pet`) y gas (`prod_gas`), con **un modelo por target** (ADR-039). Este ADR fija el **encuadre común** (grano, métrica, split, tratamiento de outliers, anti-leakage) usando `prod_pet` como caso trabajado del EDA; el modelo de gas reutiliza el mismo encuadre con su propio universo gasífero. La decisión de los dos modelos y sus campeones vive en **ADR-039**.
 
 ## Contexto
 
@@ -44,23 +44,23 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 
 **Alternativas:** entrenar con todos los pozos / filtrar por `tipopozo = 'Petrolífero'` / filtrar por producción observada.
 
-**Decisión:** restringir a **pozos petroleros**, definidos como los que tienen **al menos un mes de `prod_pet > 0`** (4.281 pozos). Incluir pozos de inyección/sumidero/gasíferos puros metería un 35% de ceros estructurales que no corresponden al fenómeno a modelar. El criterio por producción observada es más robusto que confiar solo en la etiqueta `tipopozo` (que tiene nulos).
+**Decisión:** restringir a **pozos petroleros**, definidos como los que tienen **al menos un mes de `prod_pet > 0`** (4.281 pozos). Incluir pozos de inyección/sumidero/gasíferos puros infla los ceros estructurales que no corresponden al fenómeno a modelar. El filtro saca los ceros de esos tipos de pozo; en el universo petrolero **aún queda ~25% de meses en cero** (pozos petroleros parados, ADR-031), que sí son parte del problema (predecir 0 es válido). El criterio por producción observada es más robusto que confiar solo en la etiqueta `tipopozo` (que tiene nulos).
 
 ### 4. Tratamiento del target y métrica de evaluación
 
 **Alternativas de métrica:** MAE / RMSE / MAPE / sMAPE. **Alternativas de target:** crudo / `log1p` / con capeo de outliers.
 
 **Decisión:**
-- **Métrica principal: RMSE** (raíz del error cuadrático medio, en m³): penaliza los errores grandes, que es lo que importa en un target de **cola pesada** donde los pozos de mayor producción concentran el error y **son la señal a captar** (coherente con ADR-039). Se reportan **R²** (comparable entre períodos) y **MAE** (referencia interpretable) en paralelo. Se **descarta MAPE/sMAPE** por la gran proporción de ceros y valores chicos, que las vuelven inestables.
+- **Métrica principal: RMSE** (raíz del error cuadrático medio, en m³): penaliza los errores grandes, que es lo que importa en un target de **cola pesada** donde los pozos de mayor producción concentran el error y **son la señal a captar** (coherente con ADR-038). Se reportan **R²** (comparable entre períodos) y **MAE** (referencia interpretable) en paralelo. Se **descarta MAPE/sMAPE** por la gran proporción de ceros y valores chicos, que las vuelven inestables.
   > La selección de modelo/hiperparámetros se hace por **RMSE en val** (ADR-029/034); el baseline reporta además MAE (ADR-029).
-- Dado el fuerte sesgo de `prod_pet`, se **evaluó** transformar el target con **`log1p`** y/o capear outliers extremos; la evidencia (ADR-039) mostró que **en RMSE los extremos son señal**, así que el target se deja en **escala original** (sin transformar ni capear).
+- Dado el fuerte sesgo de `prod_pet`, se **evaluó** transformar el target con **`log1p`** y/o capear outliers extremos; la evidencia (ADR-038) mostró que **en RMSE los extremos son señal**, así que el target se deja en **escala original** (sin transformar ni capear).
 
 ### 5. Estrategia de validación temporal (split)
 
 **Alternativas:**
-- **Split aleatorio:** ❌ inválido en series temporales — mezcla fechas y produce *leakage* (el modelo "ve el futuro").
+- **Split aleatorio:** inválido en series temporales — mezcla fechas y produce *leakage* (el modelo "ve el futuro").
 - **Split temporal simple (train/test):** correcto pero no deja un conjunto de **validación** para elegir modelo/hiperparámetros sin tocar test.
-- **Validación walk-forward / ventana expansiva:** la más robusta, pero más costosa de implementar; se deja como mejora futura.
+- **Validación walk-forward (re-ajuste rodante del corte de evaluación):** la más robusta como esquema de *evaluación*. Se adopta en su forma de **origen rodante por reproceso** (Revisión jul-2026, abajo): los cortes se derivan de la fecha de referencia, así cada reentreno evalúa sobre el holdout más reciente. (Distinto del *expanding-window* que sí se usa para la **CV del tuning** en ADR-034: ese aplica dentro de train para elegir hiperparámetros, no para mover el corte de test.)
 - **Split temporal de 3 vías, global por fecha (elegida):** dev (train+val) y test separados por fecha, y dentro de dev otro corte temporal train/val.
 
 **Decisión:** split **temporal de 3 vías**, con **corte global por fecha** (todos los pozos comparten el mismo límite temporal, para que nunca se use el futuro de un pozo al predecir otro), en proporciones **0,8/0,2 dev/test** y **0,8/0,2 train/val dentro de dev**. Cortes (sobre el universo petrolero, 347.063 registros):
@@ -72,7 +72,9 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 | **dev** (train+val) | 2006-01 → 2024-11 | 80,5% | — |
 | **test** | 2024-12 → 2026-04 | 19,5% | estimación final, intacto |
 
-Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**. Se eligieron cortes que **clavan las proporciones pedidas** y dejan ventanas de val (~16 meses) y test (~17 meses) que **superan los 12 meses**, cubriendo un ciclo estacional completo. Los cortes son **fechas fijas**, por lo que el split es **reproducible**.
+Resultado sobre este universo: dev/test ≈ **80/20** y train/val (dentro de dev) ≈ **80/20**. Las proporciones son **aproximadas** a las pedidas (0,8/0,2) porque el split se define por fecha (no por conteo de filas) y varían levemente según el conjunto que se cuente (p. ej. el dataset ya procesado del ADR-031). Las ventanas de val (~16 meses) y test (~17 meses) **superan los 12 meses**, cubriendo un ciclo estacional completo.
+
+> **Revisión (jul-2026): cortes derivados en vez de fechas fijas.** Los límites del split se **derivan** de la última fecha observada (`max(periodo)`) con **largos de ventana fijos** (`TEST_MONTHS=18`, `VAL_MONTHS=16`; `ml.config.split_bounds`), no de constantes hardcodeadas. Motivo: el reproceso por fecha (`asof`, ADR-040) y la llegada de meses nuevos deben **correr la ventana** para que el reentreno aprenda de datos nuevos y evalúe sobre un holdout que el modelo no vio (origen rodante). Sigue siendo **reproducible**: queda anclado al `asof`/`max(periodo)`, y sobre el snapshot actual (`max`=2026-05) reproduce **exactamente** la tabla de arriba (`train_end`=2023-07, `val_end`=2024-11). El test deja de ser una cola congelada única y pasa a ser "los últimos 18 meses".
 
 > **Nota:** 2026 está incompleto (datos hasta abril) y cae en *test*; es aceptable porque es el período más reciente y real, pero se documenta explícitamente.
 
@@ -86,8 +88,8 @@ Resultado: dev/test = **80,5/19,5** y train/val (dentro de dev) = **80,7/19,3**.
 
 **Negativas / trade-offs:**
 - El target sesgado obliga a **cuidar transformación y métrica**; un modelo ingenuo sobre el target crudo puede dominar por outliers.
-- Restringir al universo petrolero **deja afuera el gas** (decisión de alcance); si el equipo quisiera pronosticar gas, habría que revisar este ADR.
-- El split por volumen concentra el test en una **ventana reciente y corta** en el tiempo (aunque amplia en registros); mitigado porque cubre >12 meses. Una validación **walk-forward** sería más robusta y queda como mejora futura.
+- El universo petrolero descrito acá es el del modelo de petróleo; el modelo de gas usa su **universo gasífero análogo** (pozos con `prod_gas > 0`, train-only) con el mismo criterio (ADR-039).
+- El split concentra el test en una **ventana reciente** (los últimos 18 meses; amplia en registros y >12 meses). Con los cortes derivados (Revisión jul-2026) esa ventana **se corre en cada reproceso** → cada reentreno se evalúa sobre un holdout distinto (origen rodante), no sobre una cola fija.
 - `prod_pet` como target fija el alcance; `tipo_de_recurso` se **descarta como feature** por ser constante.
 
 ---

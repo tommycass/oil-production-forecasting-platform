@@ -69,11 +69,18 @@ jobs:
           pip install -r api/requirements.txt
           pip install -r api/requirements-dev.txt
 
-      - name: Run ML serving tests
-        run: pytest api/tests/test_predict.py -v
+      # /predict fue subsumido por /forecast (ADR-042): los tests de serving ahora son
+      # los de forecast. Este entorno (api reqs: pandas+sklearn) es el único de CI con
+      # las deps de ml/, así que acá corren también los tests del feature store y del
+      # precómputo (en test-pipeline se saltean por importorskip al no haber sklearn).
+      - name: Run ML serving tests (forecast + motor recursivo)
+        run: pytest api/tests/test_forecast.py ml/tests/test_forecast.py -v
         env:
           API_KEY: abcdef12345
           MLFLOW_TRACKING_URI: "sqlite:///test_mlflow.db"
+
+      - name: Run feature store + precompute tests
+        run: pytest data_pipeline/tests/test_feature_store_build.py data_pipeline/tests/test_forecast_precompute.py -v
 
       - name: Run ML registry tests
         run: pytest ml/tests/test_registry.py -v

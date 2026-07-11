@@ -1,6 +1,6 @@
 """Carga los modelos de producción desde el MLflow Model Registry y los mantiene al día.
 
-Hay **un modelo por target** (ADR-042): petróleo (`produccion-forecast`) y gas
+Hay **un modelo por target** (ADR-039): petróleo (`produccion-forecast`) y gas
 (`produccion-forecast-gas`). Cada uno se maneja con su propio ``ModelLoader``, y el
 módulo expone un registro ``MODEL_LOADERS`` indexado por target.
 
@@ -8,8 +8,8 @@ Patrón por modelo: singleton + polling en daemon thread.
 - Al arrancar la API se llama a load(), que carga la versión en stage Production.
 - start_polling() lanza un hilo que revisa cada POLL_INTERVAL segundos si hay una
   nueva versión en Production y, si la hay, la carga sin reiniciar el servidor
-  (ADR-038, despliegue automático del modelo).
-- Si MLflow no está disponible al arrancar, la API inicia igual; /predict retorna 503
+  (ADR-037, despliegue automático del modelo).
+- Si MLflow no está disponible al arrancar, la API inicia igual; /forecast retorna 503
   para el target cuyo modelo no esté cargado.
 """
 
@@ -75,13 +75,22 @@ class ModelLoader:
 
     def predict(self, features: pd.DataFrame) -> float:
         """Devuelve la predicción escalar para un DataFrame de features."""
+        return float(self.snapshot_model().predict(features)[0])
+
+    def snapshot_model(self):
+        """Devuelve el modelo sklearn actual (bajo lock). El forecast recursivo lo llama
+        repetidamente (un ``predict`` por mes): tomar una **referencia** acá evita que una
+        recarga en background (``load``) intercambie el modelo a mitad de la recursión —
+        seguimos usando la versión con la que arrancamos. Lanza ``RuntimeError`` si no hay
+        modelo cargado (MLflow inalcanzable o sin versión Production) → el servicio lo
+        traduce a 503."""
         with self._lock:
             if self._model is None:
                 raise RuntimeError(
                     f"Modelo '{self._model_name}' no disponible — MLflow inalcanzable "
                     f"o sin versión Production"
                 )
-            return float(self._model.predict(features)[0])
+            return self._model
 
     @property
     def version(self) -> Optional[str]:
@@ -112,7 +121,7 @@ class ModelLoader:
         )
 
 
-# Un loader por target. La API elige el loader según el target pedido en /predict.
+# Un loader por target. El forecast usa el loader del target que pronostica.
 MODEL_LOADERS: dict[str, ModelLoader] = {
     target: ModelLoader(model_name=name) for target, name in MODEL_NAME_BY_TARGET.items()
 }
@@ -128,7 +137,7 @@ def get_loader(target: str) -> ModelLoader:
 
 def load_all() -> None:
     """Carga los modelos de todos los targets. Un fallo por target no frena a los otros
-    (la API arranca en modo degradado y /predict de ese target retorna 503)."""
+    (la API arranca en modo degradado y /forecast de ese target retorna 503)."""
     for target, loader in MODEL_LOADERS.items():
         try:
             loader.load()

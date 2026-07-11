@@ -4,11 +4,11 @@
 
 ## Contexto
 
-El ADR-031 dejó el dataset básico con las **medidas crudas del mes t** (`prod_pet`, `prod_gas`, `prod_agua`, `tef`, `profundidad`, coords) y el calendario del target (`mes`), y **prometió** documentar aparte *"el diseño de features avanzadas (lags múltiples, medias móviles, agregados por entidad)"*. Este ADR registra ese diseño.
+El ADR-031 dejó el dataset básico con las **medidas crudas del mes t** (`prod_pet`, `prod_gas`, `prod_agua`, `tef`, `profundidad`, coords) y el calendario del target (`mes`), y remitió a un ADR aparte el diseño de las features derivadas (lags, ventanas, vecinos). Este ADR registra ese diseño.
 
 El objetivo es darle al modelo señal **predictiva y leak-free** más allá del último valor observado. El EDA (`notebooks/01_outliers_correlaciones.ipynb`) mostró que la producción es fuertemente autocorrelacionada (corr 0,95 con el mes siguiente) y que declina con el tiempo: hay estructura temporal (nivel, tendencia, estacionalidad, agotamiento) y espacial (pozos vecinos de un mismo reservorio) que conviene capturar.
 
-Las features se implementan **una función por feature** en `ml/features.py` y se agregan en `build_basic_dataset` (`ml/dataset.py`) **antes** del merge del target. Se validaron en `notebooks/02_feature_engineering.ipynb`.
+Las features se implementan **una función por feature** en `ml/features.py` y se agregan en `build_basic_dataset` (`ml/dataset.py`) **antes** del merge del target.
 
 Doble restricción anti-leakage (igual que ADR-031):
 - **Futuro→pasado:** una feature de la fila del mes t solo puede usar datos de t o anteriores.
@@ -16,9 +16,9 @@ Doble restricción anti-leakage (igual que ADR-031):
 
 ## Features elegidas
 
-Cada fila es `(pozo, mes t)`; el target es `prod_pet(t+1)`. Todas las columnas de origen salen de la capa **Gold** (`fact_produccion_mensual` para las medidas mensuales; `dim_pozo` para los atributos estáticos como coordenadas) — el contrato exacto se define al materializarlas en el feature store.
+Cada fila es `(pozo, mes t)`; el target es `prod_pet(t+1)`. Las columnas de origen (medidas mensuales `prod_*`/`tef`, atributos estáticos `profundidad`/coords) provienen del **crudo de `bronze.produccion`**, sobre el que se materializa el feature store (ADR-035): el asset de Dagster corre el mismo código de `ml/features.py` sobre Bronze. (El grano y las columnas son los mismos que expone Gold; el store se alimenta de Bronze para no acoplar el refresh del DW a las dependencias de `ml/` — ver ADR-035.)
 
-| Feature | Columna(s) Gold | Cálculo (sobre la serie del pozo) | Qué captura |
+| Feature | Columna(s) de origen | Cálculo (sobre la serie del pozo) | Qué captura |
 |---|---|---|---|
 | `prod_pet_roll3` | `prod_pet` | media de {t, t-1, t-2} | nivel reciente suavizado (menos ruido que el último mes) |
 | `prod_pet_delta1` | `prod_pet` | `prod_pet(t) − prod_pet(t-1)` | tendencia / declinación mes a mes |
@@ -59,19 +59,19 @@ Se priorizaron familias con **fundamento físico/temporal** y de costo bajo, evi
 
 ## Decisión
 
-Adoptar las **7 features derivadas** de la tabla, implementadas como funciones modulares en `ml/features.py` y agregadas en `build_basic_dataset`:
+Diseñar e implementar estas **features derivadas** como funciones modulares en `ml/features.py`, agregadas en `build_basic_dataset`. Constituyen el **conjunto candidato**; el subconjunto que finalmente entra al modelo lo decide la **selección** (ADR-041), sobre `ml.features.selected_features(target)`:
 
 - **Lags y ventanas por merge de calendario** (no `shift`), robustos a huecos.
 - **Sin parámetros aprendidos** en las features (el escalado se delega al Pipeline del entrenamiento, ADR-034).
 - **Vecinos espaciales** por k-vecinos de coordenadas, promediando producción del mes t.
-- Los `NaN` de las features de historia (primeros meses de cada pozo) se **imputan en el Pipeline de entrenamiento, no acá** (las de volumen/lags con **0 + flag `*_isna`**; ver ADR-039 para el esquema por feature).
+- Los `NaN` de las features de historia (primeros meses de cada pozo) se **imputan en el Pipeline de entrenamiento, no acá** (las de volumen/lags con **0 + flag `*_isna`**; ver ADR-038 para el esquema por feature).
 
-Cada feature queda documentada (origen Gold + cálculo) como **contrato del feature store**, donde se materializan para que entrenamiento e inferencia las calculen igual (evitar *training-serving skew*).
+Cada feature queda documentada (origen + cálculo) como **contrato del feature store**, donde se materializan (desde `bronze.produccion`, ADR-035) para que entrenamiento e inferencia las calculen igual (evitar *training-serving skew*).
 
 ## Consecuencias
 
 **Positivas:**
-- Señal temporal y espacial **leak-free** en las dos direcciones críticas, auditada en el notebook `02_feature_engineering.ipynb` (p. ej. `prod_vecinos_mean` coincide con el promedio manual de los k-vecinos en el mes t y difiere del de t+1).
+- Señal temporal y espacial **leak-free** en las dos direcciones críticas, auditada sobre el dataset generado (p. ej. `prod_vecinos_mean` coincide con el promedio manual de los k-vecinos en el mes t y difiere del de t+1).
 - Features **interpretables** y baratas de calcular; reproducibles (funciones puras).
 - Tabla origen→cálculo lista como **contrato** para el feature store.
 

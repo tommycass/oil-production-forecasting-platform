@@ -1,8 +1,8 @@
-# Título: ADR-037: Backend del servidor MLflow para tracking y model registry
+# Título: ADR-036: Backend del servidor MLflow para tracking y model registry
 
 **Estado:** Propuesta
 
-> Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (elección de MLflow) y [ADR-002](0002-docker-containerizacion.md) (Docker como runtime). ADR-030 decidió usar MLflow y delegó la infraestructura del servidor al Rol 3; este ADR documenta esa decisión de infraestructura.
+> Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (elección de MLflow) y [ADR-002](0002-docker-containerizacion.md) (Docker como runtime). ADR-030 decidió usar MLflow y dejó el despliegue del servidor "de verdad" (sobre Postgres + Docker) para documentarse aparte; este ADR documenta esa decisión de infraestructura.
 
 ---
 
@@ -54,7 +54,7 @@ Delegar el servidor a una plataforma cloud.
 
 - **Artefactos:** almacenados en un volumen Docker local (`mlartifacts`) y servidos vía HTTP con el flag `--serve-artifacts`. Esto permite que la API de inferencia descargue modelos por HTTP sin montar el mismo volumen.
 - **Imagen:** `ghcr.io/mlflow/mlflow:v2.17.0` (official, para el serving tier de producción; el Rol 1 puede usar cualquier versión compatible localmente).
-- **Perfil Docker:** `ml` — opcional, exactamente igual que `bi` (Metabase) y `orchestration` (Dagster). Para activarlo en la EC2 `api`, se agrega `ml` al `COMPOSE_PROFILES` del `api/.env` de la instancia. El deploy script existente (`docker compose up -d`) lo levanta automáticamente al releer el `.env`.
+- **Perfil Docker:** `ml` — opcional, exactamente igual que `bi` (Metabase) y `orchestration` (Dagster). Para activarlo se agrega `ml` a `COMPOSE_PROFILES` en el **`infra/.env`** (el `.env` del *project directory* que Compose usa para sustituir variables, no el `api/.env` que es `env_file` del contenedor `api`) o se exporta en el shell antes de `docker compose up -d`.
 - **Red:** corre en la misma EC2 `api` (18.116.35.133). La API de inferencia llega a MLflow por red Docker interna (`http://mlflow:5000`), por lo que `MLFLOW_TRACKING_URI=http://mlflow:5000` va en el `api/.env` de la instancia.
 - **Base de datos:** requiere una base `mlflow_db` en el RDS existente, creada una sola vez: `CREATE DATABASE mlflow_db;`. El `POSTGRES_HOST` del `.env` ya apunta al RDS correcto.
 - **Configuración:** `MLFLOW_TRACKING_URI` como variable de entorno. Si no está seteada (desarrollo local sin el perfil `ml`), `ml/config.py` cae a SQLite local — el flujo del Rol 1 se preserva sin cambios.

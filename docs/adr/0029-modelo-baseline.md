@@ -17,11 +17,11 @@ Se evaluaron reglas deterministas sobre el **dataset unificado** (`build_basic_d
 
 | Baseline | Regla | val MAE | val RMSE | test MAE | test RMSE |
 |---|---|---|---|---|---|
-| Naive estacional | ŷ(t+1) = prod_pet(t−11) (mismo mes, año anterior) | 280,4 | 778,2 | 154,4 | 403,3 |
-| Media móvil 3m | ŷ(t+1) = media de {t, t−1, t−2} | 103,5 | 311,6 | 64,7 | 191,8 |
-| **Persistencia (naive)** | **ŷ(t+1) = prod_pet(t)** | **81,8** | **250,6** | **53,9** | **166,2** |
+| Naive estacional | ŷ(t+1) = prod_pet(t−11) (mismo mes, año anterior) | 280,4 | 778,2 | 153,0 | 399,4 |
+| Media móvil 3m | ŷ(t+1) = media de {t, t−1, t−2} | 103,5 | 311,6 | 64,3 | 190,3 |
+| **Persistencia (naive)** | **ŷ(t+1) = prod_pet(t)** | **81,8** | **250,6** | **53,4** | **165,2** |
 
-(unidades en m³; n ≈ 47.900 en val y 48.100 en test.)
+(unidades en m³; n ≈ 47.900 en val y 51.000 en test.)
 
 - **Media global** (ŷ = media de train): ignora por completo la historia del pozo; cota inferior trivial de calidad. No se incluye en la tabla por estar muy lejos de las demás.
 - **Naive estacional:** captura estacionalidad pero **ignora la declinación** del pozo (sobreestima en pozos que caen) y pierde cobertura (necesita 12 meses de historia). Es el peor de los tres.
@@ -29,7 +29,7 @@ Se evaluaron reglas deterministas sobre el **dataset unificado** (`build_basic_d
 - **Persistencia:** la más simple posible y la **mejor** en val y test. Coherente con la alta autocorrelación observada (corr 0,95 con el mes siguiente).
 - **Regla de declinación (Arps / tasa de declinación):** alternativa "de negocio" más sofisticada (ŷ = y(t)·(1 − tasa)). Se descartó **como baseline** porque requiere estimar una tasa por pozo, lo que ya la convierte en un mini-modelo y le quita el rol de referencia trivial. Queda como posible feature/idea para el modelo, no como baseline.
 
-> La persistencia en val (RMSE 250,6 / R² 0,881) coincide exactamente con la que reporta el notebook `03_modeling_pet.ipynb`, confirmando que baselines y modelos corren sobre el mismo dataset y split.
+> La persistencia en val (RMSE 250,6 / R² 0,881) coincide exactamente con la que reporta el notebook `02_feature_selection_pet.ipynb`, confirmando que baselines y modelos corren sobre el mismo dataset y split.
 
 ## Decisión
 
@@ -37,7 +37,7 @@ Adoptar la **persistencia (naive forecast: ŷ(t+1) = y(t))** como **baseline pri
 
 - **Umbral de éxito:** el modelo de ML deberá **superar a la persistencia en RMSE en val** (≈ 250,6 m³ sobre el dataset unificado) y confirmarlo en test. La métrica primaria de comparación es **RMSE** (ADR-034); las cifras exactas del baseline se obtienen con `python -m ml.baseline`.
 - **Interpretación de negocio:** la persistencia equivale al supuesto operativo por defecto — *"el pozo seguirá produciendo lo mismo que el último mes"*. Es el punto de comparación natural para cualquier decisión.
-- **Implementación:** el baseline se calcula de forma determinista (sin entrenamiento) y se registra en MLflow como un "run" más, con las mismas métricas y el mismo split que los modelos, para comparación directa.
+- **Implementación:** el baseline se calcula de forma determinista (sin entrenamiento) y se registra en MLflow como un "run" más, con las mismas métricas y el mismo split que los modelos, para comparación directa. La misma regla de persistencia se aplica a **ambos targets** (`prod_pet` y `prod_gas`): `ml.baseline` está parametrizado por target, así que el modelo de gas (ADR-039) tiene su propia persistencia sobre `prod_gas` como vara.
 
 ## Consecuencias
 

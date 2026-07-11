@@ -39,11 +39,20 @@ TARGET_COL = "y_next"
 # modelos que requieren normalización (escala) de las features
 NEEDS_SCALING = {"reg_lineal"}
 
+# El set de features vive en ml/features (fuente única de verdad, compartida con el
+# feature store y el serving): `recursion_safe_cols` filtra el set CANDIDATO que rankean
+# los notebooks 02/03 (ADR-041/042) y `selected_features` es el set FINAL del modelo
+# (la selección del ADR-041). Se re-exportan acá por compatibilidad con los notebooks.
+from ml.features import NON_RECURSION_SAFE, recursion_safe_cols, selected_features  # noqa: F401,E402
+
 
 # --- Matriz de features y split --------------------------------------------
 
 def build_feature_matrix(
-    ds: pd.DataFrame | None = None, target: str = "prod_pet"
+    ds: pd.DataFrame | None = None,
+    target: str = "prod_pet",
+    recursion_safe: bool = False,
+    selected: bool = False,
 ) -> tuple[pd.DataFrame, list[str]]:
     """Devuelve ``(ds, feature_cols)``: el dataset con las features **crudas**
     (numéricas + categóricas sin codificar) y la lista de columnas que son features.
@@ -51,11 +60,24 @@ def build_feature_matrix(
     El one-hot NO se hace acá: vive en el ``Pipeline`` (``build_pipeline``) para
     poder ajustarlo por fold durante la CV. Si no se pasa ``ds``, se construye con
     ``ml.dataset.build_basic_dataset`` para el ``target`` indicado (``prod_pet`` por
-    defecto; ``prod_gas`` para el modelo de gas, ADR-042).
+    defecto; ``prod_gas`` para el modelo de gas, ADR-039).
+
+    ``selected=True`` deja **el set final del modelo** (``selected_features``, la
+    selección del ADR-041): es lo que entrena producción (``ml/train.py``).
+    ``recursion_safe=True`` deja el **set candidato** recursion-safe completo
+    (``recursion_safe_cols``): es sobre el que rankean los notebooks 02/03. Por
+    defecto ambos ``False`` (todas las features crudas del dataset).
     """
     if ds is None:
-        ds = dataset.build_basic_dataset(target=target)
-    feature_cols = [c for c in ds.columns if c not in KEYS + [TARGET_COL]]
+        # Fuente única de verdad: el feature store (misma tabla que sirve la inferencia
+        # cero skew, ADR-041). Ya no se lee el CSV local.
+        ds = dataset.build_dataset_from_store(target=target)
+    if selected:
+        feature_cols = selected_features(target)
+    else:
+        feature_cols = [c for c in ds.columns if c not in KEYS + [TARGET_COL]]
+        if recursion_safe:
+            feature_cols = recursion_safe_cols(feature_cols, target)
     return ds, feature_cols
 
 
@@ -136,35 +158,37 @@ def get_models(random_state: int = RANDOM_STATE) -> dict:
     }
 
 
-# Mejores hiperparámetros registrados (del tuning con CV temporal). Indexados por
-# **target**: petróleo (notebook 03_modeling §4.1) y gas (notebook 04_modeling_gas
-# §4); ambos campeones se justifican en el ADR-040. Si no se tunea, se usan estos
-# en vez de defaults
-# arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
+# Mejores hiperparámetros registrados (del tuning con CV temporal sobre el set
+# **recursion-safe**, ADR-041/042). Indexados por **target**: petróleo (notebook
+# 02_feature_selection_pet §3.1) y gas (notebook 03_feature_selection_gas §3.1);
+# ambos campeones se justifican en el ADR-039. Si no se tunea, se usan estos en vez de
+# defaults arbitrarios. (Idealmente vendrían del Model Registry de MLflow — Rol 3; por
 # ahora se mantienen acá como "últimos mejores registrados".)
-# Nota: los hiperparámetros de RF y XGBoost coincidieron entre petróleo y gas
-# (mismo grid + misma semilla del random search); solo difiere el alpha de Ridge.
+# Nota: XGBoost coincidió entre petróleo y gas (mismo grid + misma semilla del random
+# search); RF difirió (petróleo: 200 árboles / prof. 24; gas: 400 / 16) y el alpha de
+# Ridge es data-dependiente. min_samples_leaf=5 en RF (más regularización que el set
+# completo previo) sale del re-tuneo sobre las features recursion-safe.
 BEST_PARAMS = {
     "prod_pet": {
-        "ridge": {"alpha": 1128.8378916846884},
+        "ridge": {"alpha": 10000.0},
         "random_forest": {
-            "n_estimators": 400, "max_depth": 16,
-            "max_features": 0.5, "min_samples_leaf": 2,
+            "n_estimators": 200, "max_depth": 24,
+            "max_features": 0.5, "min_samples_leaf": 5,
         },
         "xgboost": {
-            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
-            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+            "n_estimators": 50, "learning_rate": 0.1, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.8, "colsample_bytree": 0.8,
         },
     },
     "prod_gas": {
-        "ridge": {"alpha": 29.76351441631316},
+        "ridge": {"alpha": 3.359818286283781},
         "random_forest": {
             "n_estimators": 400, "max_depth": 16,
-            "max_features": 0.5, "min_samples_leaf": 2,
+            "max_features": 0.5, "min_samples_leaf": 5,
         },
         "xgboost": {
-            "n_estimators": 400, "learning_rate": 0.01, "max_depth": 12,
-            "min_child_weight": 10, "subsample": 0.7, "colsample_bytree": 1.0,
+            "n_estimators": 50, "learning_rate": 0.1, "max_depth": 12,
+            "min_child_weight": 10, "subsample": 0.8, "colsample_bytree": 0.8,
         },
     },
 }
@@ -176,7 +200,7 @@ def make_estimator(
 ):
     """Construye el estimador ``name`` con ``params`` (o ``BEST_PARAMS[target][name]``
     si no se pasan): los **últimos mejores hiperparámetros registrados** para ese
-    ``target`` (petróleo / gas, ADR-040)."""
+    ``target`` (petróleo / gas, ADR-039)."""
     params = BEST_PARAMS[target][name] if params is None else params
     if name == "ridge":
         return Ridge(**params)

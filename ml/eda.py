@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from ml.config import DATA_CSV, TARGET, TRAIN_END
+from ml.config import DATA_CSV, TARGET, split_bounds
 
 # --- Diccionario de columnas crudas --------------------------------------
 # Cada entrada: nombre -> (rol, unidad, descripción).
@@ -108,8 +108,9 @@ def load_train_raw(path=DATA_CSV) -> pd.DataFrame:
 
     df["periodo"] = pd.to_datetime(dict(year=df.anio, month=df.mes, day=1))
 
-    # 1) recorte temporal a train
-    train = df[df.periodo <= TRAIN_END].copy()
+    # 1) recorte temporal a train (corte derivado de la última fecha observada, ADR-028)
+    train_end, _ = split_bounds(df["periodo"].max())
+    train = df[df.periodo <= train_end].copy()
 
     # 2) universo petrolero calculado SOLO con datos de train
     pozos_petroleros = train.loc[train[TARGET] > 0, "idpozo"].unique()

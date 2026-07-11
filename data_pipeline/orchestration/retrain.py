@@ -1,19 +1,21 @@
-"""Orquestación del reentrenamiento del modelo (Fase 3, Rol 2, ADR-041).
+"""Orquestación del reentrenamiento del modelo (Fase 3, Rol 2, ADR-040).
 
 Job `retrain` particionado por día ("reentrenar como si fuera el día X") que
 encadena el flujo que pide la adenda:
 
-    refrescar features (materializa el feature store) → entrenar (ml/) → registrar en MLflow
+    refrescar features (feature store) → entrenar (ml/) → registrar en MLflow
+    → precomputar el forecast (ADR-043)
 
-**Dos modelos (ADR-042):** el job reentrena **petróleo y gas**: `features_refrescadas`
-materializa las dos tablas del store y `modelo_reentrenado` corre el entrenamiento una
-vez por target (`--target prod_pet` / `--target prod_gas`).
+**Dos modelos (ADR-039):** el job reentrena **petróleo y gas**: `features_refrescadas`
+materializa las dos tablas del store, `modelo_reentrenado` corre el entrenamiento una
+vez por target (`--target prod_pet` / `--target prod_gas`) y `forecast_precomputado`
+deja el pronóstico de 12 meses por pozo listo para que la API lo sirva como lookup.
 
 Disparo (adenda 2.4): además de correrlo a mano,
 - **Schedule mensual** alineado al refresh del DW (ADR-021, cron día 5): el retrain
   corre el día 6, cuando ya hay features nuevas del mes.
 - **Sensor por llegada de datos**: dispara cuando el feature store
-  (`features.feat_produccion_pozo_mensual`, ADR-036) tiene un período nuevo.
+  (`features.feat_produccion_pozo_mensual`, ADR-035) tiene un período nuevo.
 
 Ambos requieren el **dagster-daemon** corriendo (ver runbook ml-retrain). Todo es
 env-driven (`POSTGRES_*`, `MLFLOW_TRACKING_URI`): el mismo código sirve a staging y prod.
@@ -51,10 +53,10 @@ def _train_cmd() -> list[str]:
 
     `modelo_reentrenado` le agrega `--target <target>` por cada modelo (petróleo / gas).
     Por defecto orquesta `ml.baseline`, que entrena/evalúa y **loguea el run en MLflow**
-    (cadena completa demostrable). `train.py` (campeón) aún **no** loguea a MLflow a
-    propósito (el tracking/registro es de Rol 3, ver el handoff de MLflow); cuando Rol 3
-    enchufe ese logging (p. ej. `ml.train --mlflow`), basta exportar
-    `RETRAIN_CMD="python -m ml.train --mlflow"`. No se hardcodea para no pisar su zona.
+    (cadena completa demostrable). Para reentrenar y **promover** el campeón se exporta
+    `RETRAIN_CMD="python -m ml.train --mlflow"` (loguea, registra y promueve con el
+    criterio del ADR-039, `ml.registry.log_and_register`). Se deja configurable por env
+    var para no hardcodear el comando de entrenamiento.
     """
     import sys
 
@@ -65,14 +67,19 @@ def _train_cmd() -> list[str]:
 def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
     """Refresca el feature store (lo materializa) antes de entrenar.
 
-    Reusa la materialización del store (ADR-036): corre el pipeline de features de
+    Reusa la materialización del store (ADR-035): corre el pipeline de features de
     `ml/` sobre el crudo de Bronze y reescribe **las dos tablas** del store —
-    `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-042).
+    `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-039).
     Asume que Bronze ya está fresco (lo deja el refresh mensual del DW, ADR-018).
+
+    La fecha de la partición se pasa como ``asof``: el store se materializa recortado a
+    `periodo <= asof` (reproceso "como si fuera el día X", ADR-040), así el entrenamiento
+    —que lee de esta tabla— no usa datos posteriores a esa fecha (anti-leakage del
+    backfill). En una corrida normal (partición = hoy) no recorta nada.
     """
     from data_pipeline.orchestration import feature_store_build as fsb
 
-    filas = fsb.materializar_todos(fsb.engine_from_env())
+    filas = fsb.materializar_todos(fsb.engine_from_env(), asof=context.partition_key)
     return MaterializeResult(
         metadata={"asof": context.partition_key, **{f"filas_{t}": n for t, n in filas.items()}}
     )
@@ -87,14 +94,15 @@ def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
 def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     """Entrena y registra el run en MLflow para la fecha de la partición.
 
-    Reentrena **los dos modelos** (petróleo y gas, ADR-042): corre `RETRAIN_CMD`
+    Reentrena **los dos modelos** (petróleo y gas, ADR-039): corre `RETRAIN_CMD`
     (default `ml.baseline`, que loguea a MLflow) **una vez por target**, agregándole
     `--target <target>`. Cada target usa su propio experimento/modelo en MLflow
-    (`experiment_name(target)`). La fecha de corte ("como si fuera el día X") se pasa
-    por `RETRAIN_ASOF`; el entrenamiento la respeta (`ml.config.retrain_asof` →
-    `build_basic_dataset` recorta `periodo <= asof`) para no usar datos posteriores
-    (anti-leakage). El tracking apunta a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3,
-    ADR-037) si está seteado.
+    (`experiment_name(target)`). El **recorte por fecha** ("como si fuera el día X") ya se
+    aplicó al materializar el store en `features_refrescadas` (que corre antes y recorta a
+    `periodo <= asof`), así que el entrenamiento lee la tabla ya recortada. `RETRAIN_ASOF`
+    se pasa igual al subproceso para que quede en el `data_version`/params del run (trazabilidad,
+    `ml.registry`). El tracking apunta a `MLFLOW_TRACKING_URI` (servidor MLflow de Rol 3,
+    ADR-036) si está seteado.
     """
     import subprocess
 
@@ -116,9 +124,48 @@ def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     return MaterializeResult(metadata={"asof": asof, **{f"cmd_{t}": c for t, c in cmds.items()}})
 
 
+@asset(
+    partitions_def=_RETRAIN_PARTITIONS,
+    deps=[modelo_reentrenado],
+    group_name="retrain",
+    retry_policy=_RETRY,
+)
+def forecast_precomputado(context: AssetExecutionContext) -> MaterializeResult:
+    """Precomputa el pronóstico de 12 meses por pozo con el modelo Production (ADR-043).
+
+    Corre el mismo motor recursivo que sirve `/forecast` (ADR-042) sobre todos los
+    pozos del store recién refrescado, con el modelo **Production** del registry (el
+    que acaba de promover el paso anterior si superó el criterio del ADR-039), y
+    escribe `features.pred_produccion_pozo_mensual` (+ `_gas`). La API sirve estas
+    filas como lookup; si un target no tiene modelo en Production se lo **saltea**
+    (metadata `filas_<target> = "sin modelo Production"`) y la API sigue on-the-fly.
+
+    Corre siempre sobre el store y el Production **actuales** (no honra RETRAIN_ASOF:
+    el precómputo es para servir hoy, no un artefacto histórico) → re-ejecutarlo en un
+    backfill es idempotente e inofensivo.
+    """
+    from data_pipeline.orchestration import forecast_precompute as fp
+
+    resultados = fp.precomputar_todos(fp.engine_from_env())
+    for target, filas in resultados.items():
+        if filas is None:
+            context.log.warning(f"precomputo {target}: sin modelo Production, salteado")
+    return MaterializeResult(
+        metadata={
+            "asof": context.partition_key,
+            **{
+                f"filas_{t}": (n if n is not None else "sin modelo Production")
+                for t, n in resultados.items()
+            },
+        }
+    )
+
+
 retrain_job = define_asset_job(
     name="retrain",
-    selection=AssetSelection.assets("features_refrescadas", "modelo_reentrenado"),
+    selection=AssetSelection.assets(
+        "features_refrescadas", "modelo_reentrenado", "forecast_precomputado"
+    ),
 )
 
 

@@ -6,7 +6,7 @@
 
 Las 22 features candidatas (ADR-031 §4) incluyen **14 variables categóricas** (`tipoextraccion`, `tipoestado`, `tipopozo`, `empresa`, `formprod`, `formacion`, `areapermisoconcesion`, `areayacimiento`, `cuenca`, `provincia`, `proyecto`, `clasificacion`, `subclasificacion`, `sub_tipo_recurso`). Los modelos tabulares no consumen strings, así que hay que **codificarlas a números**, y hacerlo (a) **sin leakage** y (b) de forma **robusta a categorías nuevas**: la cuenca incorpora operadoras y áreas con el tiempo, así que en val/test aparecen valores que no estaban en train.
 
-La implementación es reutilizable en `ml/dataset.py` (`fit_onehot_encoder`, `transform_onehot`, `onehot_encode_dataset`) y se valida en `notebooks/02_feature_engineering.ipynb`.
+La implementación es reutilizable en `ml/dataset.py` (`fit_onehot_encoder`, `transform_onehot`, `onehot_encode_dataset`).
 
 ### Evidencia
 
@@ -44,7 +44,7 @@ Se evaluó "precomputar" todas las empresas/áreas posibles (desde el dato compl
 - Precomputar desde el dato completo (train+val+test) es **leakage**.
 - Precomputar desde un padrón externo no es leakage, pero genera **columnas muertas**: una categoría con 0 filas en train no tiene coeficiente aprendible (lineal → 0; árbol → nunca splitea). No mejora la predicción y solo agrega memoria y fragilidad de esquema (nunca se conocen todas las categorías futuras).
 
-**Decisión:** vocabulario fijo de train + fallback `DESCONOCIDO`, y **reentrenamiento periódico** que mueve `TRAIN_END` hacia adelante. Así las categorías que eran nuevas, cuando ya tienen historia, pasan a tener su columna propia y aprendible. El `DESCONOCIDO` es el puente entre reentrenos y mantiene el **esquema estable** para servir el modelo.
+**Decisión:** vocabulario fijo de train + fallback `DESCONOCIDO`. Toda categoría nula o no vista en train cae en `<feature>_DESCONOCIDO`, manteniendo el **esquema estable** para servir el modelo sin importar qué categorías nuevas aparezcan en inferencia. (Que una categoría nueva pase a tener columna propia y aprendible requiere ampliar la ventana de train, lo que ocurre al reentrenar: los cortes se derivan de la fecha de reproceso, ADR-028/040 Revisión jul-2026.)
 
 ### 5. No persistir la matriz codificada; target/frequency encoding como mejora futura
 
@@ -61,7 +61,7 @@ Se evaluó "precomputar" todas las empresas/áreas posibles (desde el dato compl
 
 **Negativas / trade-offs:**
 - Alta cardinalidad → **muchas columnas ralas** (365), costoso en memoria para modelos lineales; mitigado con `uint8` y, a futuro, target encoding.
-- Las categorías nuevas **pierden su señal específica** hasta el próximo reentreno (caen en `DESCONOCIDO`). Aceptable porque `empresa`/áreas son predictores débiles frente a los lags del propio pozo.
+- Las categorías nuevas **pierden su señal específica** (caen en `DESCONOCIDO`) mientras el vocabulario de train no las incluya. Aceptable porque `empresa`/áreas son predictores débiles frente a los lags del propio pozo.
 - Depender del reentrenamiento implica definir su **cadencia** operativa (encaja con el monitoring de Fase 1).
 
 ---

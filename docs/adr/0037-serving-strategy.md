@@ -1,8 +1,8 @@
-# Título: ADR-038: Estrategia de carga y actualización del modelo en la API de inferencia
+# Título: ADR-037: Estrategia de carga y actualización del modelo en la API de inferencia
 
 **Estado:** Propuesta
 
-> Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (MLflow como registry) y [ADR-035](0035-predict-api-contract.md) (contrato del endpoint /predict). Este ADR decide cómo la API carga el modelo desde el registry y cómo detecta y aplica nuevas versiones sin downtime.
+> Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (MLflow como registry) y [ADR-042](0042-forecast-recursivo.md) (`/forecast`, el endpoint que sirve el modelo). Este ADR decide cómo la API carga el modelo desde el registry y cómo detecta y aplica nuevas versiones sin downtime.
 
 ---
 
@@ -12,7 +12,7 @@ La API de inferencia necesita:
 
 1. **Cargar el modelo al arrancar** desde el MLflow Model Registry (stage `Production`).
 2. **Actualizar el modelo automáticamente** cuando el Rol 1 promueve una nueva versión a `Production`, sin requerir un redeploy ni reinicio del contenedor de la API.
-3. **Ser resiliente a la indisponibilidad de MLflow**: si MLflow no está disponible al arrancar (por ejemplo, en desarrollo sin el perfil `ml` activo), la API debe arrancar de todas formas y retornar `503` solo en el endpoint `/predict`, no en `/health` ni en `/wells`.
+3. **Ser resiliente a la indisponibilidad de MLflow**: si MLflow no está disponible al arrancar (por ejemplo, en desarrollo sin el perfil `ml` activo), la API debe arrancar de todas formas y retornar `503` solo en el endpoint `/forecast`, no en `/health` ni en `/wells`.
 
 El ciclo de reentrenamiento es mensual o semanal (no continuo), por lo que la latencia de detección de una nueva versión puede ser del orden de minutos, no de segundos.
 
@@ -55,12 +55,15 @@ Un hilo daemon dentro del proceso de la API consulta el MLflow registry cada N s
 | Parámetro | Default | Env var |
 |---|---|---|
 | Intervalo de polling | 300 segundos (5 min) | `MODEL_POLL_INTERVAL_SECONDS` |
-| Nombre del modelo | `produccion-forecast` | `MLFLOW_MODEL_NAME` |
+| Nombre del modelo (petróleo) | `produccion-forecast` | `MLFLOW_MODEL_NAME` |
+| Nombre del modelo (gas) | `produccion-forecast-gas` | `MLFLOW_MODEL_NAME_GAS` |
 | URI del tracking server | `http://localhost:5000` | `MLFLOW_TRACKING_URI` |
+
+**Dos modelos, un loader por target (ADR-039).** El código expone un registro `MODEL_LOADERS` indexado por target (`api/app/services/model_loader.py::MODEL_NAME_BY_TARGET`): un `ModelLoader` para `prod_pet` y otro para `prod_gas`, cada uno con su nombre de registry y su polling independiente. El arranque es **degradado por target**: si falla la carga de uno, el otro sigue sirviendo y solo ese `target` de `/forecast` responde `503`.
 
 **Comportamiento al arrancar:**
 - Si `load()` tiene éxito: modelo disponible de inmediato, poller iniciado.
-- Si falla (MLflow sin modelo Production, o MLflow no disponible): API arranca igual, `/predict` retorna `503`, el poller sigue intentando cada 5 minutos.
+- Si falla (MLflow sin modelo Production, o MLflow no disponible): API arranca igual, `/forecast` retorna `503`, el poller sigue intentando cada 5 minutos.
 
 **Thread safety:** `threading.Lock` protege `self._model` y `self._version`. El hilo solo escribe; los requests solo leen. El lock se toma por el tiempo mínimo necesario (solo el swap de referencia, no la descarga del modelo).
 
