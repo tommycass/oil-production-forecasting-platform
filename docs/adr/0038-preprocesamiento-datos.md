@@ -1,6 +1,6 @@
 # Título: ADR-038: Preprocesamiento de datos (NaN por feature, outliers y errores)
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 
