@@ -50,6 +50,11 @@ set -a; source infra/.env; set +a            # POSTGRES_*, MLFLOW_TRACKING_URI
 source ~/dagster-venv/bin/activate
 export DAGSTER_HOME=~/dagster-runtime; mkdir -p "$DAGSTER_HOME"
 
+# Comando de entrenamiento del retrain automático: entrena el campeón, lo registra y
+# lo promueve si supera al vigente (ADR-039/040). Sin esto, el default (ml.baseline)
+# solo loguea baselines y NO despliega modelo → el retrain no sería "despliegue automático".
+export RETRAIN_CMD="python -m ml.train --mlflow"
+
 # Generar el manifest de dbt que consumen los assets del DW (ver run_pipeline.sh)
 ( cd transform && dbt deps && dbt parse --profiles-dir . --target-path "$PWD/target" )
 
@@ -57,8 +62,10 @@ export DAGSTER_HOME=~/dagster-runtime; mkdir -p "$DAGSTER_HOME"
 dagster-daemon run -m data_pipeline.orchestration.definitions
 ```
 
+El Schedule y el Sensor quedan **activos por defecto** (`default_status=RUNNING` en
+`retrain.py`): apenas el daemon arranca, disparan solos — no hay que prenderlos a mano.
 Para ver/operar desde la UI (opcional, más RAM): `dagster dev -m data_pipeline.orchestration.definitions`
-y activar `retrain_mensual` / `retrain_por_features_nuevas` en *Automation*.
+(en *Automation* aparecen ya en verde; ahí se pueden pausar si hace falta).
 
 > El daemon consume RAM extra (t2.medium + swap). Si no se quiere 24/7, se levanta on-demand
 > para demostrar/operar el retrain y se baja después.

@@ -29,6 +29,8 @@ from dagster import (
     AssetSelection,
     Backoff,
     DailyPartitionsDefinition,
+    DefaultScheduleStatus,
+    DefaultSensorStatus,
     MaterializeResult,
     RetryPolicy,
     RunRequest,
@@ -169,9 +171,16 @@ retrain_job = define_asset_job(
 )
 
 
-@schedule(job=retrain_job, cron_schedule="0 6 6 * *")
+@schedule(
+    job=retrain_job,
+    cron_schedule="0 6 6 * *",
+    default_status=DefaultScheduleStatus.RUNNING,
+)
 def retrain_mensual(context):
-    """Retrain mensual: día 6 a las 06:00, después del refresh del DW (cron día 5)."""
+    """Retrain mensual: día 6 a las 06:00, después del refresh del DW (cron día 5).
+
+    `default_status=RUNNING`: queda **activo por defecto** (no hay que prenderlo a mano en
+    la UI). Solo dispara con el dagster-daemon corriendo (ver runbook ml-retrain)."""
     fecha = context.scheduled_execution_time.strftime("%Y-%m-%d")
     return RunRequest(partition_key=fecha, run_key=f"sched-{fecha}")
 
@@ -199,9 +208,16 @@ def _ultimo_periodo_features() -> str | None:
         return None
 
 
-@sensor(job=retrain_job, minimum_interval_seconds=3600)
+@sensor(
+    job=retrain_job,
+    minimum_interval_seconds=3600,
+    default_status=DefaultSensorStatus.RUNNING,
+)
 def retrain_por_features_nuevas(context):
-    """Dispara el retrain cuando el feature store tiene un período nuevo (adenda 2.4)."""
+    """Dispara el retrain cuando el feature store tiene un período nuevo (adenda 2.4).
+
+    `default_status=RUNNING`: activo por defecto (no requiere activación manual en la UI);
+    dispara con el dagster-daemon corriendo (ver runbook ml-retrain)."""
     ultimo = _ultimo_periodo_features()
     if ultimo is None:
         return SkipReason("feature store vacío o inaccesible")
