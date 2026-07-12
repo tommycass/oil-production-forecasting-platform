@@ -156,7 +156,6 @@ api/app/
 ├── main.py          # App factory, registro de routers, Prometheus
 ├── core/
 │   ├── database.py  # Engine SQLAlchemy → gold.* del DW (perezoso, env-driven)
-│   ├── demo_data.py # Datos de fallback para /forecast (declive sintético)
 │   └── security.py  # Dependencia verify_api_key()
 ├── routes/          # health, wells, forecast
 ├── services/

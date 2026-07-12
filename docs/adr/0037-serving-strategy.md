@@ -1,8 +1,10 @@
 # Título: ADR-037: Estrategia de carga y actualización del modelo en la API de inferencia
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 > Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (MLflow como registry) y [ADR-042](0042-forecast-recursivo.md) (`/forecast`, el endpoint que sirve el modelo). Este ADR decide cómo la API carga el modelo desde el registry y cómo detecta y aplica nuevas versiones sin downtime.
+
+> **Revisión (jul-2026) — [ADR-043](0043-forecast-precomputado.md) acota el alcance del `503`.** Cuando se escribió este ADR, `/forecast` dependía siempre del modelo en memoria, por lo que "MLflow no disponible y sin modelo cargado" implicaba `503` en todo el endpoint (Contexto §3). Con el precómputo del ADR-043, la API primero intenta el **lookup del pronóstico precomputado**: si está fresco, responde **aunque MLflow esté caído y no haya modelo cargado**. El `503` solo puede ocurrir en el camino **on-the-fly** (precómputo inexistente o desactualizado). La decisión de este ADR —polling en background para cargar/actualizar el modelo— sigue vigente sin cambios: es lo que alimenta ese camino on-the-fly y la recarga sin downtime.
 
 ---
 
@@ -14,7 +16,7 @@ La API de inferencia necesita:
 2. **Actualizar el modelo automáticamente** cuando el Rol 1 promueve una nueva versión a `Production`, sin requerir un redeploy ni reinicio del contenedor de la API.
 3. **Ser resiliente a la indisponibilidad de MLflow**: si MLflow no está disponible al arrancar (por ejemplo, en desarrollo sin el perfil `ml` activo), la API debe arrancar de todas formas y retornar `503` solo en el endpoint `/forecast`, no en `/health` ni en `/wells`.
 
-El ciclo de reentrenamiento es mensual o semanal (no continuo), por lo que la latencia de detección de una nueva versión puede ser del orden de minutos, no de segundos.
+El ciclo de reentrenamiento es **mensual** (ADR-040: schedule el día 6 + sensor por datos nuevos), no continuo, por lo que la latencia de detección de una nueva versión puede ser del orden de minutos, no de segundos.
 
 ---
 
@@ -40,7 +42,7 @@ Un hilo daemon dentro del proceso de la API consulta el MLflow registry cada N s
 - **Sin dependencias externas:** no requiere webhooks ni configuración de red adicional.
 - **Thread-safe:** el hilo usa un `threading.Lock` para reemplazar el modelo sin race conditions.
 - **Silencia errores del poller:** si MLflow no está disponible en un ciclo, el hilo loguea un warning y reintenta en el siguiente ciclo, sin afectar las predicciones en curso.
-- **Latencia aceptable:** el ciclo de reentrenamiento es mensual/semanal; 5 minutos de latencia de detección no tiene impacto operativo.
+- **Latencia aceptable:** el ciclo de reentrenamiento es mensual; 5 minutos de latencia de detección no tiene impacto operativo.
 
 **Desventajas:**
 - El hilo no se puede testear end-to-end en tests unitarios sin sleeps; se prueba la lógica de `load()` en aislamiento.
@@ -75,5 +77,5 @@ Un hilo daemon dentro del proceso de la API consulta el MLflow registry cada N s
 - Resiliente a indisponibilidad transitoria de MLflow.
 
 **Negativas:**
-- Ventana de hasta 5 minutos entre la promoción del modelo y su disponibilidad en la API (aceptable para el ciclo mensual/semanal de reentrenamiento).
+- Ventana de hasta 5 minutos entre la promoción del modelo y su disponibilidad en la API (aceptable para el ciclo mensual de reentrenamiento).
 - En caso de downgrade (un modelo v3 que falla se retira de Production), el poller detecta que no hay versión Production y loguea un warning, pero la API sigue sirviendo el modelo v3 ya cargado en memoria hasta el próximo restart. Mitigación: agregar manejo explícito del caso "sin versión Production" para limpiar `self._model` — considerado fuera de scope para la entrega.

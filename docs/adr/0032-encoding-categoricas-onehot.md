@@ -1,6 +1,6 @@
 # Título: ADR-032: Encoding de variables categóricas (one-hot en train con fallback explícito)
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 
@@ -62,7 +62,7 @@ Se evaluó "precomputar" todas las empresas/áreas posibles (desde el dato compl
 **Negativas / trade-offs:**
 - Alta cardinalidad → **muchas columnas ralas** (365), costoso en memoria para modelos lineales; mitigado con `uint8` y, a futuro, target encoding.
 - Las categorías nuevas **pierden su señal específica** (caen en `DESCONOCIDO`) mientras el vocabulario de train no las incluya. Aceptable porque `empresa`/áreas son predictores débiles frente a los lags del propio pozo.
-- Depender del reentrenamiento implica definir su **cadencia** operativa (encaja con el monitoring de Fase 1).
+- Depender del reentrenamiento implica definir su **cadencia** operativa: quedó resuelta por el retrain mensual (**ADR-040**, Schedule día 6 + Sensor) y su rol de guardián de calidad (**ADR-044**).
 
 ---
 

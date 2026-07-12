@@ -15,7 +15,7 @@ Esto es viable **gracias al set de features recursion-safe** (ADR-041): las feat
 ### 1. Estrategia multi-paso: recursivo vs directo
 
 - **Directo multi-horizonte (descartado por ahora):** entrenar un modelo por horizonte (t+1, t+2, … t+h) o uno que reciba el horizonte como input. No acumula error, pero multiplica el costo de entrenamiento/mantenimiento y no reusa el modelo de un paso ya existente.
-- **Recursivo (elegido):** reusa **un único modelo de un paso** (la predicción mensual) realimentando la predicción. Aprovecha directamente el set recursion-safe (ADR-041). Trade-off: el **error se acumula** con el horizonte (cada predicción se apoya en la anterior) → se mitiga con un **horizonte máximo** acotado.
+- **Recursivo (elegido):** reusa **un único modelo de un paso** (la predicción mensual) realimentando la predicción. Aprovecha directamente el set recursion-safe (ADR-041). Trade-off: el **error se acumula** con el horizonte (cada predicción se apoya en la anterior) → se mitiga con un **horizonte máximo** acotado. Cada predicción se **recorta a un piso físico de 0** (`max(pred, 0)`, `ml/forecast.py`) antes de realimentarla: la producción no puede ser negativa y así un valor espurio no contamina los pasos siguientes.
 
 ### 2. Granularidad de salida: mensual vs diaria
 

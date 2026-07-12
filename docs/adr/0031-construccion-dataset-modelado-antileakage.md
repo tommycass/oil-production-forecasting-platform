@@ -1,17 +1,19 @@
 # Título: ADR-031: Construcción del dataset de modelado y prevención de leakage temporal
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 
 El ADR-028 fijó el **encuadre** del problema (regresión tabular global, target `prod_pet` del mes siguiente, universo petrolero, split temporal de 3 vías). Lo que faltaba decidir y documentar es **cómo se construye concretamente** el frame `(features, target)` que come el modelo, de forma que **ningún feature use información del mes que se predice** (leakage futuro→pasado) ni de los conjuntos de validación/test (leakage val/test→train).
 
-La construcción vive en `ml/dataset.py` (`build_basic_dataset`). Este ADR registra las decisiones de procesamiento y el resultado de la **auditoría de leakage** que se hizo sobre el dataset generado.
+La construcción vive en `ml/dataset.py`. Este ADR registra las decisiones de procesamiento y el resultado de la **auditoría de leakage** que se hizo sobre el dataset generado.
+
+> **Revisión (jul-2026): la fuente de entrenamiento es el feature store.** El training, la evaluación y los baselines leen `features.feat_produccion_pozo_mensual[_gas]` (ADR-035) vía `build_dataset_from_store` —la **misma tabla que sirve la inferencia** (cero training-serving skew)—, materializada desde Bronze **reusando este mismo código** (`ml.features`, paridad validada). `build_basic_dataset` (desde el CSV) queda como **referencia offline / validación de paridad**, no como fuente de las corridas. Las decisiones de construcción de abajo valen igual: son las que el store materializa.
 
 ### Evidencia del EDA / construcción
 
-- Dataset básico resultante: **319.554 filas** (tras descartar 6 filas con producción negativa, ADR-038), **3.018 pozos**, rango de meses de features **2006-01 → 2026-03**.
-- Split (por mes de los features): **train 223.615 / val 47.883 / test 48.056**.
+- Dataset básico resultante: **322.541 filas** (tras descartar 6 filas con producción negativa, ADR-038), **3.018 pozos**, rango de meses de features **2006-01 → 2026-04** (cortes derivados, ADR-028 Rev. jul-2026).
+- Split (por mes de los features): **train 223.615 / val 47.883 / test 51.043**.
 - El **~25%** de los targets (`y_next`) es **0** (meses de pozos petroleros parados): predecir 0 es parte del problema.
 - Las medidas de producción son muy asimétricas (cola larga + masa en 0), confirmado en los histogramas del notebook.
 
@@ -69,7 +71,7 @@ Se reusa el criterio de fechas del ADR-028 (`TRAIN_END`, `VAL_END`) etiquetando 
 
 **Negativas / trade-offs:**
 - El universo train-only **no predice pozos que recién aparecen en val/test** (~1.224 pozos quedan fuera). Es el costo correcto de no usar el futuro para seleccionar el universo. Se **incorporan al reentrenar**: con los cortes derivados (ADR-028 Revisión jul-2026) la ventana de train se corre con la fecha de reproceso (`asof`/`max(periodo)`), así los pozos que ya acumularon historia entran al universo en corridas posteriores.
-  - **Reproceso por fecha:** `build_basic_dataset` acepta `asof` (de la env var `RETRAIN_ASOF`, ver `ml.config.retrain_asof`) y recorta `periodo <= asof` **antes** de calcular universo y features, así un reentreno "como si fuera el día X" no usa datos posteriores (mismo principio anti-leakage aplicado en el tiempo). Detalle de orquestación en **ADR-040**.
+  - **Reproceso por fecha:** el recorte `periodo <= asof` (env var `RETRAIN_ASOF`) se aplica al **materializar el feature store** (`feature_store_build`, ADR-040), **antes** de calcular universo y features, así un reentreno "como si fuera el día X" no usa datos de **meses de producción posteriores** (mismo principio anti-leakage aplicado en el tiempo). Salvedad: el recorte es por `periodo`, no por fecha de ingesta — una **rectificación publicada después de X** pero referida a un mes ≤ X entra con su valor corregido (limitación point-in-time asumida y documentada en ADR-040). Un backfill histórico se **aísla en tablas separadas** para no pisar el store en vivo (ADR-040). Detalle de orquestación en **ADR-040**.
 - Para mantener la coherencia hubo que **retirar** el pipeline heredado (`build_modeling_frame`/`load_production`, universo full-history + target por `shift`) y realinear `baseline.py`: las cifras de baseline del ADR-029 se recalculan sobre el dataset unificado.
 - Al excluir `anio`, el modelo no tiene una feature de **tendencia macro** explícita; se asume que el lag de `prod_pet` la captura. Si el modelado mostrara una tendencia no capturada, la vía correcta es una feature de **antigüedad/elapsed-time del pozo** (dentro de rango), no el año calendario.
 

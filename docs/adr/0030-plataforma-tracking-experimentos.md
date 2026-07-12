@@ -1,5 +1,5 @@
 # Título: ADR-030: Plataforma de tracking de experimentos (MLflow)
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 

@@ -1,6 +1,6 @@
 # Título: ADR-038: Preprocesamiento de datos (NaN por feature, outliers y errores)
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 
@@ -51,7 +51,7 @@ Se midió el efecto sobre la **regresión lineal** (los árboles son invariantes
 
 ## Decisión
 
-1. **Imputación de NaN por feature** (tabla §1): 0 + flag en volúmenes/variación, mediana de train en físicas/operativa, 0 en ratios, `DESCONOCIDO` en categóricas.
+1. **Imputación de NaN por feature** (tabla §1): 0 + flag en volúmenes/variación, mediana de train en físicas/operativa, 0 en ratios, `DESCONOCIDO` en categóricas. Las features que sumó la selección (ADR-041) siguen el **mismo criterio por tipo**: las estáticas del pozo (`well_age_months`, antigüedad) van a **mediana de train**; las derivadas tipo ratio/fracción (`frac_peak`, `meses_desde_pico`) van a **0** (faltante = sin historia).
 2. **Sin tratamiento de outliers** en features ni target: los extremos de producción son señal para el RMSE.
 3. **Descartar** las filas con producción negativa (errores de dato).
 4. **Dónde vive cada cosa (anti-leakage):** la imputación + flags + one-hot van en el `Pipeline` (`ml/preprocessing.build_preprocessor`), que la CV **reajusta por fold**; el descarte de negativos es a nivel dataset (es limpieza de errores, no un estadístico aprendido).
@@ -65,7 +65,7 @@ Se midió el efecto sobre la **regresión lineal** (los árboles son invariantes
 
 **Negativas / trade-offs:**
 - Imputar lags con 0 introduce un **sesgo** (un pozo nuevo "parece" no haber producido); se mitiga con el flag `*_isna`, pero el modelo aún debe aprender a usarlo.
-- Al **no tratar outliers**, el modelo queda **expuesto a valores extremos espurios** que no sean negativos (p. ej. un pico por error de carga); se delega su detección al **data quality de Fase 2** (ADR-016) y al monitoreo, no al preprocesamiento.
+- Al **no tratar outliers**, el modelo queda **expuesto a valores extremos espurios** que no sean negativos (p. ej. un pico por error de carga); se delega su detección al **data quality de Fase 2** (ADR-016) y al monitoreo del modelo (**ADR-044**: la re-evaluación mensual del retrain detecta el efecto en el error), no al preprocesamiento.
 - Los flags de faltante **agregan columnas** (una por feature de historia), costo menor.
 
 ---

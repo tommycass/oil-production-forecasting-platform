@@ -243,6 +243,11 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-oil}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-oil}
       - POSTGRES_DB=${POSTGRES_DB:-oil_dw}
+      # Retrain productivo (ADR-039/040): el job reentrena y **promueve** el campeón. Sin
+      # esta var el default es `ml.baseline` (solo loguea baselines, no promueve). El
+      # entrenamiento loguea/promueve contra el server MLflow (perfil `ml`).
+      - RETRAIN_CMD=${RETRAIN_CMD:-python -m ml.train --mlflow}
+      - MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI:-http://mlflow:5000}
     volumes:
       - ../data:/opt/dagster/app/data    # Bronze parquet (compartido con el host)
       - dagster_home:/opt/dagster/home   # historial de runs y logs

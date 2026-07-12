@@ -205,10 +205,15 @@ def main() -> None:
     if args.mlflow:
         # Rol 3 (1.4/1.5): campeón final (dev=train+val, evaluado en test) → MLflow.
         # Import perezoso: solo se necesita mlflow cuando se usa este flag.
+        import os
+
         from ml import registry
         pipe, info = train_final(args.model, target=args.target)
         _print_final(info)
-        registry.log_and_register(pipe, info, promote=not args.no_promote)
+        # `RETRAIN_ALLOW_PROMOTE=0` (lo setea el retrain en un backfill histórico) bloquea la
+        # promoción: un modelo entrenado con datos viejos no debe pisar Production (ADR-040).
+        promote = not args.no_promote and os.getenv("RETRAIN_ALLOW_PROMOTE", "1") != "0"
+        registry.log_and_register(pipe, info, promote=promote)
         if not args.no_save:
             print(f"\n✓ Modelo guardado en {save_model(pipe, args.model + suf + '_final')}")
         return

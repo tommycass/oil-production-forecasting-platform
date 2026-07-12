@@ -8,7 +8,6 @@ modelo, así que conviene fijarla con tests.
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pandas as pd
 
 from ml import registry

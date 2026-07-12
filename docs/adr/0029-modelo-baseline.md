@@ -1,5 +1,5 @@
 # Título: ADR-029: Modelo baseline determinista para el forecast de producción
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 
@@ -13,7 +13,7 @@ El EDA (`notebooks/01_outliers_correlaciones.ipynb`) ya mostró que la producci�
 
 ## Análisis de Alternativas
 
-Se evaluaron reglas deterministas sobre el **dataset unificado** (`build_basic_dataset`: universo petrolero train-only + target por merge de calendario, ADR-031), las mismas que comen los modelos. Se miden en **val** (comparación directa con los modelos, ADR-034) y en **test** (vara de éxito final). Cifras de `python -m ml.baseline`:
+Se evaluaron reglas deterministas sobre el **mismo dataset que comen los modelos** —el feature store (`build_dataset_from_store`, ADR-035; universo petrolero train-only + target por merge de calendario, ADR-031)—. Se miden en **val** (comparación directa con los modelos, ADR-034) y en **test** (vara de éxito final). Cifras de `python -m ml.baseline`:
 
 | Baseline | Regla | val MAE | val RMSE | test MAE | test RMSE |
 |---|---|---|---|---|---|

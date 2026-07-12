@@ -49,8 +49,8 @@ def engineered_feature_names(target: str = "prod_pet") -> list[str]:
         "prod_vecinos_mean",
         # --- Nuevas features RECURSION-SAFE (autorregresivas del propio target +
         # edad del pozo): se pueden recalcular en un mes futuro a partir de la
-        # trayectoria del target, así habilitan el forecast recursivo. Ver ADR
-        # de rediseño de features. `well_age_months` es genérica (no depende del
+        # trayectoria del target, así habilitan el forecast recursivo (ADR-033
+        # Revisión jul-2026 / ADR-041). `well_age_months` es genérica (no depende del
         # target); el resto lleva el prefijo del target.
         f"{target}_lag2",
         f"{target}_lag3",

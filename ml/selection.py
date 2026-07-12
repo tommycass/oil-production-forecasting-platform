@@ -22,7 +22,6 @@ feature**. > 0 = útil; ≈ 0 o < 0 = ruido (permutarla no empeora, o hasta mejo
 """
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 from sklearn.base import clone
 from sklearn.inspection import permutation_importance

@@ -43,7 +43,7 @@ oil-production-forecasting-platform/
 │   │   ├── core/                   # Lógica transversal
 │   │   │   ├── security.py         # Middleware de validación de API key (X-API-Key)
 │   │   │   ├── rate_limit.py       # Configuración de rate limiting (SlowAPI)
-│   │   │   └── demo_data.py        # Datos mock de pozos y producción base
+│   │   │   └── database.py         # Engine de conexión al DW/feature store (env-driven)
 │   │   ├── routes/                 # Endpoints de la API
 │   │   │   ├── health.py           # GET /health
 │   │   │   ├── wells.py            # GET /api/v1/wells
@@ -79,7 +79,8 @@ oil-production-forecasting-platform/
 │   │   └── run_pipeline.sh         # Refresh headless para cron (full reload, env-driven)
 │   ├── tests/                      # Tests del pipeline (pytest)
 │   ├── requirements.txt
-│   └── requirements-dev.txt
+│   ├── requirements-dev.txt
+│   └── README.md
 │
 ├── data/                           # Datos crudos (gitignored): landing + capa Bronze
 │
@@ -92,11 +93,15 @@ oil-production-forecasting-platform/
 │   │   ├── gold/                   # Modelo estrella: fact_produccion_mensual + 4 dims
 │   │   └── semantic/               # Vistas semánticas sobre Gold para BI (ADR-027)
 │   ├── macros/
+│   │   ├── generate_schema_name.sql # Esquemas custom por capa (silver/gold/dq/semantic)
 │   │   └── log_dq_results.sql      # Persiste los checks de calidad en dq.dq_results
 │   ├── scripts/
 │   │   ├── load_bronze.py          # Puente parquet → bronze.* (Postgres)
 │   │   └── seed_sample_bronze.py   # Bronze de muestra para pruebas/bootstrap
-│   └── tests/                      # Tests dbt singulares (p. ej. freshness)
+│   ├── tests/                      # Tests dbt singulares (p. ej. freshness)
+│   ├── packages.yml                # Paquetes dbt (dbt_utils, dbt_expectations)
+│   ├── requirements.txt
+│   └── README.md
 │
 ├── ml/                             # Zona ML Engineer (Fase 3): modelado + entrenamiento
 │   ├── config.py                   # Target, split temporal, semilla, config MLflow
@@ -111,18 +116,15 @@ oil-production-forecasting-platform/
 │   ├── forecast.py                 # Motor de forecast recursivo multi-paso (ADR-042)
 │   ├── tracking.py                 # Helper de setup de MLflow
 │   ├── registry.py                 # Log / registro / promoción del modelo en MLflow (ADR-039)
-│   ├── tests/                      # Tests del paquete ml/ (forecast, registry)
+│   ├── tests/                      # Tests del paquete ml/ (anti-leakage, dataset, forecast, registry)
 │   └── requirements.txt            # Dependencias del paquete ml/ (validadas por Dagster en el retrain)
 │
 ├── notebooks/                      # EDA (01) + selección de features por target: petróleo (02) y gas (03)
 │
 ├── docs/
-│   ├── consigna-fase1.md
-│   ├── consigna-fase2.md
-│   ├── adenda_tecnica_fase2.md
-│   ├── adenda_tecnica_fase_3.md    # Adenda técnica de la Fase 3 (ML)
 │   ├── data-model.md               # Contrato Gold: grano, dims, surrogate keys, SCD
 │   ├── feature-store.md            # Contrato del feature store (Fase 3, ADR-035)
+│   ├── demo_adenda3/               # Material de la demo Fase 3: guion, capturas y video del trigger de retrain
 │   ├── runbooks/                   # Runbooks por rol
 │   │   ├── data-engineer.md        # Reprocesar un mes corregido por la fuente
 │   │   ├── analytics-engineer.md   # Reconstruir Silver/Gold y resolver gate de calidad
@@ -172,19 +174,26 @@ oil-production-forecasting-platform/
 │       ├── 0040-orquestacion-retrain.md
 │       ├── 0041-seleccion-features-forecast.md
 │       ├── 0042-forecast-recursivo.md
-│       └── 0043-forecast-precomputado.md
+│       ├── 0043-forecast-precomputado.md
+│       └── 0044-monitoreo-modelo-produccion.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
-│   ├── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor (+ perfiles bi/orchestration)
+│   ├── docker-compose.yml          # API + monitoring por defecto; perfiles: local-db, orchestration, bi, ml (MLflow)
 │   ├── Dockerfile.dagster          # Imagen de la UI de Dagster (perfil orchestration)
-│   └── datahub/
-│       └── dbt_recipe.yml          # Receta de ingesta DataHub (linaje desde artefactos dbt)
+│   ├── .env.example                # Variables de entorno del compose (POSTGRES_*, MLFLOW_*, RETRAIN_*)
+│   ├── db/
+│   │   └── bootstrap.sql           # Bootstrap idempotente de bases y esquemas del Postgres
+│   ├── datahub/
+│   │   └── dbt_recipe.yml          # Receta de ingesta DataHub (linaje desde artefactos dbt)
+│   └── governance/
+│       └── setup-datahub.sh        # Setup idempotente de DataHub en la EC2 (ADR-026)
 │
 ├── monitoring/
 │   ├── prometheus.yml              # Scraping de métricas
 │   ├── alerts.yml                  # Reglas de alerta de Prometheus
 │   ├── alertmanager.yml            # Routing de alertas a Slack
+│   ├── .slack_webhook.example      # Placeholder del webhook de Slack (el real no se versiona)
 │   └── grafana/
 │       ├── provisioning/           # Datasources (Prometheus, CloudWatch) y proveedor de dashboards
 │       └── dashboards/
@@ -213,6 +222,10 @@ Y completar las variables requeridas:
 | `RATE_LIMIT` | Límite de requests por IP (formato SlowAPI, ej. `60/minute`). |
 
 > El `.env` está ignorado por git. La clave nunca se commitea al repositorio.
+
+Para los perfiles del compose (`local-db`, `orchestration`, `bi`, `ml`) las variables
+(`POSTGRES_*`, `MLFLOW_TRACKING_URI`, `RETRAIN_*`, etc.) se toman de `infra/.env`;
+el listado completo con placeholders está en [infra/.env.example](infra/.env.example).
 
 ---
 
@@ -282,17 +295,29 @@ La API queda disponible en el puerto `8000` del host (`/docs` para Swagger).
 
 ## Tests
 
-Desde la raíz del repositorio, instalar dependencias de desarrollo y correr la suite de pytest:
+Hay **tres suites de pytest** (las mismas que corre el CI en jobs separados: `test`,
+`test-pipeline` y `test-ml`). Desde la raíz del repositorio:
 
 ```bash
-pip install -r api/requirements-dev.txt
+# API (auth, rate limit, endpoints, serving de /forecast)
+pip install -r api/requirements.txt -r api/requirements-dev.txt
 API_KEY=test-key pytest api/tests/ -v
+
+# Pipeline de datos (extracción, validación de schema, DAGs con I/O mockeado)
+pip install -r data_pipeline/requirements-dev.txt
+pytest data_pipeline/tests/ -v
+
+# ML (dataset, features anti-leakage, registry/promoción, motor de forecast)
+# + feature store y precómputo (usa el mismo entorno que la API)
+MLFLOW_TRACKING_URI="sqlite:///test_mlflow.db" pytest ml/tests/ \
+  data_pipeline/tests/test_feature_store_build.py \
+  data_pipeline/tests/test_forecast_precompute.py -v
 ```
 
 El análisis estático (mismo que corre el CI) se ejecuta con:
 
 ```bash
-ruff check api/app/
+ruff check api/app/ ml/ data_pipeline/
 ```
 
 ---
@@ -499,12 +524,71 @@ y el [runbook del Data Engineer](docs/runbooks/data-engineer.md)).
 
 ## Machine Learning — Forecast de producción (Fase 3)
 
-Sobre la capa Gold se entrenan **dos modelos** que **pronostican la producción de un pozo
+Sobre los datos de producción ingeridos por el pipeline (`bronze.produccion`, registro
+vigente) se entrenan **dos modelos** que **pronostican la producción de un pozo
 para el mes siguiente (t+1)**: uno de **petróleo** (`prod_pet`, m³) y uno de **gas**
 (`prod_gas`). Comparten el mismo pipeline (parametrizado por *target*), así que todo lo que
 sigue vale para los dos. El flujo completo va de las features (materializadas en un feature
 store) al entrenamiento con tracking en MLflow y al servido por la API desde el model
 registry.
+
+### Arquitectura end-to-end de la solución
+
+```mermaid
+flowchart TB
+    DG["datos.gob.ar<br/>(Ministerio de Energía)"]
+
+    subgraph DW["Pipeline de datos — Dagster + dbt (cron día 5, ADR-018/021)"]
+        BRONZE["Bronze — bronze.*<br/>crudo, particionado anio/mes"]
+        SILVER["Silver — silver.*<br/>tipado + cuarentena DQ"]
+        GOLD["Gold — gold.*<br/>modelo estrella"]
+        SEM["Semantic — semantic.*"]
+        BRONZE --> SILVER --> GOLD --> SEM
+    end
+
+    subgraph RETRAIN["Job retrain — Dagster particionado por día (Schedule día 6 + Sensor, ADR-040)"]
+        FS["features_refrescadas<br/>feature store: features.feat_*<br/>(una tabla por target, ADR-035)"]
+        TRAIN["modelo_reentrenado<br/>RETRAIN_CMD × target<br/>(ml.train --mlflow)"]
+        PRE["forecast_precomputado<br/>features.pred_*<br/>12 meses/pozo (ADR-043)"]
+        FS --> TRAIN --> PRE
+    end
+
+    subgraph MLF["MLflow — backend Postgres (ADR-030/036)"]
+        TRK["Tracking<br/>params / métricas / artifacts"]
+        REG["Model Registry<br/>Staging → Production (ADR-039)"]
+    end
+
+    subgraph API["API FastAPI — Docker en EC2"]
+        LOADER["ModelLoader<br/>polling del registry c/5 min (ADR-037)"]
+        FC["GET /api/v1/forecast<br/>lookup precómputo fresco<br/>→ fallback recursivo on-the-fly (ADR-042/043)"]
+    end
+
+    USER["Usuarios de la API<br/>(X-API-Key)"]
+    BI["Metabase (BI) · DataHub (gobierno)"]
+    MON["Prometheus + Grafana<br/>Alertmanager → Slack (ADR-003/004)"]
+    CICD["GitHub Actions (CI/CD)<br/>tests + ruff → imagen ECR → deploy SSM"]
+
+    DG --> BRONZE
+    BRONZE -->|"registro vigente, periodo ≤ asof"| FS
+    TRAIN --> TRK
+    TRAIN -->|"registra y promueve"| REG
+    REG -->|"modelo Production"| PRE
+    REG -->|"modelo Production"| LOADER
+    LOADER --> FC
+    FS -->|"features del último mes observado"| FC
+    PRE -->|"pronóstico precomputado"| FC
+    USER --> FC
+    SEM --> BI
+    API -. "/metrics" .-> MON
+    CICD -. "despliega" .-> API
+```
+
+El pipeline de datos (Fase 2) refresca el DW el día 5 de cada mes; el job `retrain` (Fase 3)
+corre el día 6 sobre datos ya frescos: re-materializa el feature store desde Bronze, reentrena
+los dos modelos registrándolos en MLflow (promoción a `Production` solo si el candidato supera
+a la persistencia y al vigente) y deja el forecast precomputado. La API sirve el pronóstico
+por lookup del precómputo y, si no está fresco, con el motor recursivo y el modelo `Production`
+que recarga por polling — sin redeploy. Todo el detalle en las secciones siguientes.
 
 ### Problema y validación
 
@@ -674,9 +758,13 @@ Procedimiento completo en el [runbook de retrain](docs/runbooks/ml-retrain.md) y
 [ADR-040](docs/adr/0040-orquestacion-retrain.md).
 
 ```bash
-# Retrain manual de una fecha puntual (la partición usa AAAA-MM-DD)
+# Retrain manual de una fecha puntual (la partición usa AAAA-MM-DD).
+# En Dagster 1.13 `dagster job execute` no acepta --partition; se materializan los
+# assets del job con --partition (ver runbook ml-retrain.md).
 MOD=data_pipeline.orchestration.definitions
-dagster job execute -j retrain --partition "2026-06-06" -m $MOD
+dagster asset materialize \
+  --select "features_refrescadas,modelo_reentrenado,forecast_precomputado" \
+  --partition "2026-06-06" -m $MOD
 ```
 
 ### Inferencia (API)
@@ -919,3 +1007,4 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [041](docs/adr/0041-seleccion-features-forecast.md) | Selección de features del forecast | Permutation importance en val; corte por ganancia positiva (`imp_mean > 0`): 27 features en petróleo / 19 en gas; ranking, cold-start y anclas; métricas val + test |
 | [042](docs/adr/0042-forecast-recursivo.md) | Forecast recursivo multi-paso en `/forecast` | Recursivo vs. directo; salida mensual vs. diaria; horizonte máximo; paso unitario subsumido; contrato de Fase 1 preservado |
 | [043](docs/adr/0043-forecast-precomputado.md) | Precómputo del forecast en el retrain | On-demand vs. precómputo puro vs. híbrido con fallback; generación en el retrain vs. en la ingesta; frescura exacta por `ultimo_observado`; serving transparente por lookup |
+| [044](docs/adr/0044-monitoreo-modelo-produccion.md) | Monitoreo del modelo en producción | Plataforma de drift (Evidently) vs. pred-vs-real en Prometheus vs. re-evaluación walk-forward del retrain como guardián; gate de promoción como detector de degradación |
