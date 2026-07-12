@@ -37,7 +37,7 @@ Un job de Dagster **`retrain`**, particionado por día, que encadena tres assets
 
 1. **`features_refrescadas`** — **re-materializa el feature store** (ADR-035): corre el pipeline de features de `ml/` sobre el crudo de Bronze y reescribe **las dos tablas** del store, `features.feat_produccion_pozo_mensual` (petróleo) y `..._gas` (gas, ADR-039), vía `materializar_todos`. (Es una materialización Python, no un modelo dbt.) **Es el único lugar donde se materializa el store** (se desacopló de `dw_publish` para que el refresh del DW no dependa de `ml/`); por eso el venv del daemon de retrain es el que necesita las deps de `ml/`.
 2. **`modelo_reentrenado`** — ejecuta el entrenamiento y registra el run en MLflow **para los dos modelos** (petróleo y gas, ADR-039): corre `RETRAIN_CMD` una vez por target (`--target prod_pet` / `--target prod_gas`), cada uno con su experimento/modelo de MLflow.
-3. **`forecast_precomputado`** — tras reentrenar (y promover si corresponde), precomputa el pronóstico de **12 meses por pozo** con el modelo Production y escribe `features.pred_produccion_pozo_mensual` (+ `_gas`); la API lo sirve como lookup con fallback al motor on-the-fly (decisión y alternativas en **ADR-043**). No honra `RETRAIN_ASOF` (el precómputo es para servir hoy) y **se saltea un target sin modelo en Production**, así el job corre end-to-end aunque el registry esté vacío (p. ej. primera corrida con `ml.baseline`).
+3. **`forecast_precomputado`** — tras reentrenar (y promover si corresponde), precomputa el pronóstico de **12 meses por pozo** con el modelo Production y escribe `features.pred_produccion_pozo_mensual` (+ `_gas`); la API lo sirve como lookup con fallback al motor on-the-fly (decisión y alternativas en **ADR-043**). El precómputo es **para servir hoy**: en un backfill histórico se **saltea** (no pisa el serving; ver "Aislamiento del backfill" abajo) y **se saltea un target sin modelo en Production**, así el job corre end-to-end aunque el registry esté vacío (p. ej. primera corrida con `ml.baseline`).
 
 Disparo: **`retrain_mensual`** (Schedule, día 6) + **`retrain_por_features_nuevas`** (Sensor sobre `max(periodo)` del feature store, con cursor). Ambos requieren el dagster-daemon.
 
@@ -63,8 +63,12 @@ El job invoca el comando de entrenamiento de forma **configurable** (`RETRAIN_CM
 
 **Negativas / trade-offs:**
 - Requiere operar el **dagster-daemon** (RAM; mitigable con swap o levantándolo on-demand para la demo).
-- El default `RETRAIN_CMD=python -m ml.baseline` loguea baselines (cadena demostrable sin promover); para reentrenar y **promover** el campeón hay que exportar `RETRAIN_CMD="python -m ml.train --mlflow"`.
+- El `RETRAIN_CMD` productivo (`python -m ml.train --mlflow`: reentrena, registra y **promueve** el campeón) queda **seteado por defecto en el compose**; para correr solo baselines sin promover se pisa con `RETRAIN_CMD="python -m ml.baseline"`.
 - El Sensor consulta Postgres en cada tick; se acota con `minimum_interval_seconds` y tolera fallos de DB (skip, no rompe el daemon).
+
+**Aislamiento del backfill histórico (revisión jul-2026).** Un reproceso a una fecha **anterior** al último período observado trunca el store. Como `features_refrescadas` reescribe las tablas del store y esas mismas tablas las sirve la API, un backfill que escribiera en vivo corromperría el serving. Por eso, cuando `partition_key` cae antes del último período (`feature_store_build.es_backfill`): (a) `features_refrescadas` materializa en **tablas separadas** (`..._backfill`), no en las de producción; (b) `modelo_reentrenado` entrena leyendo esas tablas y **no promueve** (`RETRAIN_ALLOW_PROMOTE=0`) — un modelo con datos viejos no debe pisar Production; (c) `forecast_precomputado` **se saltea** y borra las tablas temporales. Un reproceso histórico es entonces para **reproducibilidad del entrenamiento** (queda en MLflow), no para actualizar el serving. Una corrida normal (`partition_key` = hoy) escribe en vivo como siempre.
+
+**Limitación asumida — el as-of no es point-in-time por ingesta.** El recorte es por `periodo <= asof` (mes de producción), no por `fecha_ingesta <= asof`. Una rectificación **publicada** después de la fecha X pero de un mes ≤ X entra igual a un reentreno "como si fuera X". Bronze tiene `fecha_ingesta`, así que es resoluble a futuro; hoy se asume como limitación del reproceso histórico. (El dedup del vigente sí se aplica: el store conserva una fila por `(idpozo, mes)`, la rectificada más reciente, igual criterio que `silver_produccion_vigente`.)
 
 ## Relación con otros ADRs
 

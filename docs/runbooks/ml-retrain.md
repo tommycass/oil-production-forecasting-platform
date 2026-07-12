@@ -117,12 +117,14 @@ for d in 2025-01-06 2025-02-06 2025-03-06; do
 done
 ```
 
-> En un backfill alcanza con `features_refrescadas,modelo_reentrenado`: el precómputo
-> (ADR-043) no honra `RETRAIN_ASOF` (siempre pronostica "desde hoy"), así que basta
-> correrlo una vez al final si se quiere refrescar el lookup.
+> Podés seleccionar el job completo: en un reproceso histórico `forecast_precomputado` se
+> **saltea solo** (el precómputo es para servir hoy, no para una fecha pasada, ADR-040).
 
-Cada partición re-materializa el feature store (desde el Bronze ya corregido) y reentrena,
-dejando un run por fecha en MLflow. Es **idempotente** (el store se reescribe y el run se vuelve a loguear).
+Un reproceso de una fecha **anterior** al último período es un backfill histórico y se **aísla**
+para no pisar el serving (ADR-040): materializa el store en tablas `..._backfill`, entrena
+leyéndolas y **no promueve** (un modelo con datos viejos no debe pisar Production), y deja el run
+en MLflow para reproducibilidad. Las tablas en vivo y el precómputo **no se tocan**. Es
+idempotente. Reprocesar la fecha de **hoy** sí actualiza el serving (corrida normal).
 
 > Precondición: el Bronze ya debe tener la corrección (corré antes el refresh del DW / `dw_publish`,
 > ver runbook del Analytics Engineer). El retrain refresca **features** desde Bronze, no re-ingesta.

@@ -21,11 +21,11 @@ from __future__ import annotations
 import os
 
 import pandas as pd
-from sqlalchemy import text
 
 from data_pipeline.orchestration.feature_store_build import (
     FEATURE_SCHEMA,
     engine_from_env,  # noqa: F401 — re-export: el asset arma el engine desde acá
+    reescribir_tabla,
     table_for,
 )
 from ml.config import TARGETS, experiment_name
@@ -152,9 +152,7 @@ def precomputar(engine, target: str, n_steps: int = N_STEPS) -> int | None:
     df["model_version"] = str(version)
     df["generado_en"] = pd.Timestamp.now(tz="UTC")
 
-    with engine.begin() as conn:
-        conn.execute(text(f"create schema if not exists {FEATURE_SCHEMA}"))
-    df.to_sql(pred_table_for(target), engine, schema=FEATURE_SCHEMA, if_exists="replace", index=False)
+    reescribir_tabla(engine, df, pred_table_for(target))
     return len(df)
 
 

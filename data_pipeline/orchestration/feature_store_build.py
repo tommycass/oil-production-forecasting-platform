@@ -31,10 +31,10 @@ from __future__ import annotations
 import os
 
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 
 from ml import features as ml_features
-from ml.config import TARGET, TARGETS, retrain_asof, split_bounds
+from ml.config import BACKFILL_TABLE_SUFFIX, TARGET, TARGETS, retrain_asof, split_bounds
 from ml.dataset import BASIC_CATEGORICAL_FEATURES, BASIC_NUMERIC_FEATURES
 
 FEATURE_SCHEMA = "features"
@@ -44,6 +44,10 @@ FEATURE_TABLE = "feat_produccion_pozo_mensual"  # petróleo (nombre histórico)
 # `mes` está en BASIC_NUMERIC_FEATURES; se dedup con dict.fromkeys. Las mismas columnas
 # crudas sirven a los dos targets (prod_pet y prod_gas están ambas en las numéricas base).
 _RAW_COLS = list(dict.fromkeys(["idpozo", "anio", "mes", *BASIC_NUMERIC_FEATURES, *BASIC_CATEGORICAL_FEATURES]))
+
+# Columnas de rectificación (no son features): se leen para conservar el registro vigente de
+# cada (idpozo, mes) —criterio de `silver_produccion_vigente`— y se descartan tras el dedup.
+_DEDUP_COLS = ["rectificado", "fecha_data", "fecha_ingesta"]
 
 
 def table_for(target: str) -> str:
@@ -64,9 +68,89 @@ def engine_from_env():
 
 
 def leer_bronze(engine) -> pd.DataFrame:
-    """Lee las columnas crudas de `bronze.produccion` (todo texto)."""
-    sel = ", ".join(f'"{c}"' for c in _RAW_COLS)
+    """Lee las columnas crudas de `bronze.produccion` (todo texto) + las de rectificación
+    (para el dedup del vigente)."""
+    sel = ", ".join(f'"{c}"' for c in _RAW_COLS + _DEDUP_COLS)
     return pd.read_sql(f"select {sel} from bronze.produccion", engine)
+
+
+def _dedup_vigente(df: pd.DataFrame) -> pd.DataFrame:
+    """Conserva **un** registro por (idpozo, periodo): el **vigente**, con el mismo criterio
+    que `silver_produccion_vigente` (rectificado=true, luego última `fecha_data`, luego última
+    `fecha_ingesta`). Descarta las columnas de rectificación al terminar. Es **no-op** si no
+    están esas columnas (paneles de test) o si no hay duplicados (caso normal de Bronze)."""
+    tiene_cols = set(_DEDUP_COLS).issubset(df.columns)
+    if tiene_cols and df.duplicated(["idpozo", "periodo"]).any():
+        d = df.copy()
+        d["_rect"] = d["rectificado"].astype(str).str.strip().str.lower().isin(["t", "true", "1"])
+        d["_fdata"] = pd.to_datetime(d["fecha_data"], errors="coerce")
+        d["_fing"] = pd.to_datetime(d["fecha_ingesta"], errors="coerce")
+        df = (
+            d.sort_values(
+                ["idpozo", "periodo", "_rect", "_fdata", "_fing"],
+                ascending=[True, True, False, False, False],
+            )
+            .drop_duplicates(["idpozo", "periodo"], keep="first")
+            .drop(columns=["_rect", "_fdata", "_fing"])
+        )
+    return df.drop(columns=[c for c in _DEDUP_COLS if c in df.columns])
+
+
+def max_periodo_bronze(engine) -> pd.Timestamp | None:
+    """Último período observado en Bronze, o ``None`` si está vacío. Sirve para saber si
+    un reproceso `asof` **truncaría** datos (backfill histórico)."""
+    val = pd.read_sql(
+        "select max(make_date(anio::int, mes::int, 1)) as m from bronze.produccion", engine
+    )["m"].iloc[0]
+    return pd.Timestamp(val) if pd.notna(val) else None
+
+
+def es_backfill(engine, asof) -> bool:
+    """``True`` si el reproceso ``asof`` cae **antes** del último período observado, o sea
+    truncaría el store (ADR-040). Un backfill así se materializa en tablas separadas para no
+    pisar las que sirve la API; una corrida normal (``asof`` >= último período) escribe en vivo."""
+    max_p = max_periodo_bronze(engine)
+    return max_p is not None and pd.Timestamp(asof) < max_p
+
+
+def drop_backfill_tables(engine, targets=TARGETS) -> None:
+    """Borra las tablas temporales del reproceso histórico (``..._backfill``)."""
+    raw = engine.raw_connection()
+    try:
+        cur = raw.cursor()
+        for target in targets:
+            tabla = table_for(target) + BACKFILL_TABLE_SUFFIX
+            cur.execute(f'drop table if exists {FEATURE_SCHEMA}."{tabla}"')
+        raw.commit()
+    finally:
+        raw.close()
+
+
+def reescribir_tabla(engine, df: pd.DataFrame, tabla: str, intentos: int = 4) -> None:
+    """Reescribe ``features.<tabla>`` con ``df``: drop explícito por psycopg2 + ``to_sql`` sobre
+    una ``Connection`` fresca con ``if_exists="append"`` (crea la tabla de cero), evitando el drop
+    interno del ``replace``.
+    ``to_sql`` con este pandas+sqlalchemy2 tira ``immutabledict is not a sequence`` de forma
+    intermitente (estado del pool, no del dato). Como cada intento dropea antes de escribir,
+    reintentar es idempotente; en el retry se descarta el pool para forzar una conexión limpia."""
+    for intento in range(intentos):
+        raw = engine.raw_connection()
+        try:
+            cur = raw.cursor()
+            cur.execute(f"create schema if not exists {FEATURE_SCHEMA}")
+            cur.execute(f'drop table if exists {FEATURE_SCHEMA}."{tabla}"')
+            raw.commit()
+        finally:
+            raw.close()
+        try:
+            with engine.begin() as conn:
+                df.to_sql(tabla, conn, schema=FEATURE_SCHEMA, if_exists="append", index=False)
+            return
+        except TypeError as exc:
+            if "immutabledict" in str(exc) and intento < intentos - 1:
+                engine.dispose()  # conexión fresca en el próximo intento (evita el pool degradado)
+                continue
+            raise
 
 
 def build_store_features(df: pd.DataFrame, target: str = TARGET, asof=None) -> pd.DataFrame:
@@ -98,6 +182,11 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET, asof=None) -> p
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df["anio"] = pd.to_numeric(df["anio"], errors="coerce")  # solo para construir periodo
     df["periodo"] = pd.to_datetime(dict(year=df.anio, month=df.mes, day=1))
+
+    # dedup del vigente por (idpozo, periodo) —igual criterio que Silver— antes de todo lo
+    # demás, para no entrenar/servir con una fila rectificada no vigente. Descarta las columnas
+    # de rectificación. No-op si no hay duplicados (Bronze hoy no los tiene) o en paneles de test.
+    df = _dedup_vigente(df)
 
     # reproceso por fecha (ADR-040): recortar a periodo <= asof ANTES de definir el
     # universo y las features, para no usar datos posteriores al reentrenar una fecha
@@ -151,18 +240,17 @@ def build_store_features(df: pd.DataFrame, target: str = TARGET, asof=None) -> p
     return out[cols].sort_values(["idpozo", "periodo"]).reset_index(drop=True)
 
 
-def materializar(engine, target: str = TARGET, asof=None) -> int:
+def materializar(engine, target: str = TARGET, asof=None, suffix: str = "") -> int:
     """Construye y escribe la tabla del store de un ``target`` en Postgres.
     Devuelve filas escritas. ``asof`` recorta a `periodo <= asof` (reproceso por fecha,
-    ADR-040). Para los dos modelos, ver `materializar_todos`."""
+    ADR-040); ``suffix`` escribe en una tabla separada (backfill histórico, no pisa el
+    store en vivo). Para los dos modelos, ver `materializar_todos`."""
     df = build_store_features(leer_bronze(engine), target=target, asof=asof)
-    with engine.begin() as conn:
-        conn.execute(text(f"create schema if not exists {FEATURE_SCHEMA}"))
-    df.to_sql(table_for(target), engine, schema=FEATURE_SCHEMA, if_exists="replace", index=False)
+    reescribir_tabla(engine, df, table_for(target) + suffix)
     return len(df)
 
 
-def materializar_todos(engine, targets=TARGETS, asof=None) -> dict[str, int]:
+def materializar_todos(engine, targets=TARGETS, asof=None, suffix: str = "") -> dict[str, int]:
     """Materializa **una tabla por target** (petróleo + gas, ADR-039).
 
     Lee Bronze **una sola vez** (las columnas crudas son las mismas para ambos) y
@@ -171,13 +259,13 @@ def materializar_todos(engine, targets=TARGETS, asof=None) -> dict[str, int]:
 
     ``asof`` recorta el crudo a `periodo <= asof` (reproceso "como si fuera el día X",
     ADR-040) para los dos targets; ``None`` toma la env var `RETRAIN_ASOF` o no recorta.
+    ``suffix`` (p. ej. ``_backfill``) escribe en tablas separadas: lo usa el retrain para
+    aislar un reproceso histórico y **no pisar** el store que sirve la API en vivo.
     """
     raw = leer_bronze(engine)
-    with engine.begin() as conn:
-        conn.execute(text(f"create schema if not exists {FEATURE_SCHEMA}"))
     filas: dict[str, int] = {}
     for target in targets:
         df = build_store_features(raw, target=target, asof=asof)
-        df.to_sql(table_for(target), engine, schema=FEATURE_SCHEMA, if_exists="replace", index=False)
+        reescribir_tabla(engine, df, table_for(target) + suffix)
         filas[target] = len(df)
     return filas

@@ -78,12 +78,23 @@ def features_refrescadas(context: AssetExecutionContext) -> MaterializeResult:
     `periodo <= asof` (reproceso "como si fuera el día X", ADR-040), así el entrenamiento
     —que lee de esta tabla— no usa datos posteriores a esa fecha (anti-leakage del
     backfill). En una corrida normal (partición = hoy) no recorta nada.
+
+    **Aislamiento del backfill:** si la partición cae **antes** del último período observado
+    (un reproceso histórico que truncaría el store), se materializa en tablas separadas
+    (`..._backfill`), **no** en las que sirve la API en vivo. Así un reproceso de una fecha
+    pasada no corrompe el serving. Una corrida normal escribe en las tablas en vivo.
     """
+    from ml.config import BACKFILL_TABLE_SUFFIX
     from data_pipeline.orchestration import feature_store_build as fsb
 
-    filas = fsb.materializar_todos(fsb.engine_from_env(), asof=context.partition_key)
+    eng = fsb.engine_from_env()
+    asof = context.partition_key
+    backfill = fsb.es_backfill(eng, asof)
+    suffix = BACKFILL_TABLE_SUFFIX if backfill else ""
+    filas = fsb.materializar_todos(eng, asof=asof, suffix=suffix)
     return MaterializeResult(
-        metadata={"asof": context.partition_key, **{f"filas_{t}": n for t, n in filas.items()}}
+        metadata={"asof": asof, "backfill": backfill, "destino": "tablas ..._backfill" if backfill else "store en vivo",
+                  **{f"filas_{t}": n for t, n in filas.items()}}
     )
 
 
@@ -108,22 +119,27 @@ def modelo_reentrenado(context: AssetExecutionContext) -> MaterializeResult:
     """
     import subprocess
 
-    from ml.config import TARGETS
+    from ml.config import BACKFILL_TABLE_SUFFIX, TARGETS
+    from data_pipeline.orchestration import feature_store_build as fsb
 
     asof = context.partition_key
+    backfill = fsb.es_backfill(fsb.engine_from_env(), asof)
     base = _train_cmd()
+    env = {**os.environ, "RETRAIN_ASOF": asof}
+    if backfill:
+        # Reproceso histórico: entrenar leyendo las tablas ..._backfill (recortadas) y
+        # **no promover** — un modelo con datos viejos no debe pisar Production (ADR-040).
+        env["FEATURE_STORE_TABLE_SUFFIX"] = BACKFILL_TABLE_SUFFIX
+        env["RETRAIN_ALLOW_PROMOTE"] = "0"
     cmds: dict[str, str] = {}
     for target in TARGETS:
         cmd = [*base, "--target", target]
-        context.log.info(f"retrain target={target} asof={asof} cmd={' '.join(cmd)}")
-        subprocess.run(
-            cmd,
-            check=True,
-            cwd=str(PROJECT_ROOT),
-            env={**os.environ, "RETRAIN_ASOF": asof},
-        )
+        context.log.info(f"retrain target={target} asof={asof} backfill={backfill} cmd={' '.join(cmd)}")
+        subprocess.run(cmd, check=True, cwd=str(PROJECT_ROOT), env=env)
         cmds[target] = " ".join(cmd)
-    return MaterializeResult(metadata={"asof": asof, **{f"cmd_{t}": c for t, c in cmds.items()}})
+    return MaterializeResult(
+        metadata={"asof": asof, "backfill": backfill, **{f"cmd_{t}": c for t, c in cmds.items()}}
+    )
 
 
 @asset(
@@ -142,19 +158,28 @@ def forecast_precomputado(context: AssetExecutionContext) -> MaterializeResult:
     filas como lookup; si un target no tiene modelo en Production se lo **saltea**
     (metadata `filas_<target> = "sin modelo Production"`) y la API sigue on-the-fly.
 
-    Corre siempre sobre el store y el Production **actuales** (no honra RETRAIN_ASOF:
-    el precómputo es para servir hoy, no un artefacto histórico) → re-ejecutarlo en un
-    backfill es idempotente e inofensivo.
+    El precómputo es **para servir hoy**: corre sobre el store y el Production actuales.
+    Por eso, en un **reproceso histórico** (backfill que truncaría el store) se **saltea**
+    —no pisa el serving en vivo— y de paso borra las tablas temporales `..._backfill` que
+    dejó el reproceso. En una corrida normal, precomputa las dos tablas de predicciones.
     """
+    from data_pipeline.orchestration import feature_store_build as fsb
     from data_pipeline.orchestration import forecast_precompute as fp
 
-    resultados = fp.precomputar_todos(fp.engine_from_env())
+    eng = fp.engine_from_env()
+    asof = context.partition_key
+    if fsb.es_backfill(eng, asof):
+        fsb.drop_backfill_tables(eng)  # limpia las tablas temporales del reproceso
+        context.log.info(f"backfill {asof}: precómputo salteado (no pisa el serving), tablas temporales borradas")
+        return MaterializeResult(metadata={"asof": asof, "backfill": True, "precomputo": "salteado (backfill histórico)"})
+
+    resultados = fp.precomputar_todos(eng)
     for target, filas in resultados.items():
         if filas is None:
             context.log.warning(f"precomputo {target}: sin modelo Production, salteado")
     return MaterializeResult(
         metadata={
-            "asof": context.partition_key,
+            "asof": asof,
             **{
                 f"filas_{t}": (n if n is not None else "sin modelo Production")
                 for t, n in resultados.items()

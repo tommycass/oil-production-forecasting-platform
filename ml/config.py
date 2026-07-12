@@ -21,6 +21,16 @@ FEATURE_STORE_TABLE = {
     "prod_gas": "feat_produccion_pozo_mensual_gas",   # gas
 }
 
+# Sufijo de las tablas del store para un reproceso histórico (ADR-040): el backfill se
+# materializa en tablas aparte (`..._backfill`) para no pisar las que sirve la API en vivo.
+BACKFILL_TABLE_SUFFIX = "_backfill"
+
+
+def feature_store_table(target: str) -> str:
+    """Tabla del store del ``target``, con override opcional por env
+    (``FEATURE_STORE_TABLE_SUFFIX``) para aislar un backfill histórico (ADR-040)."""
+    return FEATURE_STORE_TABLE[target] + os.getenv("FEATURE_STORE_TABLE_SUFFIX", "")
+
 # CSV crudo: SOLO referencia offline / validación de paridad del store (ver
 # data_pipeline feature_store_build). NO es la fuente del entrenamiento (ese lee el
 # store). Se mantiene para `build_basic_dataset` (assembly de referencia) y utilidades.
