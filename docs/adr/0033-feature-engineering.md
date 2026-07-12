@@ -1,6 +1,6 @@
 # Título: ADR-033: Feature engineering para el forecast (features derivadas anti-leakage)
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 

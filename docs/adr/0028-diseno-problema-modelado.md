@@ -1,5 +1,5 @@
 # Título: ADR-028: Diseño del problema predictivo y estrategia de validación temporal
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 > **Nota:** la plataforma pronostica **ambas** producciones, petróleo (`prod_pet`) y gas (`prod_gas`), con **un modelo por target** (ADR-039). Este ADR fija el **encuadre común** (grano, métrica, split, tratamiento de outliers, anti-leakage) usando `prod_pet` como caso trabajado del EDA; el modelo de gas reutiliza el mismo encuadre con su propio universo gasífero. La decisión de los dos modelos y sus campeones vive en **ADR-039**.
 

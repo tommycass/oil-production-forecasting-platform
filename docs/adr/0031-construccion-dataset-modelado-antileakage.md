@@ -1,6 +1,6 @@
 # Título: ADR-031: Construcción del dataset de modelado y prevención de leakage temporal
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 

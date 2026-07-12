@@ -1,6 +1,6 @@
 # Título: ADR-034: Algoritmo del modelo y validación/tuning temporal
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 

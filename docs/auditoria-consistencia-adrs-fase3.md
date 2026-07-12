@@ -7,20 +7,24 @@
 
 ---
 
-## Resumen ejecutivo — los 6 que importan
+## Resumen ejecutivo — los 6 que importaban (estado al 10-jul-2026)
 
-| # | Qué | Gravedad | Dónde |
+> **Los 6 hallazgos críticos/altos originales están RESUELTOS en el código y los ADRs que corren hoy** (commits `865c527`, `2ec52dc`, PR #127). La tabla se conserva como registro de la auditoría; la columna **Estado** refleja HEAD. El detalle histórico (secciones A–G) queda como trazabilidad, con su framing original.
+
+| # | Qué (hallazgo original) | Gravedad | Estado en HEAD |
 |---|---|---|---|
-| 1 | **`RETRAIN_ASOF` no recorta ningún dato.** El "reproceso como si fuera el día X" no restringe el dataset: solo cambia un `log_param`. | 🔴 Crítico | ADR-040 vs código |
-| 2 | **El feature store lee de Bronze, no de Gold.** ADR-033 titula una tabla "Columna(s) Gold"; el código hace `select … from bronze.produccion`. | 🔴 Crítico | ADR-033 vs código |
-| 3 | **ADR-039 se autocontradice:** dice que el modelo de gas usa `prod_pet` como feature, y dos párrafos antes dice que usa el set del ADR-041 (que lo excluye). El código: `prod_pet` NO está en el modelo de gas. | 🔴 Crítico | ADR-039 interno + vs código |
-| 4 | **ADR-034 dice que el campeón es XGBoost.** El campeón es Random Forest (código + ADR-039). ADR-034 no está marcado como revisado. | 🟠 Alto | ADR-034 vs ADR-039 vs código |
-| 5 | **ADR-037 documenta un solo modelo;** el sistema sirve dos (`prod_pet` y `prod_gas`). | 🟠 Alto | ADR-037 vs ADR-039 vs código |
-| 6 | **4 citas "textuales" fabricadas:** ADRs que ponen entre comillas frases que el ADR citado no contiene. | 🟠 Alto | ADR-034, 033, 040, 036 |
+| 1 | **`RETRAIN_ASOF` no recortaba datos.** El "reproceso como si fuera el día X" no restringía el dataset. | 🔴 Crítico | ✅ **Resuelto** (`2ec52dc`): `feature_store_build` recorta a `periodo <= asof` y `features_refrescadas` propaga la partición. Verificado E2E. |
+| 2 | **El feature store leía de Bronze con ADR-033 diciendo "Gold".** | 🔴 Crítico | ✅ **Resuelto**: ADR-033 (:19/:69) dice explícitamente `bronze.produccion` y por qué (no acoplar el refresh del DW a `ml/`). |
+| 3 | **ADR-039 se autocontradecía** (gas usa `prod_pet` vs set del ADR-041 que lo excluye). | 🔴 Crítico | ✅ **Resuelto**: ADR-039:72 dice que el target cruzado **no entra**; el código (`selected_features("prod_gas")` = 19 sin `prod_pet`) ya era así. |
+| 4 | **ADR-034 fijaba el campeón en XGBoost;** el campeón es Random Forest. | 🟠 Alto | ✅ **Resuelto**: ADR-034:49 difiere el campeón a ADR-039 (Random Forest); la tabla de :21 es "sin tunear" (XGBoost gana sin tuning, correcto). |
+| 5 | **ADR-037 documentaba un solo modelo;** el sistema sirve dos. | 🟠 Alto | ✅ **Resuelto**: ADR-037:58-62 documenta dos modelos + `MLFLOW_MODEL_NAME_GAS` + un loader por target. |
+| 6 | **Citas "textuales" fabricadas** en varios ADRs. | 🟠 Alto | ⏳ **Parcial**: `865c527` limpió varias; conviene un último barrido de comillas en 034/033/036 (sección C). |
 
-**Meta-hallazgo:** ningún ADR contiene la palabra "Superseded". Hay ≥3 revisiones de facto (034→039, 033→041, 042 parcial) sin marcar, y **6 ADRs "Aceptada" (035, 039–043) dependen de ADRs que siguen en "Propuesta"** (028, 031, 033, 034, 038). La cátedra lo va a ver.
+**Además, resueltos con split derivado + promoción en vivo (PR #127):** **A7/A8** (el Production vigente se re-evalúa **en vivo** sobre la ventana de test del candidato, `_incumbent_test_rmse`, en vez de comparar contra una métrica guardada de otra ventana) y **B4** (los cortes `train_end`/`val_end` se **derivan** de la fecha vía `split_bounds`, así el reentreno corre la ventana e incorpora pozos/operadoras nuevos — y deja de haber timestamps hardcodeados).
 
-> **Resolución (jul-2026).** Ya cerrados en código: **A1** (commit `2ec52dc`: `RETRAIN_ASOF` recorta el store). En la revisión de split derivado + promoción en vivo: **A7/A8** (el vigente se re-evalúa en vivo sobre la ventana del candidato, `_incumbent_test_rmse`) y **B4** (los cortes `train_end`/`val_end` se derivan de la fecha de reproceso vía `split_bounds`, así el reentreno amplía la ventana e incorpora pozos/operadoras nuevos). ADRs actualizados: **028** (§5, Revisión), **040** (recorte por fecha), **039** (criterio de promoción), **031/032** (promesas de reentrenamiento). Lo demás de la tabla (cifras, citas fabricadas, estados Propuesta/Aceptada) sigue pendiente para sus dueños (sección F).
+**Pendiente (menor, no bloqueante):** (a) último barrido de citas entre comillas (#6, sección C); (b) **estados de ADR** — 028/031/033/034/038 en "Propuesta" mientras 035/039–043 (que dependen de ellos) están "Aceptada"; conviene uniformar a "Aceptada". Ver sección F por dueño.
+
+> **Nota de lectura:** las secciones A–G describen los hallazgos **como estaban al 08-jul** (antes de los fixes). Salvo lo marcado "Pendiente" arriba, ya no aplican al código actual; se conservan para trazabilidad de la auditoría.
 
 ---
 
