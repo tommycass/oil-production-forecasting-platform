@@ -70,7 +70,7 @@ El análisis exploratorio (`notebooks/01_outliers_correlaciones.ipynb`, sobre `d
 | **train** | 2006-01 → 2023-07 | 65,0% | ajustar el modelo |
 | **val** | 2023-08 → 2024-11 | 15,6% | elegir modelo/hiperparámetros |
 | **dev** (train+val) | 2006-01 → 2024-11 | 80,5% | — |
-| **test** | 2024-12 → 2026-05 | 19,5% | estimación final, intacto |
+| **test** | 2024-12 → 2026-05 | 19,5% | estimación final |
 
 Resultado sobre este universo: dev/test ≈ **80/20** y train/val (dentro de dev) ≈ **80/20**. Las proporciones son **aproximadas** a las pedidas (0,8/0,2) porque el split se define por fecha (no por conteo de filas) y varían levemente según el conjunto que se cuente (p. ej. el dataset ya procesado del ADR-031). Las ventanas de val (~16 meses) y test (~18 meses) **superan los 12 meses**, cubriendo un ciclo estacional completo.
 

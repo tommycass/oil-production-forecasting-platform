@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from app.core.database import fetch_all
 
-# Tabla del store por target (ADR-035 Rev. 2 / ADR-039). Petróleo mantiene el nombre
+# Tabla del store por target (ADR-035 / ADR-039). Petróleo mantiene el nombre
 # histórico; gas usa el sufijo _gas. El reader elige la tabla según el target.
 FEATURE_TABLE_BY_TARGET = {
     "prod_pet": "features.feat_produccion_pozo_mensual",

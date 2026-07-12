@@ -42,8 +42,7 @@ oil-production-forecasting-platform/
 │   ├── app/
 │   │   ├── core/                   # Lógica transversal
 │   │   │   ├── security.py         # Middleware de validación de API key (X-API-Key)
-│   │   │   ├── rate_limit.py       # Configuración de rate limiting (SlowAPI)
-│   │   │   └── demo_data.py        # Datos mock de pozos y producción base
+│   │   │   └── rate_limit.py       # Configuración de rate limiting (SlowAPI)
 │   │   ├── routes/                 # Endpoints de la API
 │   │   │   ├── health.py           # GET /health
 │   │   │   ├── wells.py            # GET /api/v1/wells
