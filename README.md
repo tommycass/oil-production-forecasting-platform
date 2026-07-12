@@ -42,7 +42,8 @@ oil-production-forecasting-platform/
 │   ├── app/
 │   │   ├── core/                   # Lógica transversal
 │   │   │   ├── security.py         # Middleware de validación de API key (X-API-Key)
-│   │   │   └── rate_limit.py       # Configuración de rate limiting (SlowAPI)
+│   │   │   ├── rate_limit.py       # Configuración de rate limiting (SlowAPI)
+│   │   │   └── database.py         # Engine de conexión al DW/feature store (env-driven)
 │   │   ├── routes/                 # Endpoints de la API
 │   │   │   ├── health.py           # GET /health
 │   │   │   ├── wells.py            # GET /api/v1/wells
@@ -78,7 +79,8 @@ oil-production-forecasting-platform/
 │   │   └── run_pipeline.sh         # Refresh headless para cron (full reload, env-driven)
 │   ├── tests/                      # Tests del pipeline (pytest)
 │   ├── requirements.txt
-│   └── requirements-dev.txt
+│   ├── requirements-dev.txt
+│   └── README.md
 │
 ├── data/                           # Datos crudos (gitignored): landing + capa Bronze
 │
@@ -91,11 +93,15 @@ oil-production-forecasting-platform/
 │   │   ├── gold/                   # Modelo estrella: fact_produccion_mensual + 4 dims
 │   │   └── semantic/               # Vistas semánticas sobre Gold para BI (ADR-027)
 │   ├── macros/
+│   │   ├── generate_schema_name.sql # Esquemas custom por capa (silver/gold/dq/semantic)
 │   │   └── log_dq_results.sql      # Persiste los checks de calidad en dq.dq_results
 │   ├── scripts/
 │   │   ├── load_bronze.py          # Puente parquet → bronze.* (Postgres)
 │   │   └── seed_sample_bronze.py   # Bronze de muestra para pruebas/bootstrap
-│   └── tests/                      # Tests dbt singulares (p. ej. freshness)
+│   ├── tests/                      # Tests dbt singulares (p. ej. freshness)
+│   ├── packages.yml                # Paquetes dbt (dbt_utils, dbt_expectations)
+│   ├── requirements.txt
+│   └── README.md
 │
 ├── ml/                             # Zona ML Engineer (Fase 3): modelado + entrenamiento
 │   ├── config.py                   # Target, split temporal, semilla, config MLflow
@@ -110,7 +116,7 @@ oil-production-forecasting-platform/
 │   ├── forecast.py                 # Motor de forecast recursivo multi-paso (ADR-042)
 │   ├── tracking.py                 # Helper de setup de MLflow
 │   ├── registry.py                 # Log / registro / promoción del modelo en MLflow (ADR-039)
-│   ├── tests/                      # Tests del paquete ml/ (forecast, registry)
+│   ├── tests/                      # Tests del paquete ml/ (anti-leakage, dataset, forecast, registry)
 │   └── requirements.txt            # Dependencias del paquete ml/ (validadas por Dagster en el retrain)
 │
 ├── notebooks/                      # EDA (01) + selección de features por target: petróleo (02) y gas (03)
@@ -118,6 +124,7 @@ oil-production-forecasting-platform/
 ├── docs/
 │   ├── data-model.md               # Contrato Gold: grano, dims, surrogate keys, SCD
 │   ├── feature-store.md            # Contrato del feature store (Fase 3, ADR-035)
+│   ├── demo_adenda3/               # Material de la demo Fase 3: guion, capturas y video del trigger de retrain
 │   ├── runbooks/                   # Runbooks por rol
 │   │   ├── data-engineer.md        # Reprocesar un mes corregido por la fuente
 │   │   ├── analytics-engineer.md   # Reconstruir Silver/Gold y resolver gate de calidad
@@ -167,19 +174,26 @@ oil-production-forecasting-platform/
 │       ├── 0040-orquestacion-retrain.md
 │       ├── 0041-seleccion-features-forecast.md
 │       ├── 0042-forecast-recursivo.md
-│       └── 0043-forecast-precomputado.md
+│       ├── 0043-forecast-precomputado.md
+│       └── 0044-monitoreo-modelo-produccion.md
 │
 ├── infra/
 │   ├── Dockerfile                  # Imagen del servicio API
-│   ├── docker-compose.yml          # API + Prometheus + Grafana + Alertmanager + cAdvisor (+ perfiles bi/orchestration)
+│   ├── docker-compose.yml          # API + monitoring por defecto; perfiles: local-db, orchestration, bi, ml (MLflow)
 │   ├── Dockerfile.dagster          # Imagen de la UI de Dagster (perfil orchestration)
-│   └── datahub/
-│       └── dbt_recipe.yml          # Receta de ingesta DataHub (linaje desde artefactos dbt)
+│   ├── .env.example                # Variables de entorno del compose (POSTGRES_*, MLFLOW_*, RETRAIN_*)
+│   ├── db/
+│   │   └── bootstrap.sql           # Bootstrap idempotente de bases y esquemas del Postgres
+│   ├── datahub/
+│   │   └── dbt_recipe.yml          # Receta de ingesta DataHub (linaje desde artefactos dbt)
+│   └── governance/
+│       └── setup-datahub.sh        # Setup idempotente de DataHub en la EC2 (ADR-026)
 │
 ├── monitoring/
 │   ├── prometheus.yml              # Scraping de métricas
 │   ├── alerts.yml                  # Reglas de alerta de Prometheus
 │   ├── alertmanager.yml            # Routing de alertas a Slack
+│   ├── .slack_webhook.example      # Placeholder del webhook de Slack (el real no se versiona)
 │   └── grafana/
 │       ├── provisioning/           # Datasources (Prometheus, CloudWatch) y proveedor de dashboards
 │       └── dashboards/
@@ -208,6 +222,10 @@ Y completar las variables requeridas:
 | `RATE_LIMIT` | Límite de requests por IP (formato SlowAPI, ej. `60/minute`). |
 
 > El `.env` está ignorado por git. La clave nunca se commitea al repositorio.
+
+Para los perfiles del compose (`local-db`, `orchestration`, `bi`, `ml`) las variables
+(`POSTGRES_*`, `MLFLOW_TRACKING_URI`, `RETRAIN_*`, etc.) se toman de `infra/.env`;
+el listado completo con placeholders está en [infra/.env.example](infra/.env.example).
 
 ---
 
@@ -277,17 +295,29 @@ La API queda disponible en el puerto `8000` del host (`/docs` para Swagger).
 
 ## Tests
 
-Desde la raíz del repositorio, instalar dependencias de desarrollo y correr la suite de pytest:
+Hay **tres suites de pytest** (las mismas que corre el CI en jobs separados: `test`,
+`test-pipeline` y `test-ml`). Desde la raíz del repositorio:
 
 ```bash
-pip install -r api/requirements-dev.txt
+# API (auth, rate limit, endpoints, serving de /forecast)
+pip install -r api/requirements.txt -r api/requirements-dev.txt
 API_KEY=test-key pytest api/tests/ -v
+
+# Pipeline de datos (extracción, validación de schema, DAGs con I/O mockeado)
+pip install -r data_pipeline/requirements-dev.txt
+pytest data_pipeline/tests/ -v
+
+# ML (dataset, features anti-leakage, registry/promoción, motor de forecast)
+# + feature store y precómputo (usa el mismo entorno que la API)
+MLFLOW_TRACKING_URI="sqlite:///test_mlflow.db" pytest ml/tests/ \
+  data_pipeline/tests/test_feature_store_build.py \
+  data_pipeline/tests/test_forecast_precompute.py -v
 ```
 
 El análisis estático (mismo que corre el CI) se ejecuta con:
 
 ```bash
-ruff check api/app/
+ruff check api/app/ ml/ data_pipeline/
 ```
 
 ---
