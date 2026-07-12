@@ -36,6 +36,7 @@ apunte-final-IS.md
 # MLflow (tracking local; no se versiona)
 mlruns/
 mlflow.db
+test_mlflow.db
 mlartifacts/
 
 # Modelos entrenados por train.py (artefactos locales; no se versionan)
