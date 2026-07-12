@@ -16,8 +16,8 @@ from ml.config import (
     DATA_CSV,
     DATASET_BASICO_CSV,
     FEATURE_STORE_SCHEMA,
-    FEATURE_STORE_TABLE,
     TARGET,
+    feature_store_table,
     retrain_asof,
     split_bounds,
 )
@@ -73,7 +73,7 @@ def build_dataset_from_store(target: str = TARGET) -> pd.DataFrame:
     **materializar** el store, no acá: el retrain re-materializa el store recortado y
     luego entrena leyéndolo.
     """
-    tabla = f"{FEATURE_STORE_SCHEMA}.{FEATURE_STORE_TABLE[target]}"
+    tabla = f"{FEATURE_STORE_SCHEMA}.{feature_store_table(target)}"
     df = pd.read_sql(f"select * from {tabla}", _store_engine())
     df["periodo"] = pd.to_datetime(df["periodo"])
     df["periodo_objetivo"] = pd.to_datetime(df["periodo_objetivo"])

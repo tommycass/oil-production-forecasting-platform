@@ -15,9 +15,9 @@ El contrato de ``/forecast`` (``id_well``, ``date_start``, ``date_end`` → ``{i
 data:[{date, prod}]}``) **no cambia**. Se agrega solo un parámetro **opcional** ``target``
 (default ``prod_pet``): quien no lo pasa obtiene petróleo, igual que antes.
 
-El paso unitario (predecir un mes) es el modelo que antes servía ``/predict``; ``/forecast``
-lo **subsume** (un rango de un mes = la vieja predicción de un mes), así que ``/predict`` se
-retira (ADR-035 queda reemplazado por ADR-042).
+El paso unitario (predecir un mes) es el modelo que antes servía ``/predict`` (endpoint de una
+iteración previa, no adoptado); ``/forecast`` lo **subsume** (un rango de un mes = la vieja
+predicción de un mes), así que ``/predict`` se retira. El contrato del pronóstico lo fija ADR-042.
 """
 
 from datetime import date

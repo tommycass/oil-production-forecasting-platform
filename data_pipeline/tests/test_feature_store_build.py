@@ -128,6 +128,38 @@ def test_asof_recorta_datos_posteriores(monkeypatch):
     assert completo["periodo"].max() == pd.Timestamp("2021-04-01")
 
 
+def test_es_backfill_distingue_reproceso_historico(monkeypatch):
+    # es_backfill compara asof contra el último período observado en Bronze (ADR-040):
+    # una fecha anterior = reproceso histórico que truncaría el store (→ tablas separadas).
+    monkeypatch.setattr(fsb, "max_periodo_bronze", lambda _eng: pd.Timestamp("2026-05-01"))
+    assert fsb.es_backfill(None, "2025-06-06") is True     # anterior → backfill
+    assert fsb.es_backfill(None, "2026-07-06") is False    # posterior (hoy) → normal
+    assert fsb.es_backfill(None, "2026-05-01") is False    # igual al último → normal
+
+
+def test_dedup_conserva_el_registro_vigente():
+    # Dos filas del mismo (idpozo, mes) por una rectificación: se conserva la vigente
+    # (rectificado=true), igual criterio que silver_produccion_vigente.
+    df = pd.DataFrame({
+        "idpozo": [1, 1],
+        "periodo": [pd.Timestamp("2020-01-01"), pd.Timestamp("2020-01-01")],
+        "prod_pet": [100.0, 555.0],          # la vigente (rectificada) trae 555
+        "rectificado": ["false", "true"],
+        "fecha_data": ["2020-02-01", "2020-03-01"],
+        "fecha_ingesta": ["2020-02-05", "2020-03-05"],
+    })
+    out = fsb._dedup_vigente(df)
+    assert len(out) == 1 and out["prod_pet"].iloc[0] == 555.0
+    assert not set(fsb._DEDUP_COLS) & set(out.columns)  # descarta las columnas de rectificación
+
+
+def test_dedup_es_no_op_sin_columnas_de_rectificacion():
+    # Los paneles sin columnas de rectificación (p. ej. un consumidor directo) pasan intactos.
+    df = pd.DataFrame({"idpozo": [1, 2], "periodo": [pd.Timestamp("2020-01-01")] * 2, "prod_pet": [1.0, 2.0]})
+    out = fsb._dedup_vigente(df)
+    assert out.equals(df)
+
+
 def test_asof_toma_env_var_si_no_es_explicito(monkeypatch):
     # asof=None cae en la env var RETRAIN_ASOF (mismo mecanismo que ml.config.retrain_asof),
     # así el subproceso de retrain la respeta sin pasarla explícita.
