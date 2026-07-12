@@ -1,5 +1,5 @@
 # Título: ADR-029: Modelo baseline determinista para el forecast de producción
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 

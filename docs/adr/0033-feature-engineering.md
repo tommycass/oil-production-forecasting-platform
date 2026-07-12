@@ -30,6 +30,8 @@ Cada fila es `(pozo, mes t)`; el target es `prod_pet(t+1)`. Las columnas de orig
 
 Las 5 pedidas (lag/ventanas, media móvil, estacional, delta, vecinos espaciales) más las dos extra (acumulada en ventana y "produjo el mes pasado").
 
+> **Revisión (jul-2026): ampliación del candidato con features recursion-safe.** Para habilitar el **forecast recursivo** (ADR-042) —que en cada paso recalcula las features desde la trayectoria *predicha* del propio target— el conjunto candidato se **extendió** con 10 features autorregresivas adicionales, todas *recursion-safe* (se recalculan en un mes futuro a partir de la serie del target, con el mismo anti-leakage por calendario que las de arriba): `{target}_lag2`, `{target}_lag3`, `{target}_roll6`, `{target}_acum12`, `{target}_delta3`, `{target}_ratio1`, `{target}_std3`, `{target}_cummax`, `{target}_frac_peak`, `{target}_meses_desde_pico`, más `well_age_months` (edad del pozo, genérica). Las 7 originales siguen en el candidato, pero `water_cut` y `prod_vecinos_mean` **no** son recursion-safe (usan agua / otros pozos, no proyectables), así que quedan fuera del set del modelo recursivo. El **ranking y la selección final** (27 features en petróleo / 19 en gas) los decide **[ADR-041](0041-seleccion-features-forecast.md)** sobre este candidato ampliado. Implementación: `ml.features.engineered_feature_names` (candidato completo) y `ml.features.selected_features` (set final).
+
 ## Análisis de Alternativas
 
 ### 1. Cálculo de lags: `shift` de filas vs merge por calendario

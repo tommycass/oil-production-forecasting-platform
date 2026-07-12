@@ -1,6 +1,6 @@
 # Título: ADR-036: Backend del servidor MLflow para tracking y model registry
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 > Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (elección de MLflow) y [ADR-002](0002-docker-containerizacion.md) (Docker como runtime). ADR-030 decidió usar MLflow y dejó el despliegue del servidor "de verdad" (sobre Postgres + Docker) para documentarse aparte; este ADR documenta esa decisión de infraestructura.
 

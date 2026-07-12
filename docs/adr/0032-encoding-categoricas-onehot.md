@@ -1,6 +1,6 @@
 # Título: ADR-032: Encoding de variables categóricas (one-hot en train con fallback explícito)
 
-**Estado:** Propuesta
+**Estado:** Aceptada
 
 ## Contexto
 

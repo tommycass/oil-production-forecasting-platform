@@ -2,6 +2,8 @@
 
 **Estado:** Aceptada
 
+> **Revisión (jul-2026): campeón refinado en ADR-039.** La comparación **inicial sin tuning** (sección A) anticipó a **XGBoost** como el modelo más fuerte. Tras el **tuning de hiperparámetros** con CV temporal, el campeón definitivo es **Random Forest** en ambos targets (petróleo y gas), fijado en [ADR-039](0039-modelo-produccion.md) e implementado en `ml/train.py::CHAMPION = "random_forest"`. Las tablas y comentarios de este ADR que muestran a XGBoost como el más fuerte reflejan ese **snapshot pre-tuning**; la decisión final vive en ADR-039.
+
 ## Contexto
 
 El ADR-029 fijó la **vara de éxito** (la persistencia: un modelo solo se justifica si la supera) y remitió el algoritmo a un ADR aparte (ADR-029: *"el algoritmo… se documenta en ADR-034"*). Este ADR toma esa decisión: **qué familia de modelo** se usa y **cómo se valida y tunea** sin leakage temporal.
@@ -61,7 +63,7 @@ Además, **todo el preprocesamiento que aprende de los datos vive dentro de un `
 - Criterio de promoción **objetivo** (batir la persistencia en RMSE), encadenable con el registry y el serving.
 
 **Negativas / trade-offs:**
-- XGBoost es **menos interpretable** que la regresión lineal; se mitiga manteniendo Ridge como comparador y, a futuro, importancias/SHAP.
+- El campeón (Random Forest) —como todo modelo de árboles/boosting— es **menos interpretable** que la regresión lineal; se mitiga manteniendo Ridge como comparador y, a futuro, importancias/SHAP.
 - El margen sobre la persistencia es **acotado** (autocorrelación alta): hay que demostrar que la ganancia justifica la complejidad de servir un modelo de boosting.
 - El tuning con CV temporal es **más caro** que un split simple (varios folds × `n_iter` configuraciones), sobre todo para Random Forest; el random search con `n_iter` acota ese costo.
 - La elección queda atada al dataset/split de los ADR-028/031; si cambian, hay que re-tunear y recomparar.
