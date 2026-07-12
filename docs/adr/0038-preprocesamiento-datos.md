@@ -65,7 +65,7 @@ Se midió el efecto sobre la **regresión lineal** (los árboles son invariantes
 
 **Negativas / trade-offs:**
 - Imputar lags con 0 introduce un **sesgo** (un pozo nuevo "parece" no haber producido); se mitiga con el flag `*_isna`, pero el modelo aún debe aprender a usarlo.
-- Al **no tratar outliers**, el modelo queda **expuesto a valores extremos espurios** que no sean negativos (p. ej. un pico por error de carga); se delega su detección al **data quality de Fase 2** (ADR-016) y al monitoreo, no al preprocesamiento.
+- Al **no tratar outliers**, el modelo queda **expuesto a valores extremos espurios** que no sean negativos (p. ej. un pico por error de carga); se delega su detección al **data quality de Fase 2** (ADR-016) y al monitoreo del modelo (**ADR-044**: la re-evaluación mensual del retrain detecta el efecto en el error), no al preprocesamiento.
 - Los flags de faltante **agregan columnas** (una por feature de historia), costo menor.
 
 ---

@@ -4,6 +4,8 @@
 
 > Relacionado con [ADR-030](0030-plataforma-tracking-experimentos.md) (MLflow como registry) y [ADR-042](0042-forecast-recursivo.md) (`/forecast`, el endpoint que sirve el modelo). Este ADR decide cómo la API carga el modelo desde el registry y cómo detecta y aplica nuevas versiones sin downtime.
 
+> **Revisión (jul-2026) — [ADR-043](0043-forecast-precomputado.md) acota el alcance del `503`.** Cuando se escribió este ADR, `/forecast` dependía siempre del modelo en memoria, por lo que "MLflow no disponible y sin modelo cargado" implicaba `503` en todo el endpoint (Contexto §3). Con el precómputo del ADR-043, la API primero intenta el **lookup del pronóstico precomputado**: si está fresco, responde **aunque MLflow esté caído y no haya modelo cargado**. El `503` solo puede ocurrir en el camino **on-the-fly** (precómputo inexistente o desactualizado). La decisión de este ADR —polling en background para cargar/actualizar el modelo— sigue vigente sin cambios: es lo que alimenta ese camino on-the-fly y la recarga sin downtime.
+
 ---
 
 ## Contexto

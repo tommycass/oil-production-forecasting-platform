@@ -494,12 +494,71 @@ y el [runbook del Data Engineer](docs/runbooks/data-engineer.md)).
 
 ## Machine Learning — Forecast de producción (Fase 3)
 
-Sobre la capa Gold se entrenan **dos modelos** que **pronostican la producción de un pozo
+Sobre los datos de producción ingeridos por el pipeline (`bronze.produccion`, registro
+vigente) se entrenan **dos modelos** que **pronostican la producción de un pozo
 para el mes siguiente (t+1)**: uno de **petróleo** (`prod_pet`, m³) y uno de **gas**
 (`prod_gas`). Comparten el mismo pipeline (parametrizado por *target*), así que todo lo que
 sigue vale para los dos. El flujo completo va de las features (materializadas en un feature
 store) al entrenamiento con tracking en MLflow y al servido por la API desde el model
 registry.
+
+### Arquitectura end-to-end de la solución
+
+```mermaid
+flowchart TB
+    DG["datos.gob.ar<br/>(Ministerio de Energía)"]
+
+    subgraph DW["Pipeline de datos — Dagster + dbt (cron día 5, ADR-018/021)"]
+        BRONZE["Bronze — bronze.*<br/>crudo, particionado anio/mes"]
+        SILVER["Silver — silver.*<br/>tipado + cuarentena DQ"]
+        GOLD["Gold — gold.*<br/>modelo estrella"]
+        SEM["Semantic — semantic.*"]
+        BRONZE --> SILVER --> GOLD --> SEM
+    end
+
+    subgraph RETRAIN["Job retrain — Dagster particionado por día (Schedule día 6 + Sensor, ADR-040)"]
+        FS["features_refrescadas<br/>feature store: features.feat_*<br/>(una tabla por target, ADR-035)"]
+        TRAIN["modelo_reentrenado<br/>RETRAIN_CMD × target<br/>(ml.train --mlflow)"]
+        PRE["forecast_precomputado<br/>features.pred_*<br/>12 meses/pozo (ADR-043)"]
+        FS --> TRAIN --> PRE
+    end
+
+    subgraph MLF["MLflow — backend Postgres (ADR-030/036)"]
+        TRK["Tracking<br/>params / métricas / artifacts"]
+        REG["Model Registry<br/>Staging → Production (ADR-039)"]
+    end
+
+    subgraph API["API FastAPI — Docker en EC2"]
+        LOADER["ModelLoader<br/>polling del registry c/5 min (ADR-037)"]
+        FC["GET /api/v1/forecast<br/>lookup precómputo fresco<br/>→ fallback recursivo on-the-fly (ADR-042/043)"]
+    end
+
+    USER["Usuarios de la API<br/>(X-API-Key)"]
+    BI["Metabase (BI) · DataHub (gobierno)"]
+    MON["Prometheus + Grafana<br/>Alertmanager → Slack (ADR-003/004)"]
+    CICD["GitHub Actions (CI/CD)<br/>tests + ruff → imagen ECR → deploy SSM"]
+
+    DG --> BRONZE
+    BRONZE -->|"registro vigente, periodo ≤ asof"| FS
+    TRAIN --> TRK
+    TRAIN -->|"registra y promueve"| REG
+    REG -->|"modelo Production"| PRE
+    REG -->|"modelo Production"| LOADER
+    LOADER --> FC
+    FS -->|"features del último mes observado"| FC
+    PRE -->|"pronóstico precomputado"| FC
+    USER --> FC
+    SEM --> BI
+    API -. "/metrics" .-> MON
+    CICD -. "despliega" .-> API
+```
+
+El pipeline de datos (Fase 2) refresca el DW el día 5 de cada mes; el job `retrain` (Fase 3)
+corre el día 6 sobre datos ya frescos: re-materializa el feature store desde Bronze, reentrena
+los dos modelos registrándolos en MLflow (promoción a `Production` solo si el candidato supera
+a la persistencia y al vigente) y deja el forecast precomputado. La API sirve el pronóstico
+por lookup del precómputo y, si no está fresco, con el motor recursivo y el modelo `Production`
+que recarga por polling — sin redeploy. Todo el detalle en las secciones siguientes.
 
 ### Problema y validación
 
@@ -918,3 +977,4 @@ Cada decisión de diseño relevante de esta fase está documentada en `docs/adr/
 | [041](docs/adr/0041-seleccion-features-forecast.md) | Selección de features del forecast | Permutation importance en val; corte por ganancia positiva (`imp_mean > 0`): 27 features en petróleo / 19 en gas; ranking, cold-start y anclas; métricas val + test |
 | [042](docs/adr/0042-forecast-recursivo.md) | Forecast recursivo multi-paso en `/forecast` | Recursivo vs. directo; salida mensual vs. diaria; horizonte máximo; paso unitario subsumido; contrato de Fase 1 preservado |
 | [043](docs/adr/0043-forecast-precomputado.md) | Precómputo del forecast en el retrain | On-demand vs. precómputo puro vs. híbrido con fallback; generación en el retrain vs. en la ingesta; frescura exacta por `ultimo_observado`; serving transparente por lookup |
+| [044](docs/adr/0044-monitoreo-modelo-produccion.md) | Monitoreo del modelo en producción | Plataforma de drift (Evidently) vs. pred-vs-real en Prometheus vs. re-evaluación walk-forward del retrain como guardián; gate de promoción como detector de degradación |
