@@ -162,8 +162,10 @@ def get_forecast(
     inicio, fin_efectivo = _ventana(ultimo_obs, date_start, date_end)
     n_steps = _months_between(ultimo_obs, fin_efectivo)  # meses de L+1 a fin_efectivo
 
-    # motor recursivo. Import perezoso: ml/ (pandas/sklearn) es pesado y puede no estar
-    # en un entorno mínimo → así el módulo carga igual y sin el modelo degrada a 503.
+    # motor recursivo. Import perezoso: ml/ (pandas/sklearn) es pesado, así el módulo
+    # carga rápido y solo se importa en el fallback on-the-fly. En el contenedor, ml/ se
+    # monta como volumen (infra/docker-compose.yml, `../ml:/app/ml:ro`) para que sea
+    # importable; la falta de modelo Production la maneja get_loader() abajo (→ 503).
     from ml import forecast as engine
 
     loader = get_loader(target)  # RuntimeError -> 503 si no hay modelo cargado
