@@ -117,10 +117,6 @@ oil-production-forecasting-platform/
 ├── notebooks/                      # EDA (01) + selección de features por target: petróleo (02) y gas (03)
 │
 ├── docs/
-│   ├── consigna-fase1.md
-│   ├── consigna-fase2.md
-│   ├── adenda_tecnica_fase2.md
-│   ├── adenda_tecnica_fase_3.md    # Adenda técnica de la Fase 3 (ML)
 │   ├── data-model.md               # Contrato Gold: grano, dims, surrogate keys, SCD
 │   ├── feature-store.md            # Contrato del feature store (Fase 3, ADR-035)
 │   ├── runbooks/                   # Runbooks por rol
@@ -674,9 +670,13 @@ Procedimiento completo en el [runbook de retrain](docs/runbooks/ml-retrain.md) y
 [ADR-040](docs/adr/0040-orquestacion-retrain.md).
 
 ```bash
-# Retrain manual de una fecha puntual (la partición usa AAAA-MM-DD)
+# Retrain manual de una fecha puntual (la partición usa AAAA-MM-DD).
+# En Dagster 1.13 `dagster job execute` no acepta --partition; se materializan los
+# assets del job con --partition (ver runbook ml-retrain.md).
 MOD=data_pipeline.orchestration.definitions
-dagster job execute -j retrain --partition "2026-06-06" -m $MOD
+dagster asset materialize \
+  --select "features_refrescadas,modelo_reentrenado,forecast_precomputado" \
+  --partition "2026-06-06" -m $MOD
 ```
 
 ### Inferencia (API)
